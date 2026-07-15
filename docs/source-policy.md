@@ -88,6 +88,14 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Checkpoint: `reportDateHighWater` with 14-day overlap; first run covers 120 days.
 - Enabled: 2026-07-15.
 
+### pierce_environmental_determinations
+- Checklist run: 2026-07-15 (M1.4, agent session).
+- **Blocked: Cloudflare browser challenge.** https://www.piercecountywa.gov/ (incl. /905/Environmental-Decisions) returns HTTP 403 "Just a moment…" (challenges.cloudflare.com interstitial) for every client from this execution environment — tested with the declared OTNInsightsBot UA, a stock Firefox UA, and plain curl; the challenge is IP/TLS-fingerprint based, not UA-based. Solving it requires JS execution in a real browser context, which is bypassing an anti-bot access control — prohibited (spec §0/§20; source-policy "never bypass").
+- PALS (pals.piercecountywa.gov) responds 200 from the same environment, but PALS is Lookup-class — enrich-only, never the sole alert source — so it cannot substitute.
+- Mitigation: Pierce County SEPA determinations are also published statewide on the Ecology SEPA register (M1.8 `wa_sepa`), which keeps pilot coverage of Pierce environmental decisions alive while this source is blocked.
+- Re-verification path: run the checklist from a network that Cloudflare does not challenge (e.g. the production runner or the customer's own connection); the adapter + golden fixtures (PALS 1032039 Fredrickson Townhomes, 1049051 Trailside Apartments) can be completed once representative HTML is capturable. No fixtures were fabricated.
+- Enabled: no — remains disabled; blocker recorded 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

@@ -23,7 +23,7 @@
 
 ## Open blockers
 
-None.
+- **M1.4 pierce_environmental_determinations:** piercecountywa.gov serves a site-wide Cloudflare browser challenge (403) to this execution environment regardless of user agent; solving it would mean bypassing an anti-bot control — prohibited. Source stays disabled; blocker + mitigation (Pierce SEPA coverage via M1.8 wa_sepa) recorded in the activation ledger. Re-verify from an unchallenged network (production runner / customer connection).
 
 ## Assumptions in force
 
