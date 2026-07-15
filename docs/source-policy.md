@@ -77,6 +77,17 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Live runs: 2026-07-15 — 1 canary record, all four links found, green; idempotent rerun unchanged, green.
 - Enabled: 2026-07-15.
 
+### lewis_issued_permits
+- Checklist run: 2026-07-15 (M1.3, agent session).
+- Landing page verified: 2026-07-15 — https://lewiscountywa.gov/departments/community-development/building-permit-data/ live; 49 PDF links (dated weekly "Issued Permits with Valuation" series since Nov 2025 + older undated BldgPermits_* names, which are skipped by design).
+- Format/cadence observed: weekly PDF, rotated (landscape) table; /documents/ URLs 302-redirect to /media/documents/. One glitched CMS filename in the live index (06_C0394UQ.14.2026_...) — date parser tolerates one junk segment.
+- Robots/terms: robots.txt disallows only /media/oldSite/ — reviewed 2026-07-15.
+- Fixtures captured: `fixtures/lewis_issued_permits/` (landing.html, golden 06.28.2026 PDF per spec, metadata.json with audit).
+- Manual sample audit: 15/15 rows field-by-field vs the rendered PDF — pass. Wrapped rows and applicant vs primary-contractor separation verified (spec golden requirements). Discrepancy recorded: printed grand total $88,135.10 > sum of printed per-row valuations $56,737.10 — blank cells stay null, never inferred.
+- Live runs: 2026-07-15 — first run 16 PDFs / 386 permits / 0 rejected, green; checkpoint rerun 3 fetched all unchanged, green; 90-day backfill (2026-04-16→07-15) 12 PDFs all unchanged, green. DB: 385 permits, issue dates 2026-03-23→2026-07-10.
+- Checkpoint: `reportDateHighWater` with 14-day overlap; first run covers 120 days.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

@@ -3,12 +3,14 @@ import { FakeSourceAdapter } from "./fake-source.js";
 import { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
 import { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 import { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
+import { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 import { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
 
 export { FakeSourceAdapter };
 export { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 export { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
 export { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
+export { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 export { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
@@ -16,6 +18,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   lacey_projects_rest: () => new LaceyProjectsRestAdapter(),
   lacey_project_pages: () => new LaceyProjectPagesAdapter(),
   lewis_current_planning: () => new LewisCurrentPlanningAdapter(),
+  lewis_issued_permits: () => new LewisIssuedPermitsAdapter(),
   lewis_source_canary: () => new LewisSourceCanaryAdapter(),
 };
 

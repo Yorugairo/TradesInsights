@@ -11,7 +11,8 @@
   "dependencies": {
     "@otn/domain": "workspace:*",
     "cheerio": "^1.2.0",
-    "domhandler": "^6.0.1"
+    "domhandler": "^6.0.1",
+    "pdfjs-dist": "^6.1.200"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

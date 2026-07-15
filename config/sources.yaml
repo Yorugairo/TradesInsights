@@ -121,8 +121,17 @@ sources:
     cadence: weekly
     county: Lewis
     permitting_jurisdiction: Lewis County
-    enabled: false
-    notes: Golden fixture — 2026-06-28 issued permits PDF; test wrapped rows and applicant vs primary-contractor.
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: index page lists dated weekly "Issued Permits with
+      Valuation" PDFs (MM.DD.YYYY prefix, one glitched CMS name tolerated);
+      /documents/ URLs 302-redirect to /media/documents/. Rotated-table PDF
+      parsed via positioned text. Golden fixture 2026-06-28 (wrapped rows,
+      applicant vs primary-contractor). robots.txt disallows only
+      /media/oldSite/. Reports' printed grand total can exceed the sum of
+      printed per-row valuations (source-side; we never fabricate).
 
   - key: lewis_current_planning
     name: Lewis Current Planning Applications

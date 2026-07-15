@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1.3 (Lewis issued-permits PDF) — next up.
-**Last completed:** M1.2 (Lewis current planning + canary) — both enabled, green, 2026-07-15.
+**Current task:** M1.4 (Pierce environmental determinations) — next up.
+**Last completed:** M1.3 (Lewis issued-permits PDF) — enabled, green, 385 permits over ~110 days, 2026-07-15.
 
 ## Milestone ledger
 
@@ -12,6 +12,7 @@
 | M1.0 shared infra (checkpoints, HTTP helper, HTML extraction) | ✅ 2026-07-15 | runner checkpoint round-trip tests; `packages/documents` html.ts |
 | M1.1 Lacey REST + project pages | ✅ 2026-07-15 | 79+79 records live, 0 rejected, health green, idempotent rerun + 90-day backfill verified; ledger in source-policy.md |
 | M1.2 Lewis current planning + canary | ✅ 2026-07-15 | 14 applications live + canary (4 official links incl. discovered SmartGov host), green, idempotent rerun verified |
+| M1.3 Lewis issued-permits PDF | ✅ 2026-07-15 | golden 06-28 PDF (wrapped rows, applicant/contractor split); 16 PDFs → 385 permits, 90-day backfill + checkpoint rerun green |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

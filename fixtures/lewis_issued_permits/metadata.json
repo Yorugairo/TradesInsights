@@ -1,0 +1,30 @@
+{
+  "sourceKey": "lewis_issued_permits",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.3 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://lewiscountywa.gov/departments/community-development/building-permit-data/",
+      "notes": "PDF index: 49 report links. Dated weekly series (MM.DD.YYYY_*) since Nov 2025; older BldgPermits_* monthly/weekly names carry no parseable date and are skipped by design. Index contains one glitched filename (06_C0394UQ.14.2026_...) that the date parser tolerates."
+    },
+    {
+      "file": "06.28.2026_Issued_Permits_with_Valuation.pdf",
+      "url": "https://lewiscountywa.gov/documents/19644/06.28.2026_Issued_Permits_with_Valuation.pdf",
+      "notes": "Spec-named golden fixture. Rotated (landscape) table; document URLs 302-redirect to /media/documents/."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Field-by-field comparison of parsed rows against the rendered PDF.",
+    "checks": [
+      "Row count: 15 permits parsed = 15 application numbers in the PDF (B26-*, M26-*, MH26-*).",
+      "Wrapped rows: B26-00584 type 'UTILITY STRUCTURE (GARAGE/BARN/SHOP/CARPORT)' and contractor 'COLE REMODELING & CONST LLC' reassembled across wrapped lines correctly.",
+      "Applicant vs primary contractor kept separate on every row (spec golden-fixture requirement); 'TBD - Prior to Construction' is not emitted as an organization.",
+      "Valuations: 5 rows carry printed valuations (29019.20, 5359.20, 9327.60, 8949.36, 4081.74 = 56737.10); 10 rows have blank valuation cells → null, never zero. NOTE: the report's printed grand total is $88,135.10 — the county's total includes valuations not printed per-row. Recorded as a source-side discrepancy; we emit only what the document states.",
+      "The grand total does not bleed into the last row (MH26-00087 valuation null).",
+      "Issue dates 06/29/2026–07/02/2026 match the report period 06/28/2026 - 07/04/2026."
+    ],
+    "result": "pass"
+  }
+}
