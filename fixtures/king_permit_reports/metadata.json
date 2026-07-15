@@ -1,0 +1,34 @@
+{
+  "sourceKey": "king_permit_reports",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.6 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://kingcounty.gov/en/dept/local-services/certificates-permits-licenses/permits/permits-inspections-codes-buildings-land-use/permit-forms-application-materials/reports",
+      "notes": "Report index: 136 Excel links across two monthly series (issued-permits, new-applications) back to 2021; pre-2025 months include legacy .xls. Naming varies (king-county- vs kingcounty-). Contains one mistyped future-dated link (king-county-new-applications-2028-08.xlsx) which the adapter skips."
+    },
+    {
+      "file": "kingcounty-issued-permits-2026-06.xlsx",
+      "url": "https://cdn.kingcounty.gov/-/media/king-county/depts/local-services/permits/reports/kingcounty-issued-permits-2026-06.xlsx",
+      "notes": "Issued Permits Report 6/1/2026-6/30/2026; header row 5; hyperlinked permit numbers (Accela) and parcels (GIS parcel viewer)."
+    },
+    {
+      "file": "king-county-new-applications-2026-06.xlsx",
+      "url": "https://cdn.kingcounty.gov/-/media/king-county/depts/local-services/permits/reports/kingcounty-new-applications-2026-06.xlsx",
+      "notes": "New Application Report 6/1/2026-6/30/2026; header row 4; different column set (APPL DT, DWELLING UNITS) parsed by header name."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed records against the spreadsheets opened cell-by-cell.",
+    "checks": [
+      "ADDC22-0668 (CONWELL SHOP): intake 2022-12-20, issued 2026-06-05, status 'Permit Issued', job value 342941.32, parcel 1220069074 (+GIS link), address ENUMCLAW, applicant + owner as separate organizations — all match the sheet.",
+      "FLOD26-0179 (YOUNG REVETMENT REPAIR): APPL DT 2026-06-29, status 'Application Complete', JOB VALUE 0 → valuationUsd null (never zero), stage permit_applied.",
+      "Repeated in-sheet header rows (print layout) are skipped; empty PERMIT NBR rows skipped.",
+      "Jurisdiction 'Unincorporated King County' on every record per spec §6.4 (ISSUING AGENCY retained in rawFields).",
+      "Stage mapping is deterministic and report-scoped: issued_permits → permit_issued; new_applications → permit_applied."
+    ],
+    "result": "pass"
+  }
+}

@@ -12,6 +12,7 @@
     "@otn/domain": "workspace:*",
     "cheerio": "^1.2.0",
     "domhandler": "^6.0.1",
+    "exceljs": "^4.4.0",
     "pdfjs-dist": "^6.1.200"
   },
   "devDependencies": {

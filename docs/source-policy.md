@@ -108,6 +108,17 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Backfill: not available — rolling current-notices list only.
 - Enabled: 2026-07-15.
 
+### king_permit_reports
+- Checklist run: 2026-07-15 (M1.6, agent session).
+- Landing page verified: 2026-07-15 — report index live; 136 Excel links across two monthly series (issued-permits, new-applications) back to 2021 on cdn.kingcounty.gov.
+- Format/cadence observed: monthly .xlsx (pre-2025 legacy .xls skipped by design); header-keyed parsing covers both layouts (issued: INTAKE COMPLETE DT/ISSUED DATE/DWEL UNITS; new: APPL DT/DWELLING UNITS). Hyperlinked permit numbers (Accela) and parcels (GIS viewer) preserved in rawFields. Live index contains one mistyped future-dated link (…2028-08.xlsx) — skipped with a warning, never fetched, never advances the checkpoint.
+- Robots/terms: kingcounty.gov robots reviewed 2026-07-15 (script/admin paths only).
+- Fixtures captured: `fixtures/king_permit_reports/` (landing.html + June 2026 issued + June 2026 new-applications, metadata.json with cell-level audit).
+- Manual sample audit: ADDC22-0668 and FLOD26-0179 cell-by-cell — pass. JOB VALUE 0 → null. Stage mapping deterministic per report kind (permit_issued / permit_applied).
+- Live runs: 2026-07-15 — 8 reports (4 months × 2 kinds) → 3,082 rows, 0 rejected, green; checkpoint rerun 4 unchanged; 90-day backfill 6 unchanged. DB: 1,446 issued permits (2026-03-02→06-30) + 474 applications.
+- Checkpoint: `monthHighWater` with 1-month overlap (reports get revised); first run covers 4 months.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

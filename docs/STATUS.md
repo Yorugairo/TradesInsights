@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1.6 (King monthly reports Excel/Word) — next up.
-**Last completed:** M1.5 (King public notices) — enabled, green, 170 notices, 2026-07-15. M1.4 (Pierce) blocked — see blockers.
+**Current task:** M1.7 (Seattle Socrata ×2 + canary) — next up.
+**Last completed:** M1.6 (King monthly reports) — enabled, green, 1,920 permits/applications, 2026-07-15.
 
 ## Milestone ledger
 
@@ -15,6 +15,7 @@
 | M1.3 Lewis issued-permits PDF | ✅ 2026-07-15 | golden 06-28 PDF (wrapped rows, applicant/contractor split); 16 PDFs → 385 permits, 90-day backfill + checkpoint rerun green |
 | M1.4 Pierce environmental determinations | ⛔ blocked 2026-07-15 | Cloudflare challenge (non-bypassable); ledger records blocker + M1.8 mitigation |
 | M1.5 King public notices | ✅ 2026-07-15 | 170 notices (155 with parcels), unincorporated-King jurisdiction, idempotent rerun green |
+| M1.6 King monthly reports (Excel) | ✅ 2026-07-15 | 8 reports → 1,446 issued + 474 applications, header-keyed dual-layout parser, checkpoint rerun + backfill green |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

@@ -215,7 +215,14 @@ sources:
     cadence: monthly
     county: King
     permitting_jurisdiction: Unincorporated King County
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: two monthly Excel series (issued-permits,
+      new-applications) on cdn.kingcounty.gov; header-keyed parsing covers
+      both layouts. Legacy pre-2025 .xls and one mistyped future-dated link
+      are skipped. Requires the HTTPS_PROXY egress path in this environment.
 
   - key: seattle_building_permits
     name: Seattle Building Permits (Socrata)
