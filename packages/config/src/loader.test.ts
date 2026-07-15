@@ -31,6 +31,7 @@ describe("sources.yaml", () => {
       "seattle_building_permits",
       "seattle_land_use_permits",
       "seattle_source_canary",
+      "wa_sepa",
     ]);
   });
 

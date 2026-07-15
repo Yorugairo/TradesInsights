@@ -136,6 +136,16 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Fixtures: `fixtures/seattle_source_canary/`. Live run: 1 record, all four links found, green.
 - Enabled: 2026-07-15.
 
+### wa_sepa
+- Checklist run: 2026-07-15 (M1.8, agent session).
+- **Access decision:** Ecology's separ search UI is robots-disallowed for query URLs (`Disallow: /separ/*?*`). The register is instead consumed from the official data.wa.gov Socrata dataset **mmcb-z6jf** ("State Environmental Policy Act (SEPA) Register" — catalog provenance `official`, attribution *Washington State Department of Ecology*, updated same-day; 190,220 rows since 2000). Per-record `separegisterlink` still cites the official separ record page — cited, never fetched.
+- Format/cadence observed: Socrata JSON, daily updates. Live columns inspected 2026-07-15 (separegisterid, sepanumber, proposalname/type/description, lead agency name/file number/contact, leadagencyissuedate, applicantname, documenttypecode, countyname, commentsduedate, separegisterlink).
+- Query discipline: bounded `$limit=1000`, deterministic `$order=leadagencyissuedate, separegisterid`, `countyname in('THURSTON','PIERCE','LEWIS','KING')`, issue-date window — never unbounded. Checkpoint `issueDateHighWater` + 14-day overlap (issue dates can be future-dated for comment periods).
+- externalId = separegisterid (row-level document record; one SEPA number can have several documents). sepanumber + leadagencyfilenumber retained for M2 official-ID resolution. normalizedStage stays "unknown" — SEPA document type → stage/event mapping is M2's job, and non-project actions must not be forced into project stages.
+- Fixtures: `fixtures/wa_sepa/` (register landing + 407-row 90-day pilot-county window, metadata.json with audit).
+- Live runs: 2026-07-15 — 564 records (120-day window), 0 rejected, green; overlap rerun 66 duplicates, green; 90-day backfill 407 duplicates, green. This also provides the documented Pierce mitigation while M1.4 is blocked.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

@@ -287,14 +287,22 @@ sources:
     authority: WA Department of Ecology
     priority: P0
     landing_url: https://ecology.wa.gov/regulations-permits/sepa/environmental-review/sepa-register
-    access_url: https://apps.ecology.wa.gov/separ/Main/SEPA/Search.aspx
-    format: search
-    access_class: dynamic_lookup
+    access_url: https://data.wa.gov/resource/mmcb-z6jf.json
+    format: socrata_json
+    access_class: socrata
     cadence: daily
     county: null
     permitting_jurisdiction: null
-    enabled: false
-    notes: Query the four launch counties; dedupe against local sources. If no stable lawful automated path verifies, document the blocker (spec §6.5).
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: consumed from the official data.wa.gov Socrata
+      dataset mmcb-z6jf (provenance "official", attribution WA Ecology) —
+      the separ search UI is robots-disallowed for query URLs (/separ/*?*)
+      and is only cited per record, never fetched. Query bounded to the four
+      pilot counties on leadagencyissuedate with a 14-day overlap. Dedupe
+      against local sources happens in M2 resolution.
 
   - key: wa_lni_verify
     name: Washington L&I contractor verification

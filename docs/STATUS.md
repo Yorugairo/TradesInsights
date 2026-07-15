@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1.8 (WA SEPA register) — next up.
-**Last completed:** M1.7 (Seattle Socrata ×2 + canary) — enabled, green, 2,235 records, 2026-07-15.
+**Current task:** M1.9 (Thurston active notices) — next up.
+**Last completed:** M1.8 (WA SEPA register via official data.wa.gov dataset) — enabled, green, 564 records, 2026-07-15.
 
 ## Milestone ledger
 
@@ -17,6 +17,7 @@
 | M1.5 King public notices | ✅ 2026-07-15 | 170 notices (155 with parcels), unincorporated-King jurisdiction, idempotent rerun green |
 | M1.6 King monthly reports (Excel) | ✅ 2026-07-15 | 8 reports → 1,446 issued + 474 applications, header-keyed dual-layout parser, checkpoint rerun + backfill green |
 | M1.7 Seattle Socrata ×2 + canary | ✅ 2026-07-15 | 2,117 building + 118 land-use (applieddate high-water; nightly-republish caveat), canary green, 90-day backfill green |
+| M1.8 WA SEPA register | ✅ 2026-07-15 | official data.wa.gov dataset mmcb-z6jf (separ UI robots-restricted); 564 pilot-county records, rerun + backfill green; Pierce mitigation live |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

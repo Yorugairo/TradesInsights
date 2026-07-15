@@ -13,6 +13,7 @@ import {
   SeattleSocrataAdapter,
 } from "./seattle-socrata.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
+import { WaSepaAdapter } from "./wa-sepa.js";
 
 export { FakeSourceAdapter };
 export { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
@@ -28,6 +29,7 @@ export {
   SEATTLE_LAND_USE_CONFIG,
 } from "./seattle-socrata.js";
 export { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
+export { WaSepaAdapter } from "./wa-sepa.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
@@ -41,6 +43,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   seattle_building_permits: () => new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG),
   seattle_land_use_permits: () => new SeattleSocrataAdapter(SEATTLE_LAND_USE_CONFIG),
   seattle_source_canary: () => new SeattleSourceCanaryAdapter(),
+  wa_sepa: () => new WaSepaAdapter(),
 };
 
 export function getAdapter(key: string): SourceAdapter {

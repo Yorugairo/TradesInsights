@@ -1,0 +1,29 @@
+{
+  "sourceKey": "wa_sepa",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.8 activation",
+  "artifacts": [
+    {
+      "file": "register-landing.html",
+      "url": "https://ecology.wa.gov/regulations-permits/sepa/environmental-review/sepa-register",
+      "notes": "Official register landing page (verification capture)."
+    },
+    {
+      "file": "window-90d.json",
+      "url": "https://data.wa.gov/resource/mmcb-z6jf.json?$where=countyname in('THURSTON','PIERCE','LEWIS','KING') AND leadagencyissuedate >= '2026-04-16T00:00:00' AND leadagencyissuedate <= '2026-07-15T23:59:59'&$order=leadagencyissuedate, separegisterid&$limit=1000",
+      "notes": "407 rows: KING 215, PIERCE 120, THURSTON 45, LEWIS 27. Document types led by DNS(173), ODNS/NOA(65), ODNS(46), MDNS(44)."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed output against the raw dataset payload; verified dataset provenance via the Socrata catalog API.",
+    "checks": [
+      "Access decision: Ecology's separ search UI is robots-disallowed for query URLs (/separ/*?*). The register is instead consumed from data.wa.gov dataset mmcb-z6jf — Socrata catalog reports provenance 'official', attribution 'Washington State Department of Ecology', updated same-day. Per-record separegisterlink still cites the official record page (cited, not fetched).",
+      "Register id 193986 / SEPA 202601471: proposal name, lead agency file number, issue date, DNS document type all match the payload; sourceUrl points at apps.ecology.wa.gov/separ Record.aspx.",
+      "County mapping THURSTON/PIERCE/LEWIS/KING → domain enum verified on all 407 rows; non-pilot counties are filtered in the query and skipped defensively in parse.",
+      "normalizedStage left 'unknown' — SEPA document type → stage/event derivation belongs to M2 resolution, and non-project actions (ordinances) must not be forced into project stages.",
+      "leadagencyissuedate can be future-dated (comment periods); checkpoint takes max seen, 14-day overlap re-covers."
+    ],
+    "result": "pass"
+  }
+}
