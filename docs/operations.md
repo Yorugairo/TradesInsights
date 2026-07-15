@@ -14,6 +14,15 @@ Deliberate scope (confirmed with the user): **skills + read-only/worker agents o
 - Do **not** run `./install.sh`, `npx ecc-install`, or `/plugin install ecc@ecc` — all three pull the global hooks we intentionally excluded.
 - Every installed skill and agent file was read/scanned before use (pure instructional markdown; no embedded shell/network/hook-script content).
 
+## Self-learning loop (project-scoped, custom)
+
+A minimal, self-contained learn/inject loop — **not** ECC's hooks (theirs are inert without the per-call capture we excluded, and their SessionStart injector isn't separable from a monolithic bootstrap that also writes to global `~/.claude`). Project-scoped, no per-tool-call capture, fail-open.
+
+- **Store:** `.claude/learned/LEARNED.md` — curated, human-editable, **tracked in git** (must survive the ephemeral container to persist across sessions). Transient per-session markers live in `.claude/learned/.state/` (gitignored).
+- **Inject** (`.claude/hooks/session-start-learn.js`, SessionStart): injects `LEARNED.md` as `additionalContext` at session start; no-op if it has no bullets.
+- **Extract** (`.claude/hooks/stop-extract-learn.js`, Stop): once per substantive session (≥8 user messages), asks the model to append one durable lesson to `LEARNED.md` — explicitly allowing a no-op. Loop-safe via `stop_hook_active` + a per-session marker; at most one extra round-trip per session.
+- Wired in `.claude/settings.json` (project, committed). Takes effect on the **next** session (hooks load at session start). Both fail open — any error allows the session to proceed. To disable: remove the two entries from `.claude/settings.json`.
+
 ## AI tooling: sigmap, sqz, and ast-grep
 
 All three are required (see CLAUDE.md "AI tooling (mandatory)").

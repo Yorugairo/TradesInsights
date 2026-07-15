@@ -123,6 +123,10 @@ These are general engineering references — the four project skills above and t
 
 Pertinent agents for delegation (via the Agent tool): `typescript-reviewer`, `database-reviewer`, `security-reviewer`, `code-reviewer`, `architect`, `planner`, `tdd-guide`, `e2e-runner`, `build-error-resolver`, `doc-updater`, `refactor-cleaner`.
 
+## Self-learning loop
+
+A project-scoped learn/inject loop (custom, not ECC's hooks) keeps durable lessons in `.claude/learned/LEARNED.md` (tracked in git). Accumulated lessons are injected at session start; at the end of a substantive session the Stop hook asks you (once) to append one durable, reusable lesson — **a no-op is expected and correct when nothing lasting was learned**. Record only general, project-useful lessons (a real gotcha, a fix pattern, a convention); never secrets or one-off details. Mechanism and how to disable: `docs/operations.md` "Self-learning loop".
+
 ## AI tooling (mandatory)
 
 Three tools are required parts of the workflow, not optional conveniences. All are installed (`sigmap` as a repo devDependency, `sqz` as a global binary + shell hook, `ast-grep` as a global binary + Claude Code skills) — do not skip them to save a step.

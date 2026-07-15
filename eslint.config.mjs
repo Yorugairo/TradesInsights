@@ -12,6 +12,8 @@ export default tseslint.config(
       "**/test-results/**",
       "packages/db/migrations/**",
       "**/next-env.d.ts",
+      // Standalone CommonJS Claude Code hook scripts — not part of the TS app.
+      ".claude/**",
     ],
   },
   js.configs.recommended,

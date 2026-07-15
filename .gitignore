@@ -19,3 +19,6 @@ AGENTS.md
 
 # sqz — local token-savings log
 .sqz/
+
+# self-learning loop — transient per-session state (LEARNED.md itself is tracked)
+.claude/learned/.state/
