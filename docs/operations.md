@@ -59,6 +59,10 @@ ast-grep run --pattern '<pat>' --lang <lang> <path>   # simple single-node struc
 ast-grep scan --rule <rule.yml> <path>   # complex structural search (relational/composite rules)
 ```
 
+## Outbound HTTP (adapters)
+
+`FetchPolicy` (packages/source-sdk) honors standard `HTTPS_PROXY`/`NO_PROXY` env vars: when set, requests route through undici's `EnvHttpProxyAgent` with undici's own fetch (Node's global fetch ignores proxy env vars, and mixing npm-undici dispatchers into Node's built-in fetch fails with `UND_ERR_INVALID_ARG`). TLS trust for a re-terminating proxy comes from `NODE_EXTRA_CA_CERTS`. No-op when the vars are unset. Unit tests blank these vars in `vitest.config.ts` so global-fetch stubs keep working. Some hosts (kingcounty.gov) are only reachable via the proxy path in the Claude Code remote environment.
+
 ## Local bring-up
 
 ```bash

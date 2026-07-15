@@ -30,8 +30,8 @@ pnpm workspace; every package exports TypeScript source directly (`main: src/ind
 | `packages/domain` | Stage/event/county taxonomy, `NormalizedSourceRecord` | M0: operational |
 | `packages/config` | Zod-validated loaders for `config/*.yaml` | M0: operational |
 | `packages/source-sdk` | Adapter contract, fetch policy, object store, run orchestrator, health | M0: operational |
-| `packages/adapters` | Source adapters + registry | M0: `fake_source` only |
-| `packages/documents` | PDF/Word/Excel/HTML extraction | stub — M1.3+ |
+| `packages/adapters` | Source adapters + registry | M1: 13 P0 adapters registered (Lacey ×2, Lewis ×3, King ×2, Seattle ×3, WA SEPA, Thurston, Tumwater ArcGIS) + `fake_source` |
+| `packages/documents` | PDF/Word/Excel/HTML extraction | M1: HTML (cheerio), PDF positioned text (pdfjs-dist, rotation-aware), XLSX (exceljs, normalized cells); Word deferred until a live source needs it (King reports turned out to be Excel-only) |
 | `packages/resolution` | Address/org/project matching | stub — M2 |
 | `packages/intelligence` | Routing, scoring, verification | stub — M3 |
 | `packages/delivery` | Digest/email rendering | stub — M3 |
