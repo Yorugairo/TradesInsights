@@ -18,13 +18,18 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r run typecheck",
     "source:run": "pnpm --filter @otn/worker source:run",
-    "source:backfill": "pnpm --filter @otn/worker source:backfill"
+    "source:backfill": "pnpm --filter @otn/worker source:backfill",
+    "map": "sigmap",
+    "map:ask": "sigmap ask",
+    "map:verify": "sigmap verify",
+    "map:evidence": "sigmap evidence"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/node": "^22.10.0",
     "dotenv": "^16.4.7",
     "eslint": "^9.18.0",
+    "sigmap": "^8.18.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.20.0",
     "vitest": "^3.0.0"

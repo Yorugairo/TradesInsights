@@ -1,6 +1,34 @@
 # Operations
 
-> Maintained as a deliverable: update this file whenever infra, jobs, environment variables, or runbooks change. Last updated: M0 (2026-07-15).
+> Maintained as a deliverable: update this file whenever infra, jobs, environment variables, or runbooks change. Last updated: sqz/sigmap tooling (2026-07-15).
+
+## AI tooling: sigmap and sqz
+
+Both are required (see CLAUDE.md "AI tooling (mandatory)").
+
+**sigmap** — code signature index for grounding AI answers in real files/symbols. Installed as a repo devDependency (`sigmap` in root `package.json`); config in `gen-context.config.json` and `.contextignore`.
+
+```bash
+pnpm map                              # regenerate .github/copilot-instructions.md, AGENTS.md, .github/gemini-context.md
+pnpm map:ask "<question>"             # ground a code question in the live index (use before ad-hoc grep/explore)
+pnpm map:verify <answer.md>           # flag fabricated files/symbols/imports in an AI-authored doc
+pnpm map:evidence "<task>"            # build a machine-readable context pack for a task
+```
+
+`gen-context.config.json`'s `outputs` list intentionally excludes `"claude"` — CLAUDE.md is hand-curated and must not be overwritten by a regenerate pass. Generated files (`.github/copilot-instructions.md`, `.github/gemini-context.md`, `AGENTS.md`, `.context/`, `.sigmap-cache.json`) are gitignored; regenerate on demand rather than trusting a committed snapshot.
+
+**sqz** — command-output compression to cut token cost. Installed from source via `cargo install sqz-cli sqz-mcp` (no prebuilt Linux binary was reachable in this environment; crates.io build took ~3 minutes). Initialized with `sqz init --global`, which:
+- adds a shell hook to `~/.bashrc`,
+- installs a Claude Code hook in `~/.claude/settings.json` (`PreToolUse` on Bash/PowerShell, `PreCompact`, `SessionStart` on compact) that transparently compresses tool output,
+- registers an MCP server (`sqz-mcp`) and Codex config at the user level.
+
+Global scope was a deliberate choice (confirmed with the user) — the hook applies to every session in this environment, not just this repo. Config-generation for AI tools not used on this project (Cursor, Windsurf, Cline, Gemini CLI, Kiro, OpenCode) was declined and those files removed after init; only the Claude Code and Codex/AGENTS.md integrations were kept.
+
+```bash
+sqz status       # current token budget/usage for the session
+sqz gain         # accumulated token savings
+sqz compress <text|-> # compress ad hoc content
+```
 
 ## Local bring-up
 

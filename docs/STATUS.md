@@ -36,3 +36,7 @@ None.
 
 - M3: `ANTHROPIC_API_KEY` (and/or OpenAI) + `LLM_MONTHLY_BUDGET_USD`.
 - M4/pilot ops: customer-authorized WEBS access, bid-inbox ingestion method, production SMTP.
+
+## Tooling
+
+- 2026-07-15: sigmap (code-signature grounding) and sqz (command-output compression) installed and made mandatory workflow tools — see CLAUDE.md "AI tooling (mandatory)" and `docs/operations.md` "AI tooling: sigmap and sqz". No product-code impact.

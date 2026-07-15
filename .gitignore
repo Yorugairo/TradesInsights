@@ -9,3 +9,13 @@ coverage/
 playwright-report/
 test-results/
 .DS_Store
+
+# sigmap — regenerate with `pnpm map`; these are derived, not source
+.context/
+.sigmap-cache.json
+AGENTS.md
+.github/copilot-instructions.md
+.github/gemini-context.md
+
+# sqz — local token-savings log
+.sqz/

@@ -20,6 +20,9 @@ importers:
       eslint:
         specifier: ^9.18.0
         version: 9.39.5
+      sigmap:
+        specifier: ^8.18.0
+        version: 8.18.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -2000,6 +2003,11 @@ packages:
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
+  sigmap@8.18.0:
+    resolution: {integrity: sha512-BU2WTVHEbysIhxRgUJQXNBCG+IXOM0tb3558/47z7FDaV9r7tPmcYfyj4kXJ/V2GRJqqwEME4JwTZ270szSTbg==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
 
@@ -3731,6 +3739,8 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   siginfo@2.0.0: {}
+
+  sigmap@8.18.0: {}
 
   sonic-boom@4.2.1:
     dependencies:
