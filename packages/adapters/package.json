@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@otn/documents": "workspace:*",
     "@otn/domain": "workspace:*",
     "@otn/source-sdk": "workspace:*",
     "zod": "^3.24.0"

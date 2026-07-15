@@ -76,9 +76,18 @@ export async function evaluateSourceHealth(
     reasons.push("unexpected zero usable records");
   }
 
-  if (state === "green" && previous && previous.parsedCount > 0) {
-    const usableLatest = latest ? latest.parsedCount + latest.duplicateCount + latest.unchangedCount : 0;
-    const usablePrev = previous.parsedCount + previous.duplicateCount + previous.unchangedCount;
+  // Volume-drop check. unchangedCount counts hash-identical *artifacts*, not
+  // records — an unchanged artifact means every record parsed from it before
+  // is still current, so a run with unchanged content is never a volume drop.
+  if (
+    state === "green" &&
+    previous &&
+    previous.parsedCount > 0 &&
+    latest &&
+    latest.unchangedCount === 0
+  ) {
+    const usableLatest = latest.parsedCount + latest.duplicateCount;
+    const usablePrev = previous.parsedCount + previous.duplicateCount;
     if (usablePrev > 0 && usableLatest < usablePrev * 0.5) {
       state = "amber";
       reasons.push("usable record volume dropped more than 50% vs previous run");

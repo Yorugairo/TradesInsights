@@ -32,19 +32,33 @@ sources:
     cadence: daily
     county: Thurston
     permitting_jurisdiction: City of Lacey
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: live WP REST collection, 79 projects, X-WP-TotalPages
+      pagination. robots.txt is empty (no restrictions). Public city data, no
+      terms restricting automated access found on cityoflacey.org.
 
   - key: lacey_project_pages
     name: Lacey Current Projects pages
     authority: City of Lacey
     priority: P0
     landing_url: https://cityoflacey.org/current-projects/
+    access_url: https://cityoflacey.org/wp-json/wp/v2/projects?per_page=100&orderby=modified&order=desc&_fields=id,date,modified,link,title
     format: html
     access_class: html
     cadence: daily
     county: Thurston
     permitting_jurisdiction: City of Lacey
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: project detail pages discovered from the documented
+      WP REST collection (modified high-water + 1-day overlap), fetched at
+      bounded concurrency. robots.txt empty. Pages carry description, address,
+      map lat/lng, prose parcels, contacts, and linked documents.
 
   - key: thurston_active_notices
     name: Thurston Active Notices

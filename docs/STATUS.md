@@ -2,13 +2,15 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1.1 (Lacey REST + project pages) — next up.
-**Last completed:** M0 (all of M0.1–M0.6) — exit gate green, 2026-07-15.
+**Current task:** M1.2 (Lewis current planning + canary) — next up.
+**Last completed:** M1.1 (Lacey REST + project pages) — both enabled, green, 2026-07-15.
 
 ## Milestone ledger
 
 | Task | Status | Evidence |
 |---|---|---|
+| M1.0 shared infra (checkpoints, HTTP helper, HTML extraction) | ✅ 2026-07-15 | runner checkpoint round-trip tests; `packages/documents` html.ts |
+| M1.1 Lacey REST + project pages | ✅ 2026-07-15 | 79+79 records live, 0 rejected, health green, idempotent rerun + 90-day backfill verified; ledger in source-policy.md |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
@@ -24,8 +26,9 @@ None.
 ## Assumptions in force
 
 - Solis score-component weights are **provisional** placeholders (spec §12.3 forbids finalizing before calibration).
-- All live sources disabled pending per-source activation checklists (M1).
-- `source:backfill` window is plumbed through `RunContext.backfill`; real checkpointed backfill logic lands with the first paginated adapter (M1.1).
+- Live sources are enabled one at a time as their activation checklists pass (ledger in `docs/source-policy.md`); Lacey REST + pages enabled 2026-07-15.
+- Health volume-drop rule skips runs with `unchangedCount > 0` (hash-identical content is not a drop); required-field null-rate drop (spec §14) still needs per-run field instrumentation — tracked for M1 exit.
+- Lacey REST exposes only the *current* project listing — "≥90-day backfill" for Lacey means the full current listing is ingested and the window filter is verified, not that delisted historical projects are recoverable.
 
 ## Pending calibration (spec §22 — gather from customers, unblocks M3 rule finalization)
 

@@ -1,0 +1,32 @@
+{
+  "sourceKey": "lacey_project_pages",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.1 activation",
+  "artifacts": [
+    {
+      "file": "project-25-0261-41st-ave.html",
+      "url": "https://cityoflacey.org/projects/25-0261-41st-ave/",
+      "notes": "Rich page: description with parcel + proponent in prose, map marker with lat/lng, 30+ linked documents."
+    },
+    {
+      "file": "project-26-0165-tec-equipment.html",
+      "url": "https://cityoflacey.org/projects/26-0165-tec-equipment-phase-ii-temp-use-permit/",
+      "notes": "Sparser page: no parcel or proponent stated — parser must emit nulls/empties, never guess."
+    },
+    {
+      "file": "malformed-no-title.html",
+      "url": "https://example.invalid/schema-change",
+      "notes": "Synthetic schema-change fixture: h2.text-center title block absent; parser must throw."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed fields against the rendered live pages.",
+    "checks": [
+      "#25-0261: title, 'Project Background' description text, address '41st Ave NE Lacey', assessor parcel 11935210200 (stated in prose), proponent 'Resource Management Solutions, LLC' ('is proposing'), map coordinates 47.0903725,-122.7700628, and the Forms & Files document list (first: SPR Decision 7.8.26 Exhibits 1-3 PDF) all match the live page.",
+      "#26-0165: no parcel, proponent, status, or valuation stated on the page — parser emits parcelIds [], organizations [], statusRaw null, valuationUsd null.",
+      "Stage: Lacey project pages state no explicit stage — normalizedStage is 'unknown' on every record; stage derivation belongs to M2 resolution, not the parser."
+    ],
+    "result": "pass"
+  }
+}

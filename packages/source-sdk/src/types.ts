@@ -11,6 +11,8 @@ export interface DiscoveredArtifact {
   parentUrl: string | null;
   expectedContentType: string | null;
   sourcePublishedAt: string | null;
+  /** Discovery-time context the parser needs (e.g. list-API modified time). */
+  meta?: Record<string, unknown>;
 }
 
 /** A fetched artifact: raw bytes plus retrieval metadata. Stored before parsing. */

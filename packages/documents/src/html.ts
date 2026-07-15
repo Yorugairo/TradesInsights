@@ -9,6 +9,15 @@ export function loadHtml(html: string | Buffer): CheerioAPI {
   return cheerio.load(html.toString("utf8"));
 }
 
+/** Decode HTML entities in a text fragment (WP REST titles etc.), collapse whitespace. */
+export function decodeHtmlEntities(fragment: string): string {
+  return cheerio
+    .load(`<x>${fragment}</x>`)("x")
+    .text()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Element text with whitespace collapsed to single spaces, trimmed. */
 export function collapsedText(el: Cheerio<AnyNode>): string {
   return el.text().replace(/\s+/g, " ").trim();

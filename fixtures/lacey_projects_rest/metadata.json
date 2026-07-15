@@ -1,0 +1,23 @@
+{
+  "sourceKey": "lacey_projects_rest",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.1 activation",
+  "artifacts": [
+    {
+      "file": "projects-page1.json",
+      "url": "https://cityoflacey.org/wp-json/wp/v2/projects?per_page=100&orderby=modified&order=desc&_fields=id,date,modified,link,title",
+      "notes": "Live capture. X-WP-Total: 79, X-WP-TotalPages: 1 at capture time."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed output against the live REST payload and the public Current Projects page.",
+    "checks": [
+      "Row count: parser emits 79 records = X-WP-Total header at capture (79).",
+      "Record 41713: title decodes to '#26-0165 – Tec Equipment Phase II, Temp-Use Permit' matching the H2 on the linked project page; modified 2026-07-14T14:46:21 matches the REST payload.",
+      "Record 36731 (#25-0261 – 41st Ave): link resolves to the live project page; created 2025-09-12, modified 2026-07-08 match the payload.",
+      "County/jurisdiction: all records Thurston / City of Lacey — the collection is city-published and city-scoped."
+    ],
+    "result": "pass"
+  }
+}

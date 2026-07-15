@@ -1,6 +1,6 @@
 # Source policy
 
-> Maintained as a deliverable: update this file every time a source goes through the activation checklist (M1 onward) — record verification dates, access decisions, and any blockers. Last updated: M0 (2026-07-15).
+> Maintained as a deliverable: update this file every time a source goes through the activation checklist (M1 onward) — record verification dates, access decisions, and any blockers. Last updated: M1.1 Lacey activation (2026-07-15).
 
 ## Policy (spec §5–§6, §20)
 
@@ -33,6 +33,28 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Fixture-backed only; never fetches the network. Exists to prove the M0 exit gate: discover → fetch → store/hash → parse → idempotent rerun → health.
 - Fixtures: `fixtures/fake_source/` (manifest.json, permits-2026-06.json, permits-2026-07.json — includes one deliberately malformed row that must be rejected).
 - Enabled: yes (test class).
+
+### lacey_projects_rest
+- Checklist run: 2026-07-15 (M1.1, agent session).
+- Landing page verified: 2026-07-15 — https://cityoflacey.org/current-projects/ live; REST collection live at the documented access URL (HTTP 200, X-WP-Total 79, X-WP-TotalPages 1).
+- Format/cadence observed: WP REST JSON (`id,date,modified,link,title`), orderable by `modified` desc, `per_page=100` + `page=N` pagination; city updates continuously — daily cadence.
+- Robots/terms: robots.txt is empty (no restrictions), reviewed 2026-07-15; no site terms restricting automated access found; public city data.
+- Fixtures captured: `fixtures/lacey_projects_rest/` (projects-page1.json — full 79-project live capture; metadata.json with audit).
+- Manual sample audit: 3 records + row count compared against live payload and pages — pass (see fixture metadata.json).
+- Shadow-mode runs: 2026-07-15 — discovered 1 page, parsed 79, rejected 0, health green; idempotent rerun unchanged=1, green.
+- Backfill: REST exposes the full *current* project listing (backfill window filters on `modified`; 15 projects modified in trailing 90 days — all ingested). Checkpoint: `modifiedHighWater`.
+- Enabled: 2026-07-15.
+
+### lacey_project_pages
+- Checklist run: 2026-07-15 (M1.1, agent session).
+- Landing page verified: 2026-07-15 — https://cityoflacey.org/current-projects/ live; project detail pages render server-side under /projects/<slug>/.
+- Format/cadence observed: WordPress theme HTML — `h2.text-center` title, "Project Background" description, `.marker` map lat/lng + address, `a.doc_block` document links, contact block; daily cadence.
+- Robots/terms: same host as lacey_projects_rest — robots.txt empty, reviewed 2026-07-15.
+- Discovery: from the documented REST collection (highest-preference), NOT landing-page scraping; `modified` high-water checkpoint with 1-day overlap skips unchanged pages.
+- Fixtures captured: `fixtures/lacey_project_pages/` (2 live pages — one rich, one sparse; 1 synthetic schema-change fixture; metadata.json with audit).
+- Manual sample audit: 2 pages field-by-field vs live — pass. No explicit stage on pages → `normalizedStage: "unknown"`, never guessed.
+- Shadow-mode runs: 2026-07-15 — discovered 79, fetched 79, parsed 79, rejected 0, green (70 with address+geometry, 17 with prose parcels, 5 with evidence-bounded proponent orgs); idempotent rerun discovered 1 (checkpoint skip), unchanged 1, green.
+- Enabled: 2026-07-15.
 
 ## Known migration canaries (watch during M1)
 

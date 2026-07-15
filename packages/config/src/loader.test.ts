@@ -7,10 +7,19 @@ describe("sources.yaml", () => {
     expect(file.sources.length).toBeGreaterThan(0);
   });
 
-  it("only fake_source is enabled before activation checklists pass", () => {
+  it("every enabled source has passed the activation checklist (review dates set)", () => {
+    const file = loadSourcesConfig();
+    for (const s of file.sources.filter((x) => x.enabled)) {
+      expect(s.terms_reviewed_at, `${s.key} missing terms_reviewed_at`).toBeTruthy();
+      expect(s.robots_reviewed_at, `${s.key} missing robots_reviewed_at`).toBeTruthy();
+    }
+  });
+
+  it("enabled sources are exactly the activated set", () => {
     const file = loadSourcesConfig();
     const enabled = file.sources.filter((s) => s.enabled).map((s) => s.key);
-    expect(enabled).toEqual(["fake_source"]);
+    // Grows only when an M1 activation checklist completes (docs/source-policy.md ledger).
+    expect(enabled).toEqual(["fake_source", "lacey_projects_rest", "lacey_project_pages"]);
   });
 
   it("getSourceConfig throws on unknown key", () => {
