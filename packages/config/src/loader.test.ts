@@ -26,6 +26,7 @@ describe("sources.yaml", () => {
       "lewis_issued_permits",
       "lewis_current_planning",
       "lewis_source_canary",
+      "king_public_notices",
     ]);
   });
 

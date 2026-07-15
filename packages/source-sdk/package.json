@@ -16,6 +16,7 @@
     "drizzle-orm": "^0.44.0",
     "p-limit": "^6.2.0",
     "pino": "^9.6.0",
+    "undici": "^8.7.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

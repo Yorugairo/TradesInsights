@@ -196,8 +196,14 @@ sources:
     cadence: daily
     county: King
     permitting_jurisdiction: Unincorporated King County
-    enabled: false
-    notes: King reports are unincorporated King unless explicitly stated.
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      King reports are unincorporated King unless explicitly stated. Verified
+      2026-07-15: rolling notices table (permit number → Accela link, project,
+      notice type + cdn.kingcounty.gov PDFs, parcels). robots.txt disallows
+      only admin/script paths.
 
   - key: king_permit_reports
     name: King County Permit Reports

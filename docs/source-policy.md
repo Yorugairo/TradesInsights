@@ -96,6 +96,18 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Re-verification path: run the checklist from a network that Cloudflare does not challenge (e.g. the production runner or the customer's own connection); the adapter + golden fixtures (PALS 1032039 Fredrickson Townhomes, 1049051 Trailside Apartments) can be completed once representative HTML is capturable. No fixtures were fabricated.
 - Enabled: no — remains disabled; blocker recorded 2026-07-15.
 
+### king_public_notices
+- Checklist run: 2026-07-15 (M1.5, agent session).
+- Landing page verified: 2026-07-15 — https://kingcounty.gov/en/dept/local-services/buildings-property/public-notices-permit-records-search/public-notices live; one rolling table (185 tr), permit number linked to Accela search, notice type + cdn.kingcounty.gov PDFs, parcel numbers.
+- Format/cadence observed: CMS HTML table, updated as notices post — daily.
+- Robots/terms: kingcounty.gov robots.txt disallows only script/admin paths — reviewed 2026-07-15.
+- Fixtures captured: `fixtures/king_public_notices/` (landing.html, metadata.json with audit).
+- Manual sample audit: DWEL25-0209, GRDE23-0083, multi-permit SHOR25-0022/0023, non-permit SEPA/STRC rows — pass. Jurisdiction fixed to Unincorporated King County per spec §6.4; no dates printed in the table → date fields null.
+- Live runs: 2026-07-15 — 170 records, 0 rejected, green; idempotent rerun 170 duplicates (page bytes changed, fingerprints identical), green.
+- Infrastructure note: kingcounty.gov is only reachable from this environment via the HTTPS_PROXY egress; FetchPolicy now honors standard proxy env vars (undici EnvHttpProxyAgent) — no-op when unset.
+- Backfill: not available — rolling current-notices list only.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

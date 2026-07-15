@@ -1,5 +1,6 @@
 import type { SourceAdapter } from "@otn/source-sdk";
 import { FakeSourceAdapter } from "./fake-source.js";
+import { KingPublicNoticesAdapter } from "./king-public-notices.js";
 import { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
 import { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 import { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
@@ -12,6 +13,7 @@ export { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
 export { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
 export { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 export { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
+export { KingPublicNoticesAdapter } from "./king-public-notices.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
@@ -20,6 +22,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   lewis_current_planning: () => new LewisCurrentPlanningAdapter(),
   lewis_issued_permits: () => new LewisIssuedPermitsAdapter(),
   lewis_source_canary: () => new LewisSourceCanaryAdapter(),
+  king_public_notices: () => new KingPublicNoticesAdapter(),
 };
 
 export function getAdapter(key: string): SourceAdapter {

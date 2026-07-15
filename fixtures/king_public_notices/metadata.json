@@ -1,0 +1,25 @@
+{
+  "sourceKey": "king_public_notices",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.5 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://kingcounty.gov/en/dept/local-services/buildings-property/public-notices-permit-records-search/public-notices",
+      "notes": "Rolling notices table: permit number (linked to Accela search), project name, notice type + linked notice PDFs (cdn.kingcounty.gov), parcel number(s). Includes non-permit rows (Non-Project SEPA, STRC meetings) and one hidden 'xxx' template row."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed records against the rendered live table.",
+    "checks": [
+      "DWEL25-0209 'West Single Family Residence': Notice of Application, parcels 1823069034 + 1823069080, Accela link, 3 linked documents — all match the live row.",
+      "GRDE23-0083 'Cumberland Mining & Asphalt Plant': Determination of Significance notice with 2 linked PDFs — matches.",
+      "Multi-permit row SHOR25-0022 / SHOR25-0023 handled: first number is the external id, both kept in rawFields.",
+      "Non-permit rows (Non-Project SEPA ordinances, STRC meeting notices) get stable nonpermit-* slug ids; template 'xxx' row skipped.",
+      "Jurisdiction: records are 'Unincorporated King County' per the spec §6.4 rule (King reports are unincorporated unless stated); county King.",
+      "No dates printed in the table → applicationDate/issueDate null (notice dates live inside the PDFs; extraction is later-milestone work)."
+    ],
+    "result": "pass"
+  }
+}

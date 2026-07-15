@@ -1,6 +1,19 @@
 import pLimit from "p-limit";
 import type { Logger } from "pino";
+import { EnvHttpProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 import { redactUrl } from "./logging.js";
+
+// Node's global fetch does not honor HTTPS_PROXY/NO_PROXY on its own (curl
+// does). In proxied environments (CI, Claude Code remote, corporate egress)
+// route through the standard env-var proxy; TLS trust comes from
+// NODE_EXTRA_CA_CERTS. undici's own fetch is used so the dispatcher and the
+// fetch implementation always version-match.
+let envProxyAgent: Dispatcher | undefined;
+function proxyDispatcher(): Dispatcher | undefined {
+  if (!process.env.HTTPS_PROXY && !process.env.https_proxy) return undefined;
+  envProxyAgent ??= new EnvHttpProxyAgent();
+  return envProxyAgent;
+}
 
 export type RetryClass = "retryable" | "fatal";
 
@@ -99,7 +112,10 @@ export class FetchPolicy {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs);
     try {
-      const res = await fetch(url, { headers, signal: controller.signal });
+      const dispatcher = proxyDispatcher();
+      const res = dispatcher
+        ? await undiciFetch(url, { headers, signal: controller.signal, dispatcher })
+        : await fetch(url, { headers, signal: controller.signal });
       const responseHeaders: Record<string, string> = {};
       res.headers.forEach((v, k) => {
         if (!["set-cookie", "authorization"].includes(k.toLowerCase())) {

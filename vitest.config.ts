@@ -27,6 +27,10 @@ export default defineConfig({
         process.env.OBJECT_STORAGE_SECRET_KEY ?? "otn-minio-secret",
       SOURCE_USER_AGENT:
         process.env.SOURCE_USER_AGENT ?? "OTNInsightsBot/0.1 (test)",
+      // Unit tests stub global fetch and must never route through an egress
+      // proxy — blank these so FetchPolicy's proxy branch stays off.
+      HTTPS_PROXY: "",
+      https_proxy: "",
     },
   },
 });
