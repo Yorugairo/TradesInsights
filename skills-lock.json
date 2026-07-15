@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "api-design": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/api-design/SKILL.md",
+      "computedHash": "d8b77fa51cee40f3747bfa1b8584d3027bb90ece07f70877b6ba004fa3482192"
+    },
     "ast-grep": {
       "source": "ast-grep/agent-skill",
       "sourceType": "github",
@@ -12,6 +18,102 @@
       "sourceType": "github",
       "skillPath": "ast-grep/skills/outline/SKILL.md",
       "computedHash": "688ee8a93a82da5788b733c06d899d7e0f0b5d5e5e8b40356054f7afa33ed69c"
+    },
+    "backend-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/backend-patterns/SKILL.md",
+      "computedHash": "82ef426e6923d9ede1213e2062a0f069071afa3013f61b96d57db93d2dc2410c"
+    },
+    "coding-standards": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/coding-standards/SKILL.md",
+      "computedHash": "1bc198a6205b2ba5e39cc835702557772bffbbcb3cb63bf509114c5df5ec4d45"
+    },
+    "content-hash-cache-pattern": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/content-hash-cache-pattern/SKILL.md",
+      "computedHash": "c452a3bc6cf9a77132d8ab9091223b7d748cb1e6740e2d325201b9428f2dc3d9"
+    },
+    "cost-aware-llm-pipeline": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/cost-aware-llm-pipeline/SKILL.md",
+      "computedHash": "2a85ed42514a4b4e81c0a43f243fba5e18bfc4f4d964cd9a6988a0860b264a65"
+    },
+    "database-migrations": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/database-migrations/SKILL.md",
+      "computedHash": "71053b570ad648117f19b3456836a819a6b85f868628899ee28246d8a956b06f"
+    },
+    "deployment-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/deployment-patterns/SKILL.md",
+      "computedHash": "fc7934c45176f56f0f2ddc1bd1aea50de7518772abac67bc66d301d99ef7405d"
+    },
+    "docker-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/docker-patterns/SKILL.md",
+      "computedHash": "b9b2764274bb4e4d1c398bf0214b528b547edc4847690b861b0b1ef5d8900934"
+    },
+    "e2e-testing": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/e2e-testing/SKILL.md",
+      "computedHash": "98eabe06f213ad8c7f8446988f9a9603aa6e251d20e157dbdb69a5785f11fcf4"
+    },
+    "eval-harness": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/eval-harness/SKILL.md",
+      "computedHash": "286b196db25f901d2dc202ed18d5a9fc88822ae7fc16f25cbff8a2b209bfda64"
+    },
+    "frontend-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-patterns/SKILL.md",
+      "computedHash": "f5cc422ee17ead99553f253a83ffadade138abc4e0834aa67fb887ee66d14d63"
+    },
+    "postgres-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/postgres-patterns/SKILL.md",
+      "computedHash": "ccf7be21533b50c43a821f8f6d415938d5e33a768029efd2c15ab14d670bf119"
+    },
+    "regex-vs-llm-structured-text": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/regex-vs-llm-structured-text/SKILL.md",
+      "computedHash": "2370f85e28b23262fed15ff0832c4289b58d45e50d78e09dd129264ced0252f4"
+    },
+    "search-first": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/search-first/SKILL.md",
+      "computedHash": "c82ffe228acdc70bb4d641d391f811d3d3ea5ba467b9ffe88e6dc4cd71c7b416"
+    },
+    "security-review": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/security-review/SKILL.md",
+      "computedHash": "6a0469eb33a482e79afe390b868714d653c20079e3f22719fb4526c5b720dc99"
+    },
+    "tdd-workflow": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/tdd-workflow/SKILL.md",
+      "computedHash": "9c410adb94feea57de24dabc6071b191bac9665085c959ac96431c8eb9650c71"
+    },
+    "verification-loop": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/verification-loop/SKILL.md",
+      "computedHash": "1e0ce1bad0554ae77e0d0d55dc2fa168bf1ef3a4635d12cccd959408030c109e"
     }
   }
 }

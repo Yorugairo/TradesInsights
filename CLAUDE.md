@@ -103,10 +103,25 @@ Encrypt secrets and private evidence; least-privilege roles and signed object UR
 
 ## Project skills
 
+These four are the domain authority for OTN Insights — prefer them over any general skill when the work is about adapters, resolution, evidence, or milestones.
+
 - `source-adapter` — build and activate a source adapter (contract, checklist, fixtures, test gates).
 - `project-resolution` — resolve records into the development/project/event graph.
 - `evidence-gate` — evidence rules, AI contract, and the opportunity publication gate.
 - `milestone-report` — the required milestone reporting format and exit-gate checklists.
+
+## ECC skills and agents (curated, no hooks)
+
+A curated subset of [ECC](https://github.com/affaan-m/ecc) (MIT) is installed for cross-cutting engineering patterns — **skills only, and read-only/worker agents; ECC's hooks and continuous-learning/governance capture were deliberately NOT installed** (they block edits and clash with the sqz hooks). Do **not** run ECC's `install.sh`/`/plugin install ecc@ecc` — that pulls the global hooks. Skills live in `.agents/skills/` (symlinked into `.claude/skills/`), agents in `.claude/agents/`; provenance is in `skills-lock.json`. Reinstall/extend with `npx skills add "affaan-m/ecc@<name>" --yes`.
+
+These are general engineering references — the four project skills above and the spec still govern OTN-specific decisions. Highest-value overlaps with this codebase:
+
+- `content-hash-cache-pattern` — SHA-256 content-addressed caching; mirrors the immutable artifact store (spec §5). 
+- `regex-vs-llm-structured-text` — "start with regex/deterministic parsing, add LLM only for low-confidence edge cases"; the spec §13 parsing rule, made concrete.
+- `cost-aware-llm-pipeline` — model routing, budget tracking, prompt caching; supports the §13 per-job/monthly budget contract (M3+).
+- `database-migrations` (Drizzle), `postgres-patterns`, `backend-patterns`, `api-design`, `docker-patterns`, `deployment-patterns`, `tdd-workflow`, `e2e-testing` (Playwright), `verification-loop`, `eval-harness` (M4 precision gates), `security-review`, `coding-standards`, `frontend-patterns`, `search-first`.
+
+Pertinent agents for delegation (via the Agent tool): `typescript-reviewer`, `database-reviewer`, `security-reviewer`, `code-reviewer`, `architect`, `planner`, `tdd-guide`, `e2e-runner`, `build-error-resolver`, `doc-updater`, `refactor-cleaner`.
 
 ## AI tooling (mandatory)
 

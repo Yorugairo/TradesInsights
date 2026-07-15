@@ -1,6 +1,18 @@
 # Operations
 
-> Maintained as a deliverable: update this file whenever infra, jobs, environment variables, or runbooks change. Last updated: ast-grep tooling (2026-07-15).
+> Maintained as a deliverable: update this file whenever infra, jobs, environment variables, or runbooks change. Last updated: ECC curated skills/agents (2026-07-15).
+
+## ECC skills and agents (curated, no hooks)
+
+A curated subset of [ECC](https://github.com/affaan-m/ecc) ("Everything Claude Code", MIT) is installed for cross-cutting engineering patterns. See CLAUDE.md "ECC skills and agents" for the catalog and when to use them.
+
+Deliberate scope (confirmed with the user): **skills + read-only/worker agents only. ECC's hooks were NOT installed** — its `hooks.json` ships a global `~/.claude` PreToolUse/PreCompact/SessionStart set including `gateguard-fact-force` (blocks the first Edit/Write per file), `config-protection` (blocks linter/formatter config edits), and `continuous-learning`/`governance-capture` (record tool-use and secret/policy events to disk). Those would block the OTN build and clash with the sqz hooks, so we skipped the plugin/`install.sh` path entirely.
+
+- Skills: canonical files in `.agents/skills/<name>/`, symlinked into `.claude/skills/<name>` (17 skills). Agents: `.claude/agents/<name>.md` (11 agents).
+- Provenance/hashes: `skills-lock.json` (root). Restore with `npx skills experimental_install`.
+- Add or update a skill: `npx skills add "affaan-m/ecc@<name>" --yes`. `npx skills add "affaan-m/ecc@__list__"` prints the full 279-skill catalog.
+- Do **not** run `./install.sh`, `npx ecc-install`, or `/plugin install ecc@ecc` — all three pull the global hooks we intentionally excluded.
+- Every installed skill and agent file was read/scanned before use (pure instructional markdown; no embedded shell/network/hook-script content).
 
 ## AI tooling: sigmap, sqz, and ast-grep
 

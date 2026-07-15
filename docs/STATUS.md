@@ -40,3 +40,4 @@ None.
 ## Tooling
 
 - 2026-07-15: sigmap (code-signature grounding), sqz (command-output compression), and ast-grep (structural code search + outline) installed and made mandatory workflow tools — see CLAUDE.md "AI tooling (mandatory)" and `docs/operations.md` "AI tooling: sigmap, sqz, and ast-grep". No product-code impact.
+- 2026-07-15: ECC (Everything Claude Code) curated install — 17 skills + 11 agents, **no hooks / no capture** (confirmed with user; ECC's global blocking/capture hooks deliberately excluded, plugin/`install.sh` path avoided). See CLAUDE.md "ECC skills and agents" and `docs/operations.md`. Project-scoped (`.agents/skills/`, `.claude/agents/`, `skills-lock.json`); every file read/scanned before use. No product-code impact; lint clean.
