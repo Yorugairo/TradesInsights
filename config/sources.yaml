@@ -70,8 +70,14 @@ sources:
     cadence: daily
     county: Thurston
     permitting_jurisdiction: Thurston County
-    enabled: false
-    notes: Migration canary — new permitting system announced for September 2026.
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Migration canary — new permitting system announced for September 2026;
+      a missing/zero-notice accordion section fails the run loudly. Verified
+      2026-07-15: Drupal accordion under 'Projects with Active Notices'.
+      robots.txt disallows only core/admin paths.
 
   - key: tumwater_development_arcgis
     name: Tumwater Development Projects FeatureServer

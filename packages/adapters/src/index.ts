@@ -13,6 +13,7 @@ import {
   SeattleSocrataAdapter,
 } from "./seattle-socrata.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
+import { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
 import { WaSepaAdapter } from "./wa-sepa.js";
 
 export { FakeSourceAdapter };
@@ -30,6 +31,7 @@ export {
 } from "./seattle-socrata.js";
 export { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 export { WaSepaAdapter } from "./wa-sepa.js";
+export { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
@@ -44,6 +46,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   seattle_land_use_permits: () => new SeattleSocrataAdapter(SEATTLE_LAND_USE_CONFIG),
   seattle_source_canary: () => new SeattleSourceCanaryAdapter(),
   wa_sepa: () => new WaSepaAdapter(),
+  thurston_active_notices: () => new ThurstonActiveNoticesAdapter(),
 };
 
 export function getAdapter(key: string): SourceAdapter {

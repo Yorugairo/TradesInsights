@@ -146,6 +146,17 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Live runs: 2026-07-15 — 564 records (120-day window), 0 rejected, green; overlap rerun 66 duplicates, green; 90-day backfill 407 duplicates, green. This also provides the documented Pierce mitigation while M1.4 is blocked.
 - Enabled: 2026-07-15.
 
+### thurston_active_notices
+- Checklist run: 2026-07-15 (M1.9, agent session).
+- Landing page verified: 2026-07-15 — Drupal 11 "Comment on a Project" page live; "Projects with Active Notices" accordion with 60+ items (project number + name/issuance-or-hearing date in the button; description, "Location:" line, comment/materials links in the body).
+- Migration canary honored: the announced-for-Sept-2026 permitting system is watched implicitly — a missing section or zero notices throws → failed run → health alarm. The what's-new page stays on the M2+ watchlist.
+- Robots/terms: Drupal-standard robots (core/admin paths only) — reviewed 2026-07-15.
+- Fixtures: `fixtures/thurston_active_notices/` (landing.html, metadata.json with audit).
+- Manual sample audit: 2019101651 Moore Garage RUE + 2025100139 Hernandez RUE field-by-field — pass. Two heading styles handled (named + numeric "Date of Issuance", incl. 2-digit years). Multiple notices per project merge into one record (all notices in rawFields). Stage stays "unknown" (heterogeneous notice types), statusRaw "active notice".
+- Live runs: 2026-07-15 — 63 project records, 0 rejected, green; idempotent rerun unchanged, green.
+- Backfill: not available — rolling active-notices page only.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

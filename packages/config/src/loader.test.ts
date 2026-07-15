@@ -23,6 +23,7 @@ describe("sources.yaml", () => {
       "fake_source",
       "lacey_projects_rest",
       "lacey_project_pages",
+      "thurston_active_notices",
       "lewis_issued_permits",
       "lewis_current_planning",
       "lewis_source_canary",

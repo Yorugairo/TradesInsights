@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1.9 (Thurston active notices) — next up.
-**Last completed:** M1.8 (WA SEPA register via official data.wa.gov dataset) — enabled, green, 564 records, 2026-07-15.
+**Current task:** M1.10 (Tumwater ArcGIS + review/SEPA pages) — next up.
+**Last completed:** M1.9 (Thurston active notices) — enabled, green, 63 projects, 2026-07-15.
 
 ## Milestone ledger
 
@@ -18,6 +18,7 @@
 | M1.6 King monthly reports (Excel) | ✅ 2026-07-15 | 8 reports → 1,446 issued + 474 applications, header-keyed dual-layout parser, checkpoint rerun + backfill green |
 | M1.7 Seattle Socrata ×2 + canary | ✅ 2026-07-15 | 2,117 building + 118 land-use (applieddate high-water; nightly-republish caveat), canary green, 90-day backfill green |
 | M1.8 WA SEPA register | ✅ 2026-07-15 | official data.wa.gov dataset mmcb-z6jf (separ UI robots-restricted); 564 pilot-county records, rerun + backfill green; Pierce mitigation live |
+| M1.9 Thurston active notices | ✅ 2026-07-15 | 63 project notices (accordion parser, migration-canary throw), idempotent rerun green |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
@@ -36,6 +37,7 @@
 - Live sources are enabled one at a time as their activation checklists pass (ledger in `docs/source-policy.md`); Lacey REST + pages enabled 2026-07-15.
 - Health volume-drop rule skips runs with `unchangedCount > 0` (hash-identical content is not a drop); required-field null-rate drop (spec §14) still needs per-run field instrumentation — tracked for M1 exit.
 - Lacey REST exposes only the *current* project listing — "≥90-day backfill" for Lacey means the full current listing is ingested and the window filter is verified, not that delisted historical projects are recoverable.
+- The runner's unchanged-artifact skip keys on content hash only: a parser upgrade does not reprocess already-stored artifacts until their content changes. Stored-artifact reprocessing (replay by parserVersion) is a future capability — not required by M1.
 
 ## Pending calibration (spec §22 — gather from customers, unblocks M3 rule finalization)
 

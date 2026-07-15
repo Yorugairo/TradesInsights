@@ -1,0 +1,23 @@
+{
+  "sourceKey": "thurston_active_notices",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.9 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/comment-project",
+      "notes": "Drupal 11 page; 'Projects with Active Notices' accordion — project number/name/hearing date in the button, description + 'Location:' + comment/materials links in the body."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed records against the rendered live accordions.",
+    "checks": [
+      "2019101651 (Moore Garage RUE): hearing 2026-07-28, location '7434 Puget Beach RD NE, Olympia, WA 98516', RUE description, comment + materials links — all match.",
+      "2025100139 (Hernandez RUE): multiple notices (hearing + DNS) merge into one project record with every notice retained in rawFields.notices.",
+      "Stage: notices are heterogeneous (hearings, DNS determinations, closed comment periods) → normalizedStage 'unknown', statusRaw 'active notice'; event derivation is M2's job.",
+      "Migration canary honored: a missing 'Projects with Active Notices' section or zero accordion items throws → failed run → health alarm (new permitting system announced for Sept 2026)."
+    ],
+    "result": "pass"
+  }
+}
