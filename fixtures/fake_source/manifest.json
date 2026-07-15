@@ -1,0 +1,14 @@
+{
+  "artifacts": [
+    {
+      "file": "permits-2026-06.json",
+      "url": "https://example.invalid/fake-source/permits-2026-06.json",
+      "publishedAt": "2026-06-30T00:00:00Z"
+    },
+    {
+      "file": "permits-2026-07.json",
+      "url": "https://example.invalid/fake-source/permits-2026-07.json",
+      "publishedAt": "2026-07-10T00:00:00Z"
+    }
+  ]
+}

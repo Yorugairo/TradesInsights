@@ -71,6 +71,20 @@ Work the numbered backlog in spec §21 strictly in order; **do not begin a later
 
 At each milestone report only: outcome; files/migrations changed; tests run and exact results; sources verified and sample counts; remaining blockers/assumptions; next task ID. (Use the `milestone-report` skill.)
 
+## Durable docs are deliverables
+
+The docs below are part of the work, not an afterthought. **Update the pertinent doc in the same pass as the change it describes — a task is not complete until its docs are current.**
+
+| Doc | Update whenever… |
+|---|---|
+| `docs/STATUS.md` | **every session and every completed task ID** — current task, ledger, blockers, assumptions, pending calibration |
+| `docs/architecture.md` | workspace structure, data flow, package responsibilities, or a decision of record changes |
+| `docs/data-dictionary.md` | any schema migration (same commit as the migration) |
+| `docs/source-policy.md` | a source goes through the activation checklist — append to the activation ledger with verification dates; record blockers |
+| `docs/operations.md` | infra, env vars, jobs, commands, or runbooks change |
+
+`docs/BUILD_SPEC.md` is read-only reference — never edit it to match the code; if reality diverges from spec, record the divergence in STATUS.md and architecture.md.
+
 ## Key domain reference
 
 - **Stages** (spec §9): concept → preapplication → entitlement → approved → construction_documents → permit_applied → permit_issued → bidding_confirmed → construction → near_final → complete; plus withdrawn, unknown.

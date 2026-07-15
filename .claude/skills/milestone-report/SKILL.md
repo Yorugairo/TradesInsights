@@ -7,6 +7,8 @@ description: Produce the required milestone/task report and check exit gates bef
 
 The backlog is `docs/BUILD_SPEC.md` §21 and must be worked strictly in numbered order. **Do not begin a later stage until the prior exit gate passes.** Tests and acceptance checks are completed with each task, never deferred.
 
+Before reporting, confirm the durable docs are current (CLAUDE.md "Durable docs are deliverables"): `docs/STATUS.md` always; architecture / data-dictionary / source-policy / operations when the pass touched them. A task is not complete until its docs are.
+
 ## Report format (exactly these six items, nothing else)
 
 1. **Outcome.**

@@ -1,0 +1,32 @@
+{
+  "name": "otn-insights",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:migrate": "pnpm --filter @otn/db migrate",
+    "db:seed": "pnpm --filter @otn/db seed",
+    "dev": "pnpm --filter @otn/web dev",
+    "worker": "pnpm --filter @otn/worker start",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @otn/web test:e2e",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r run typecheck",
+    "source:run": "pnpm --filter @otn/worker source:run",
+    "source:backfill": "pnpm --filter @otn/worker source:backfill"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.7",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^3.0.0"
+  }
+}

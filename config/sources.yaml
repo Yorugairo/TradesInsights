@@ -1,0 +1,242 @@
+# Source manifest — spec §6. Every live source ships disabled and is enabled
+# only after the §5 activation checklist passes (verify landing page, record
+# format/cadence, review robots+terms, fixtures, parser, manual audit, shadow
+# mode). terms_reviewed_at and robots_reviewed_at are required to enable.
+sources:
+  # ── Harness (M0) ──────────────────────────────────────────────────────────
+  - key: fake_source
+    name: Fake fixture source (M0 harness)
+    authority: test
+    priority: test
+    landing_url: https://example.invalid/fake-source
+    access_url: null
+    format: json
+    access_class: fixture
+    cadence: on_demand
+    county: Thurston
+    permitting_jurisdiction: Test Jurisdiction
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: Fixture-backed adapter proving the M0 exit gate. Never fetches network.
+
+  # ── Thurston County (P0) ──────────────────────────────────────────────────
+  - key: lacey_projects_rest
+    name: Lacey Projects REST
+    authority: City of Lacey
+    priority: P0
+    landing_url: https://cityoflacey.org/current-projects/
+    access_url: https://cityoflacey.org/wp-json/wp/v2/projects?per_page=100&orderby=modified&order=desc&_fields=id,date,modified,link,title
+    format: json
+    access_class: api_json
+    cadence: daily
+    county: Thurston
+    permitting_jurisdiction: City of Lacey
+    enabled: false
+
+  - key: lacey_project_pages
+    name: Lacey Current Projects pages
+    authority: City of Lacey
+    priority: P0
+    landing_url: https://cityoflacey.org/current-projects/
+    format: html
+    access_class: html
+    cadence: daily
+    county: Thurston
+    permitting_jurisdiction: City of Lacey
+    enabled: false
+
+  - key: thurston_active_notices
+    name: Thurston Active Notices
+    authority: Thurston County CPED
+    priority: P0
+    landing_url: https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/comment-project
+    format: html
+    access_class: html
+    cadence: daily
+    county: Thurston
+    permitting_jurisdiction: Thurston County
+    enabled: false
+    notes: Migration canary — new permitting system announced for September 2026.
+
+  - key: tumwater_development_arcgis
+    name: Tumwater Development Projects FeatureServer
+    authority: City of Tumwater
+    priority: P0
+    landing_url: https://www.ci.tumwater.wa.us/departments/community-development-department
+    access_url: https://services6.arcgis.com/ovypB8ighP2NPfFE/arcgis/rest/services/DevelopmentProjectsTumwater/FeatureServer/1/query?where=1%3D1&outFields=*&returnGeometry=false&f=json
+    format: arcgis_json
+    access_class: arcgis
+    cadence: daily
+    county: Thurston
+    permitting_jurisdiction: City of Tumwater
+    enabled: false
+
+  - key: tumwater_development_review
+    name: Tumwater Development Review
+    authority: City of Tumwater
+    priority: P0
+    landing_url: https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/development-review
+    format: html_docs
+    access_class: html
+    cadence: weekly
+    county: Thurston
+    permitting_jurisdiction: City of Tumwater
+    enabled: false
+
+  - key: tumwater_sepa
+    name: Tumwater NOA / SEPA determinations
+    authority: City of Tumwater
+    priority: P0
+    landing_url: https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/notice-of-applications-sepa-determinations
+    format: html_docs
+    access_class: html
+    cadence: weekly
+    county: Thurston
+    permitting_jurisdiction: City of Tumwater
+    enabled: false
+
+  # ── Lewis County (P0) ─────────────────────────────────────────────────────
+  - key: lewis_issued_permits
+    name: Lewis Building Permit Data
+    authority: Lewis County Community Development
+    priority: P0
+    landing_url: https://lewiscountywa.gov/departments/community-development/building-permit-data/
+    format: pdf_index
+    access_class: pdf_index
+    cadence: weekly
+    county: Lewis
+    permitting_jurisdiction: Lewis County
+    enabled: false
+    notes: Golden fixture — 2026-06-28 issued permits PDF; test wrapped rows and applicant vs primary-contractor.
+
+  - key: lewis_current_planning
+    name: Lewis Current Planning Applications
+    authority: Lewis County Community Development
+    priority: P0
+    landing_url: https://lewiscountywa.gov/departments/community-development/current-planning-applications/
+    format: html_docs
+    access_class: html
+    cadence: daily
+    county: Lewis
+    permitting_jurisdiction: Lewis County
+    enabled: false
+
+  - key: lewis_source_canary
+    name: Lewis Community Development landing canary
+    authority: Lewis County Community Development
+    priority: P0
+    landing_url: https://lewiscountywa.gov/departments/community-development/
+    format: html
+    access_class: landing_canary
+    cadence: daily
+    county: Lewis
+    permitting_jurisdiction: Lewis County
+    enabled: false
+
+  # ── Pierce County (P0) ────────────────────────────────────────────────────
+  - key: pierce_environmental_determinations
+    name: Pierce Environmental Determinations
+    authority: Pierce County PPW
+    priority: P0
+    landing_url: https://www.piercecountywa.gov/905/Environmental-Decisions
+    format: html
+    access_class: html
+    cadence: daily
+    county: Pierce
+    permitting_jurisdiction: Pierce County
+    enabled: false
+    notes: Annual HTML page, daily diff. Golden fixtures — PALS 1032039, PALS 1049051.
+
+  # ── King County & Seattle (P0) ────────────────────────────────────────────
+  - key: king_public_notices
+    name: King County Public Notices
+    authority: King County Local Services
+    priority: P0
+    landing_url: https://kingcounty.gov/en/dept/local-services/buildings-property/public-notices-permit-records-search/public-notices
+    format: html_docs
+    access_class: html
+    cadence: daily
+    county: King
+    permitting_jurisdiction: Unincorporated King County
+    enabled: false
+    notes: King reports are unincorporated King unless explicitly stated.
+
+  - key: king_permit_reports
+    name: King County Permit Reports
+    authority: King County Local Services
+    priority: P0
+    landing_url: https://kingcounty.gov/en/dept/local-services/certificates-permits-licenses/permits/permits-inspections-codes-buildings-land-use/permit-forms-application-materials/reports
+    format: excel_word
+    access_class: report_index
+    cadence: monthly
+    county: King
+    permitting_jurisdiction: Unincorporated King County
+    enabled: false
+
+  - key: seattle_building_permits
+    name: Seattle Building Permits (Socrata)
+    authority: City of Seattle
+    priority: P0
+    landing_url: https://data.seattle.gov/Built-Environment/Building-Permits/76t5-zqzr
+    access_url: https://data.seattle.gov/resource/76t5-zqzr.json
+    format: socrata_json
+    access_class: socrata
+    cadence: daily
+    county: King
+    permitting_jurisdiction: City of Seattle
+    enabled: false
+    notes: Inspect live columns before coding. Bounded $limit, deterministic $order, high-water mark with overlap.
+
+  - key: seattle_land_use_permits
+    name: Seattle Land Use Permits (Socrata)
+    authority: City of Seattle
+    priority: P0
+    landing_url: https://data.seattle.gov/Built-Environment/Land-Use-Permits/ht3q-kdvx
+    access_url: https://data.seattle.gov/resource/ht3q-kdvx.json
+    format: socrata_json
+    access_class: socrata
+    cadence: daily
+    county: King
+    permitting_jurisdiction: City of Seattle
+    enabled: false
+
+  - key: seattle_source_canary
+    name: Seattle Research-a-Project landing canary
+    authority: City of Seattle SDCI
+    priority: P0
+    landing_url: https://www.seattle.gov/construction-and-inspections/resources/research-a-project
+    format: html
+    access_class: landing_canary
+    cadence: daily
+    county: King
+    permitting_jurisdiction: City of Seattle
+    enabled: false
+
+  # ── Statewide (P0) ────────────────────────────────────────────────────────
+  - key: wa_sepa
+    name: Washington Ecology SEPA Register
+    authority: WA Department of Ecology
+    priority: P0
+    landing_url: https://ecology.wa.gov/regulations-permits/sepa/environmental-review/sepa-register
+    access_url: https://apps.ecology.wa.gov/separ/Main/SEPA/Search.aspx
+    format: search
+    access_class: dynamic_lookup
+    cadence: daily
+    county: null
+    permitting_jurisdiction: null
+    enabled: false
+    notes: Query the four launch counties; dedupe against local sources. If no stable lawful automated path verifies, document the blocker (spec §6.5).
+
+  - key: wa_lni_verify
+    name: Washington L&I contractor verification
+    authority: WA Department of Labor & Industries
+    priority: P0
+    landing_url: https://secure.lni.wa.gov/verify/
+    format: search
+    access_class: dynamic_lookup
+    cadence: on_demand
+    county: null
+    permitting_jurisdiction: null
+    enabled: false
+    notes: Lookup/verification only — never show cached registration status without verified_at.

@@ -1,0 +1,392 @@
+import { sql } from "drizzle-orm";
+import {
+  boolean,
+  customType,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+// PostGIS geometry (SRID 4326). Values pass as GeoJSON text via
+// ST_GeomFromGeoJSON in repositories; M0 only needs the column to exist.
+const geometry = customType<{ data: string }>({
+  dataType() {
+    return "geometry(Geometry,4326)";
+  },
+});
+
+const now = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+
+// ── Sources & ingestion ──────────────────────────────────────────────────────
+
+export const sources = pgTable(
+  "sources",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    authority: text("authority").notNull(),
+    priority: text("priority").notNull(),
+    landingUrl: text("landing_url").notNull(),
+    accessUrl: text("access_url"),
+    format: text("format").notNull(),
+    accessClass: text("access_class").notNull(),
+    cadence: text("cadence").notNull(),
+    county: text("county"),
+    permittingJurisdiction: text("permitting_jurisdiction"),
+    enabled: boolean("enabled").notNull().default(false),
+    termsReviewedAt: timestamp("terms_reviewed_at", { withTimezone: true }),
+    robotsReviewedAt: timestamp("robots_reviewed_at", { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [uniqueIndex("sources_key_ux").on(t.key)],
+);
+
+export const sourceRuns = pgTable(
+  "source_runs",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceId: uuid("source_id").notNull().references(() => sources.id),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    status: text("status").notNull().default("running"),
+    checkpointJson: jsonb("checkpoint_json"),
+    discoveredCount: integer("discovered_count").notNull().default(0),
+    fetchedCount: integer("fetched_count").notNull().default(0),
+    unchangedCount: integer("unchanged_count").notNull().default(0),
+    parsedCount: integer("parsed_count").notNull().default(0),
+    rejectedCount: integer("rejected_count").notNull().default(0),
+    duplicateCount: integer("duplicate_count").notNull().default(0),
+    errorCount: integer("error_count").notNull().default(0),
+    schemaFingerprint: text("schema_fingerprint"),
+    metricsJson: jsonb("metrics_json"),
+  },
+  (t) => [
+    index("source_runs_source_ix").on(t.sourceId, t.startedAt),
+    index("source_runs_status_ix").on(t.status),
+  ],
+);
+
+export const rawArtifacts = pgTable(
+  "raw_artifacts",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceId: uuid("source_id").notNull().references(() => sources.id),
+    sourceRunId: uuid("source_run_id").notNull().references(() => sourceRuns.id),
+    parentArtifactId: uuid("parent_artifact_id"),
+    canonicalUrl: text("canonical_url").notNull(),
+    retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull(),
+    sourcePublishedAt: timestamp("source_published_at", { withTimezone: true }),
+    contentType: text("content_type").notNull(),
+    httpStatus: integer("http_status"),
+    storageKey: text("storage_key").notNull(),
+    sha256: text("sha256").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    headersJson: jsonb("headers_json"),
+    parserVersion: text("parser_version"),
+  },
+  (t) => [
+    // Immutability: one row per distinct content per URL per source.
+    uniqueIndex("raw_artifacts_identity_ux").on(t.sourceId, t.canonicalUrl, t.sha256),
+    index("raw_artifacts_sha_ix").on(t.sha256),
+    index("raw_artifacts_run_ix").on(t.sourceRunId),
+    index("raw_artifacts_retrieved_ix").on(t.retrievedAt),
+  ],
+);
+
+export const sourceRecords = pgTable(
+  "source_records",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceId: uuid("source_id").notNull().references(() => sources.id),
+    rawArtifactId: uuid("raw_artifact_id").notNull().references(() => rawArtifacts.id),
+    externalId: text("external_id").notNull(),
+    recordType: text("record_type").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    status: text("status").notNull().default("active"),
+    rawFieldsJson: jsonb("raw_fields_json").notNull(),
+    normalizedJson: jsonb("normalized_json").notNull(),
+    normalizedFingerprint: text("normalized_fingerprint").notNull(),
+  },
+  (t) => [
+    uniqueIndex("source_records_external_ux").on(t.sourceId, t.externalId),
+    index("source_records_last_seen_ix").on(t.lastSeenAt),
+    index("source_records_type_ix").on(t.recordType),
+  ],
+);
+
+export const evidenceItems = pgTable(
+  "evidence_items",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    rawArtifactId: uuid("raw_artifact_id").notNull().references(() => rawArtifacts.id),
+    factPath: text("fact_path").notNull(),
+    evidenceText: text("evidence_text").notNull(),
+    pageOrSection: text("page_or_section"),
+    sourceUrl: text("source_url").notNull(),
+    authorityGrade: text("authority_grade").notNull(),
+    parserVersion: text("parser_version").notNull(),
+  },
+  (t) => [index("evidence_items_record_ix").on(t.sourceRecordId, t.factPath)],
+);
+
+// ── Project graph ────────────────────────────────────────────────────────────
+
+export const developments = pgTable(
+  "developments",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    canonicalName: text("canonical_name").notNull(),
+    developmentType: text("development_type"),
+    county: text("county").notNull(),
+    geometry: geometry("geometry"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("developments_county_ix").on(t.county)],
+);
+
+export const projects = pgTable(
+  "projects",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    developmentId: uuid("development_id").references(() => developments.id),
+    parentProjectId: uuid("parent_project_id"),
+    canonicalName: text("canonical_name").notNull(),
+    projectType: text("project_type"),
+    permittingJurisdiction: text("permitting_jurisdiction").notNull(),
+    county: text("county").notNull(),
+    city: text("city"),
+    addressNormalized: text("address_normalized"),
+    parcelIds: jsonb("parcel_ids").notNull().default(sql`'[]'::jsonb`),
+    geometry: geometry("geometry"),
+    currentStage: text("current_stage").notNull().default("unknown"),
+    stageConfidence: doublePrecision("stage_confidence"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index("projects_county_ix").on(t.county),
+    index("projects_stage_ix").on(t.currentStage),
+    index("projects_jurisdiction_ix").on(t.permittingJurisdiction),
+  ],
+);
+
+export const projectExternalIds = pgTable(
+  "project_external_ids",
+  {
+    projectId: uuid("project_id").notNull().references(() => projects.id),
+    authority: text("authority").notNull(),
+    idType: text("id_type").notNull(),
+    externalId: text("external_id").notNull(),
+  },
+  (t) => [
+    uniqueIndex("project_external_ids_ux").on(t.authority, t.idType, t.externalId),
+    index("project_external_ids_project_ix").on(t.projectId),
+  ],
+);
+
+export const projectEvents = pgTable(
+  "project_events",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    projectId: uuid("project_id").notNull().references(() => projects.id),
+    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    eventType: text("event_type").notNull(),
+    eventDate: timestamp("event_date", { withTimezone: true }),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    priorStage: text("prior_stage"),
+    resultingStage: text("resulting_stage"),
+    materialChange: boolean("material_change").notNull().default(false),
+    confirmed: boolean("confirmed").notNull(),
+    confidence: doublePrecision("confidence"),
+  },
+  (t) => [
+    index("project_events_project_ix").on(t.projectId, t.eventDate),
+    index("project_events_type_ix").on(t.eventType),
+  ],
+);
+
+// ── Organizations ────────────────────────────────────────────────────────────
+
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    canonicalName: text("canonical_name").notNull(),
+    legalName: text("legal_name"),
+    ubi: text("ubi"),
+    contractorRegistration: text("contractor_registration"),
+    organizationType: text("organization_type"),
+    website: text("website"),
+    status: text("status"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("organizations_name_ix").on(t.canonicalName),
+    index("organizations_ubi_ix").on(t.ubi),
+  ],
+);
+
+export const organizationAliases = pgTable(
+  "organization_aliases",
+  {
+    organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+    alias: text("alias").notNull(),
+    sourceId: uuid("source_id").references(() => sources.id),
+  },
+  (t) => [index("organization_aliases_alias_ix").on(t.alias)],
+);
+
+export const projectRoles = pgTable(
+  "project_roles",
+  {
+    projectId: uuid("project_id").notNull().references(() => projects.id),
+    organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+    role: text("role").notNull(),
+    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    confirmed: boolean("confirmed").notNull(),
+    confidence: doublePrecision("confidence"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("project_roles_project_ix").on(t.projectId)],
+);
+
+// ── Accounts & opportunities ─────────────────────────────────────────────────
+
+export const accountProfiles = pgTable(
+  "account_profiles",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    capabilitiesJson: jsonb("capabilities_json").notNull(),
+    territoryJson: jsonb("territory_json").notNull(),
+    exclusionsJson: jsonb("exclusions_json").notNull().default(sql`'{}'::jsonb`),
+    capacityJson: jsonb("capacity_json").notNull().default(sql`'{}'::jsonb`),
+    deliveryConfigJson: jsonb("delivery_config_json").notNull(),
+  },
+  (t) => [uniqueIndex("account_profiles_key_ux").on(t.key)],
+);
+
+export const accountRules = pgTable(
+  "account_rules",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    ruleType: text("rule_type").notNull(),
+    ruleJson: jsonb("rule_json").notNull(),
+    version: integer("version").notNull(),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("account_rules_version_ux").on(t.accountProfileId, t.ruleType, t.version),
+  ],
+);
+
+export const opportunities = pgTable(
+  "opportunities",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    projectId: uuid("project_id").notNull().references(() => projects.id),
+    currentScore: doublePrecision("current_score"),
+    scoreVersion: text("score_version"),
+    route: text("route"),
+    state: text("state").notNull().default("new"),
+    firstQualifiedAt: timestamp("first_qualified_at", { withTimezone: true }),
+    lastMaterialChangeAt: timestamp("last_material_change_at", { withTimezone: true }),
+    rationaleJson: jsonb("rationale_json"),
+  },
+  (t) => [
+    uniqueIndex("opportunities_account_project_ux").on(t.accountProfileId, t.projectId),
+    index("opportunities_state_ix").on(t.accountProfileId, t.state),
+  ],
+);
+
+export const opportunityEvidence = pgTable(
+  "opportunity_evidence",
+  {
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    evidenceItemId: uuid("evidence_item_id").notNull().references(() => evidenceItems.id),
+    claimType: text("claim_type").notNull(),
+    confirmed: boolean("confirmed").notNull(),
+    confidence: doublePrecision("confidence"),
+  },
+  (t) => [index("opportunity_evidence_opp_ix").on(t.opportunityId)],
+);
+
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    userId: text("user_id").notNull(),
+    relevant: boolean("relevant"),
+    newToCustomer: boolean("new_to_customer"),
+    timely: boolean("timely"),
+    worthPursuing: boolean("worth_pursuing"),
+    dispositionReason: text("disposition_reason"),
+    notes: text("notes"),
+    createdAt: now(),
+  },
+  (t) => [index("feedback_opportunity_ix").on(t.opportunityId)],
+);
+
+// ── Delivery & coverage ──────────────────────────────────────────────────────
+
+export const deliveries = pgTable(
+  "deliveries",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    deliveryType: text("delivery_type").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    renderedContent: text("rendered_content"),
+    status: text("status").notNull().default("draft"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    metadataJson: jsonb("metadata_json"),
+  },
+  (t) => [uniqueIndex("deliveries_idempotency_ux").on(t.idempotencyKey)],
+);
+
+export const deliveryItems = pgTable(
+  "delivery_items",
+  {
+    deliveryId: uuid("delivery_id").notNull().references(() => deliveries.id),
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    projectEventId: uuid("project_event_id").references(() => projectEvents.id),
+    position: integer("position").notNull(),
+  },
+  (t) => [index("delivery_items_delivery_ix").on(t.deliveryId)],
+);
+
+export const coverageEntries = pgTable(
+  "coverage_entries",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceId: uuid("source_id").notNull().references(() => sources.id),
+    county: text("county"),
+    permittingJurisdiction: text("permitting_jurisdiction"),
+    recordTypes: jsonb("record_types").notNull().default(sql`'[]'::jsonb`),
+    status: text("status").notNull().default("planned"),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    freshnessState: text("freshness_state").notNull().default("amber"),
+    notes: text("notes"),
+  },
+  (t) => [uniqueIndex("coverage_entries_source_ux").on(t.sourceId)],
+);

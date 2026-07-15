@@ -1,0 +1,52 @@
+# Data dictionary
+
+> Maintained as a deliverable: update this file with every schema migration. Authoritative DDL: `packages/db/migrations/`; Drizzle definitions: `packages/db/src/schema.ts`. Last updated: migration `0000_init` (M0, 2026-07-15).
+
+Conventions: UUID primary keys (`gen_random_uuid()`); official identifiers are namespaced *external* IDs, never primary keys; timestamps are `timestamptz`; unknown values are `NULL`, never guessed or zero (spec §8).
+
+## Ingestion
+
+**sources** — one row per configured source (seeded from `config/sources.yaml`).
+Key columns: `key` (unique), `authority`, `priority` (P0/P1/lookup/context/test), `landing_url`, `access_url`, `format`, `access_class`, `cadence`, `county`, `permitting_jurisdiction`, `enabled`, `terms_reviewed_at`, `robots_reviewed_at`.
+
+**source_runs** — one row per run. `status`: running | succeeded | completed_with_errors | failed. Metrics counters (`discovered/fetched/unchanged/parsed/rejected/duplicate/error_count`), `checkpoint_json` (pagination/high-water mark), `schema_fingerprint` (hash of raw field names — drift detection), `metrics_json` (includes dead-letter entries: idempotency key, URL, stage, error).
+
+**raw_artifacts** — immutable fetched evidence. Never updated or deleted. `storage_key` = `raw/<source_key>/<sha256>` in object storage; `sha256`, `byte_size`, `content_type`, `http_status`, `headers_json`, `retrieved_at`, `source_published_at`, `parser_version`. Unique on (source_id, canonical_url, sha256). `parent_artifact_id` links documents discovered from a landing artifact.
+
+**source_records** — current normalized view of one external record. Unique on (source_id, external_id). `raw_fields_json` (parser input), `normalized_json` (the `NormalizedSourceRecord`), `normalized_fingerprint` (change detection), `first_seen_at`/`last_seen_at`/`source_updated_at`, `status`. Updates rewrite `normalized_json` but the prior raw artifact remains forever.
+
+**evidence_items** — one row per fact-bearing span. `fact_path` (which normalized field), `evidence_text`, `page_or_section`, `source_url`, `authority_grade` (A–D, spec §11), `parser_version`. Append-only.
+
+## Project graph (populated in M2)
+
+**developments** — top-level real-estate efforts. `canonical_name`, `development_type`, `county`, `geometry`.
+
+**projects** — phase/project level. `development_id`, `parent_project_id` (hierarchy), `permitting_jurisdiction` (always retained; King = unincorporated unless stated), `county`, `address_normalized`, `parcel_ids` (jsonb array), `geometry`, `current_stage` (spec §9 enum), `stage_confidence`.
+
+**project_external_ids** — namespaced official IDs: (authority, id_type, external_id) unique.
+
+**project_events** — timeline. `event_type` (spec §9), `event_date` vs `observed_at`, `prior_stage`/`resulting_stage`, `material_change`, `confirmed`, `confidence`. Facts vs inferences separated by `confirmed` + `confidence` (governing rule).
+
+**organizations / organization_aliases** — canonical entities; `ubi`, `contractor_registration`, `status`, `verified_at` (never show registration status without it). Aliases map raw source spellings.
+
+**project_roles** — org ↔ project with `role`, `source_record_id` provenance, `confirmed`, `confidence`.
+
+## Accounts & intelligence (populated in M3)
+
+**account_profiles** — seeded from `config/account-profiles.yaml`. `key` unique; `capabilities_json`, `territory_json`, `exclusions_json` (e.g. Solis closed UBI 604701295), `capacity_json`, `delivery_config_json` (band thresholds).
+
+**account_rules** — versioned rules: (account, rule_type, version) unique; `rule_json`, `effective_at`. Rules are never edited in place — a change is a new version.
+
+**opportunities** — one per (account, project) unique. `current_score`, `score_version`, `route`, `state`, `rationale_json` (component scores — final score is a deterministic calculation).
+
+**opportunity_evidence** — links every delivered claim to an `evidence_items` row with `claim_type`, `confirmed`, `confidence`. Publication gate requires 100% coverage.
+
+**feedback** — relevant / new_to_customer / timely / worth_pursuing booleans + `disposition_reason`, per user.
+
+## Delivery & coverage
+
+**deliveries** — idempotent by unique `idempotency_key`; stores `rendered_content`, period, `status`, `metadata_json` (rules/models used).
+
+**delivery_items** — ordered opportunity/event inclusions per delivery.
+
+**coverage_entries** — one per source: `freshness_state` (green/amber/red, updated by the health evaluator), `last_success_at`, `record_types`, `status`.

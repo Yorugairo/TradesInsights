@@ -1,0 +1,32 @@
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    include: [
+      "packages/**/src/**/*.test.ts",
+      "packages/**/test/**/*.test.ts",
+      "apps/worker/src/**/*.test.ts",
+      "apps/worker/test/**/*.test.ts",
+    ],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**"],
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
+    passWithNoTests: false,
+    env: {
+      // Defaults match docker-compose; real env vars override.
+      DATABASE_URL:
+        process.env.DATABASE_URL ?? "postgres://otn:otn@localhost:5432/otn",
+      OBJECT_STORAGE_ENDPOINT:
+        process.env.OBJECT_STORAGE_ENDPOINT ?? "http://localhost:9000",
+      OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",
+      OBJECT_STORAGE_BUCKET:
+        process.env.OBJECT_STORAGE_BUCKET ?? "otn-artifacts",
+      OBJECT_STORAGE_ACCESS_KEY:
+        process.env.OBJECT_STORAGE_ACCESS_KEY ?? "otn-minio",
+      OBJECT_STORAGE_SECRET_KEY:
+        process.env.OBJECT_STORAGE_SECRET_KEY ?? "otn-minio-secret",
+      SOURCE_USER_AGENT:
+        process.env.SOURCE_USER_AGENT ?? "OTNInsightsBot/0.1 (test)",
+    },
+  },
+});

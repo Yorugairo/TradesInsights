@@ -1,0 +1,157 @@
+# Account profiles — spec §12. Every rule is versioned and editable here.
+# Rules marked provisional await pilot calibration answers (spec §22).
+accounts:
+  - key: lacey_glass_at_home
+    name: Lacey Glass at Home
+    active: true
+    organization:
+      legal_name: Lacey Glass at Home
+      ubi: null
+      contractor_registration: null
+      excluded_ubis: []
+      website: https://laceyglassathome.com/
+    capabilities:
+      - windows
+      - doors
+      - showers
+      - mirrors_glass
+      - skylights
+      - sunrooms
+    territory:
+      counties_included: [Thurston, Lewis, Mason, Pierce, Grays Harbor]
+      counties_excluded: [King]
+      notes: King excluded until Lacey confirms coverage (spec §22).
+    score_components:
+      - { component: product_fit, weight: 25 }
+      - { component: repeatable_units_or_builder_value, weight: 25 }
+      - { component: timing, weight: 20 }
+      - { component: territory, weight: 10 }
+      - { component: builder_developer_identified, weight: 10 }
+      - { component: evidence_quality, weight: 10 }
+    delivery:
+      priority_review_min: 80
+      weekly_digest_min: 65
+    rules:
+      - rule_type: routing
+        version: 1
+        effective_at: "2026-07-15"
+        provisional: true
+        rule:
+          best_signals:
+            - subdivisions
+            - approved_phases
+            - clustered_sfr_townhome_permits
+            - low_rise_multifamily_joint_review
+            - late_stage_shower_mirror
+          joint_review_with: lacey_glass_commercial
+    calibration_pending:
+      - production vs custom/local builder appetite
+      - minimum useful lots/units and capacity
+      - Home vs Commercial routing for apartments/townhomes
+      - existing/target/lost/incumbent-blocked builders
+      - product-specific lead times
+      - whether At Home serves King County
+
+  - key: lacey_glass_commercial
+    name: Lacey Glass Commercial
+    active: true
+    organization:
+      legal_name: Lacey Glass
+      ubi: null
+      contractor_registration: null
+      excluded_ubis: []
+      website: https://laceyglass.com/
+    capabilities:
+      - storefront
+      - curtain_wall
+      - entrances
+      - skylights
+      - canopies
+      - specialty_glass
+      - translucent_systems
+      - design_specification_support
+    territory:
+      counties_included: [Thurston, Pierce, Lewis, King]
+      counties_excluded: []
+      notes: I-5 commercial glazing. Seattle/King routes here, not At Home.
+    score_components:
+      - { component: division_08_system_fit, weight: 25 }
+      - { component: scale_value, weight: 20 }
+      - { component: timing, weight: 20 }
+      - { component: geography, weight: 10 }
+      - { component: gc_developer_architect_known, weight: 15 }
+      - { component: evidence_quality, weight: 10 }
+    delivery:
+      priority_review_min: 80
+      weekly_digest_min: 65
+    rules:
+      - rule_type: routing
+        version: 1
+        effective_at: "2026-07-15"
+        provisional: true
+        rule:
+          route:
+            - multifamily
+            - mixed_use
+            - retail
+            - institutional
+            - public_work
+            - plausible_division_08_packages
+          joint_review_when:
+            - low_rise_multifamily_with_unclear_system_height_package_or_route
+    calibration_pending: []
+
+  - key: solis_interiors
+    name: Solis Interiors
+    active: true
+    organization:
+      legal_name: Solis Interiors LLC
+      ubi: "604837560"
+      contractor_registration: SOLISIL785NT
+      excluded_ubis: ["604701295"]
+      website: null
+    capabilities:
+      - drywall
+      - painting
+    territory:
+      counties_included: [Thurston, Pierce, Lewis, King]
+      counties_excluded: []
+      notes: Territory provisional until Solis confirms geography (spec §22).
+    # Spec §12.3 — do NOT finalize weights until Solis confirms scope, territory,
+    # capacity, minimum job size, preferred GCs, and public-work eligibility.
+    # These equal-weight placeholders are provisional.
+    score_components:
+      - { component: trade_fit, weight: 30 }
+      - { component: package_size_fit, weight: 25 }
+      - { component: timing, weight: 20 }
+      - { component: geography, weight: 15 }
+      - { component: evidence_quality, weight: 10 }
+    delivery:
+      priority_review_min: 80
+      weekly_digest_min: 65
+    rules:
+      - rule_type: routing
+        version: 1
+        effective_at: "2026-07-15"
+        provisional: true
+        rule:
+          favor:
+            - tenant_improvements
+            - moderate_drywall_painting_packages
+            - phased_work
+          gc_relationship_radar_when: package_size_likely_exceeds_capacity
+      - rule_type: exclusion
+        version: 1
+        effective_at: "2026-07-15"
+        provisional: false
+        rule:
+          excluded_ubis: ["604701295"]
+          reason: older closed legal entity — never attribute records to it
+    calibration_pending:
+      - current entity/license and renewal (researched registration ran through 2026-08-11)
+      - detailed drywall and painting scope
+      - crew/subcontract capacity
+      - minimum/ideal job size and geography
+      - preferred/blocked GCs
+      - public-work/bonding/union/prevailing-wage constraints
+      - current invitation platforms and authorized ingestion method

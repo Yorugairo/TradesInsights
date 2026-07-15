@@ -1,0 +1,25 @@
+{
+  "jurisdiction": "Test Jurisdiction",
+  "county": "Thurston",
+  "permits": [
+    {
+      "permit_number": "FAKE-2026-0003",
+      "title": "Multifamily building A",
+      "description": "24-unit apartment building, phase 1",
+      "address": "900 Test Loop NE",
+      "parcel": "99990003300",
+      "permit_type": "multifamily",
+      "status": "Issued",
+      "stage": "permit_issued",
+      "application_date": "2026-02-10",
+      "issue_date": "2026-07-01",
+      "valuation": 6200000,
+      "applicant": "Test Development Partners"
+    },
+    {
+      "permit_number": "FAKE-2026-0004",
+      "malformed": true,
+      "note": "deliberately missing required fields — must be rejected, never guessed"
+    }
+  ]
+}
