@@ -1,10 +1,10 @@
 # Operations
 
-> Maintained as a deliverable: update this file whenever infra, jobs, environment variables, or runbooks change. Last updated: sqz/sigmap tooling (2026-07-15).
+> Maintained as a deliverable: update this file whenever infra, jobs, environment variables, or runbooks change. Last updated: ast-grep tooling (2026-07-15).
 
-## AI tooling: sigmap and sqz
+## AI tooling: sigmap, sqz, and ast-grep
 
-Both are required (see CLAUDE.md "AI tooling (mandatory)").
+All three are required (see CLAUDE.md "AI tooling (mandatory)").
 
 **sigmap** — code signature index for grounding AI answers in real files/symbols. Installed as a repo devDependency (`sigmap` in root `package.json`); config in `gen-context.config.json` and `.contextignore`.
 
@@ -28,6 +28,14 @@ Global scope was a deliberate choice (confirmed with the user) — the hook appl
 sqz status       # current token budget/usage for the session
 sqz gain         # accumulated token savings
 sqz compress <text|-> # compress ad hoc content
+```
+
+**ast-grep** — structural (AST-pattern) code search and cheap file/directory outlining. CLI installed globally via `npm install -g @ast-grep/cli` (`ast-grep`/`sg`, v0.44.1). Skills installed via `npx skills add ast-grep/agent-skill` into `.agents/skills/{ast-grep,ast-grep-outline}` (canonical content, committed) with symlinks at `.claude/skills/{ast-grep,ast-grep-outline}` for Claude Code; `skills-lock.json` at repo root records provenance/hashes for reproducible reinstall (`npx skills experimental_install`). Both skill files were read in full before being mandated — pure instructional prompt content, no embedded commands, MIT-licensed upstream.
+
+```bash
+ast-grep outline <file|dir>              # cheap structural map (imports/exports/members + line numbers) before a full read
+ast-grep run --pattern '<pat>' --lang <lang> <path>   # simple single-node structural search
+ast-grep scan --rule <rule.yml> <path>   # complex structural search (relational/composite rules)
 ```
 
 ## Local bring-up

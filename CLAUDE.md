@@ -110,10 +110,12 @@ Encrypt secrets and private evidence; least-privilege roles and signed object UR
 
 ## AI tooling (mandatory)
 
-Two tools are required parts of the workflow, not optional conveniences. Both are installed (`sigmap` as a repo devDependency, `sqz` as a global binary + shell hook) — do not skip them to save a step.
+Three tools are required parts of the workflow, not optional conveniences. All are installed (`sigmap` as a repo devDependency, `sqz` as a global binary + shell hook, `ast-grep` as a global binary + Claude Code skills) — do not skip them to save a step.
 
 - **`sigmap ask "<question>"` (or `sigmap --query "<topic>"`) before ad-hoc grep/explore.** When investigating unfamiliar code — "where is X handled," "what calls Y" — run sigmap first to ground the search in the live signature index instead of guessing paths. Falling back to manual grep/Explore is fine once sigmap has narrowed the target, not as the first move.
 - **`sigmap verify <answer.md>` (alias `verify-ai-output`) on any AI-authored deliverable that cites specific files, functions, or symbols** — milestone reports, PR descriptions, docs updates. It flags fabricated references before they ship; this is a direct extension of the governing rule's "never fabricate" invariant, applied to what *we* write about the code, not just what adapters extract from sources. Run it before finalizing, not after something is caught by review.
+- **`ast-grep outline <file|dir>` before reading a file or directory in full**, once sigmap (or search) has narrowed a candidate. It gives a cheap structural map — imports/exports/members with line numbers — so only the relevant range gets read in full, not the whole file.
+- **`ast-grep run`/`ast-grep scan` for structural code search** — finding every call site of a changed signature, every implementation of a pattern (e.g. "every adapter's `parse` method," "every place a stage transition is written without `confirmed`"), or codebase-wide consistency checks. Use it in place of text-based grep whenever the search is about code *structure* rather than a literal string; the `ast-grep` skill has the rule syntax.
 - **Pipe large or repeated command output through `sqz`** — test runs, migration/build logs, file dumps, anything likely to exceed a couple hundred lines or that gets re-read across a session. Use it to cut token cost; don't skip it because a command "seems small enough" — the hook is there to make this automatic, don't work around it.
 - Regenerate sigmap's derived context files (`pnpm map`) after a pass that materially changes package structure or exported symbols — they are gitignored (see `.gitignore`), not source, and go stale silently otherwise.
 

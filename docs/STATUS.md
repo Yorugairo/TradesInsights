@@ -39,4 +39,4 @@ None.
 
 ## Tooling
 
-- 2026-07-15: sigmap (code-signature grounding) and sqz (command-output compression) installed and made mandatory workflow tools — see CLAUDE.md "AI tooling (mandatory)" and `docs/operations.md` "AI tooling: sigmap and sqz". No product-code impact.
+- 2026-07-15: sigmap (code-signature grounding), sqz (command-output compression), and ast-grep (structural code search + outline) installed and made mandatory workflow tools — see CLAUDE.md "AI tooling (mandatory)" and `docs/operations.md` "AI tooling: sigmap, sqz, and ast-grep". No product-code impact.
