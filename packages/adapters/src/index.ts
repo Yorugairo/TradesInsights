@@ -14,6 +14,7 @@ import {
 } from "./seattle-socrata.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 import { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
+import { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 import { WaSepaAdapter } from "./wa-sepa.js";
 
 export { FakeSourceAdapter };
@@ -32,6 +33,7 @@ export {
 export { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 export { WaSepaAdapter } from "./wa-sepa.js";
 export { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
+export { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
@@ -47,6 +49,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   seattle_source_canary: () => new SeattleSourceCanaryAdapter(),
   wa_sepa: () => new WaSepaAdapter(),
   thurston_active_notices: () => new ThurstonActiveNoticesAdapter(),
+  tumwater_development_arcgis: () => new TumwaterDevelopmentArcgisAdapter(),
 };
 
 export function getAdapter(key: string): SourceAdapter {

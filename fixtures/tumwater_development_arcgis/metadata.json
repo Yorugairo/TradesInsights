@@ -1,0 +1,28 @@
+{
+  "sourceKey": "tumwater_development_arcgis",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.10 activation",
+  "artifacts": [
+    {
+      "file": "layer-metadata.json",
+      "url": "https://services6.arcgis.com/ovypB8ighP2NPfFE/arcgis/rest/services/DevelopmentProjectsTumwater/FeatureServer/1?f=json",
+      "notes": "Layer 'PrivateDevelopment': fields incl. PermitNumber, ProjectType (domain), ProjectDescription, DevelopmentStatus (official coded-value domain: UC/RP/PA/LUAA/FSPR/PAC), PIN1/PIN2/Parcel2, created/last_edited dates; maxRecordCount 2000."
+    },
+    {
+      "file": "all-features.json",
+      "url": "https://services6.arcgis.com/ovypB8ighP2NPfFE/arcgis/rest/services/DevelopmentProjectsTumwater/FeatureServer/1/query?where=1=1&outFields=*&returnGeometry=true&f=json",
+      "notes": "Full snapshot, 44 features. Web Mercator point geometry. Parcel2 arrives as number on 3 rows (mixed typing tolerated)."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed records against the raw feature payload and the layer's official domains.",
+    "checks": [
+      "OBJECTID 1 (Walmart Pick-up Expansion, TUM-25-0648/TUM-25-0706): status RP → 'Reviewing Permits' → permit_applied; parcel 12703210900; Web Mercator point converts to ~(-122.9, 47.0) WGS84 — all match.",
+      "Stage map is the layer's own DevelopmentStatus domain: UC→construction, RP→permit_applied, PA (Permits Approved)→permit_issued, LUAA (Land Use Application Approved)→approved, FSPR/PAC→preapplication. Data contains both codes and full names; both map. Unknown codes log a warning and stay 'unknown'.",
+      "externalId = GlobalID (stable layer id); PermitNumber can be a comma-list and lives in rawFields.permitNumbers.",
+      "44/44 features parse; 0 rejected."
+    ],
+    "result": "pass"
+  }
+}

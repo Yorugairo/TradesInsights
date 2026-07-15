@@ -90,7 +90,14 @@ sources:
     cadence: daily
     county: Thurston
     permitting_jurisdiction: City of Tumwater
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: public FeatureServer layer 'PrivateDevelopment'
+      (44 features), official DevelopmentStatus domain drives the stage map.
+      Bounded paging at maxRecordCount 2000. ArcGIS Online public REST — no
+      robots restriction on services6.arcgis.com query endpoints.
 
   - key: tumwater_development_review
     name: Tumwater Development Review

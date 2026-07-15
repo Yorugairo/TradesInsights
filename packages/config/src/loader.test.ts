@@ -24,6 +24,7 @@ describe("sources.yaml", () => {
       "lacey_projects_rest",
       "lacey_project_pages",
       "thurston_active_notices",
+      "tumwater_development_arcgis",
       "lewis_issued_permits",
       "lewis_current_planning",
       "lewis_source_canary",

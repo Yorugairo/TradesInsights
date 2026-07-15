@@ -157,6 +157,23 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Backfill: not available — rolling active-notices page only.
 - Enabled: 2026-07-15.
 
+### tumwater_development_arcgis
+- Checklist run: 2026-07-15 (M1.10, agent session).
+- Access verified: 2026-07-15 — public ArcGIS Online FeatureServer layer "PrivateDevelopment" (services6.arcgis.com), 44 features; layer metadata + full snapshot captured. maxRecordCount 2000, bounded resultOffset paging.
+- Fields observed: PermitNumber (comma-lists occur), ProjectType (coded domain), ProjectDescription, DevelopmentStatus (**official coded-value domain** UC/RP/PA/LUAA/FSPR/PAC), PIN1/PIN2/Parcel2 (mixed string/number typing tolerated), Web Mercator point geometry (converted to WGS84), created/last_edited dates (epoch ms).
+- Stage map from the layer's own domain: UC→construction, RP→permit_applied, PA "Permits Approved"→permit_issued, LUAA "Land Use Application Approved"→approved, FSPR/PAC→preapplication. Unknown codes warn and stay "unknown".
+- externalId = GlobalID (stable); checkpoint `lastEditedHighWater` (snapshot layer — full fetch every run, backfill filters on last_edited_date).
+- Fixtures: `fixtures/tumwater_development_arcgis/` (layer-metadata.json, all-features.json, metadata.json with audit).
+- Live runs: 2026-07-15 — 44 records, 0 rejected, green; idempotent rerun unchanged, green.
+- Enabled: 2026-07-15.
+
+### tumwater_development_review / tumwater_sepa
+- Checklist run: 2026-07-15 (M1.10, agent session).
+- **Blocked: Akamai edge denial.** https://www.ci.tumwater.wa.us/ (incl. the development-review and NOA/SEPA pages, and even robots.txt) returns HTTP 403 "Access Denied" (errors.edgesuite.net reference) for every client from this execution environment — tested with the declared bot UA and a stock Firefox UA. Working around an edge access control is prohibited (same policy class as the Pierce Cloudflare blocker).
+- Mitigation: (a) `tumwater_development_arcgis` covers Tumwater private development projects incl. official status; (b) Tumwater-lead-agency SEPA/NOA determinations appear on the statewide register — `wa_sepa` shows 17 City-of-Tumwater records in the trailing year.
+- Re-verification path: run the checklist from an unchallenged network; no fixtures were fabricated.
+- Enabled: no — both remain disabled; blockers recorded 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

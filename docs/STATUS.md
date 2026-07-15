@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1.10 (Tumwater ArcGIS + review/SEPA pages) — next up.
-**Last completed:** M1.9 (Thurston active notices) — enabled, green, 63 projects, 2026-07-15.
+**Current task:** M1 exit gate + milestone report.
+**Last completed:** M1.10 (Tumwater ArcGIS enabled + green; review/SEPA pages blocked by Akamai edge — see blockers), 2026-07-15.
 
 ## Milestone ledger
 
@@ -19,6 +19,7 @@
 | M1.7 Seattle Socrata ×2 + canary | ✅ 2026-07-15 | 2,117 building + 118 land-use (applieddate high-water; nightly-republish caveat), canary green, 90-day backfill green |
 | M1.8 WA SEPA register | ✅ 2026-07-15 | official data.wa.gov dataset mmcb-z6jf (separ UI robots-restricted); 564 pilot-county records, rerun + backfill green; Pierce mitigation live |
 | M1.9 Thurston active notices | ✅ 2026-07-15 | 63 project notices (accordion parser, migration-canary throw), idempotent rerun green |
+| M1.10 Tumwater ArcGIS + pages | ✅/⛔ 2026-07-15 | ArcGIS: 44 projects, official status-domain stage map, green. review/SEPA pages: Akamai-blocked (ledger + mitigations) |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
@@ -30,6 +31,7 @@
 ## Open blockers
 
 - **M1.4 pierce_environmental_determinations:** piercecountywa.gov serves a site-wide Cloudflare browser challenge (403) to this execution environment regardless of user agent; solving it would mean bypassing an anti-bot control — prohibited. Source stays disabled; blocker + mitigation (Pierce SEPA coverage via M1.8 wa_sepa) recorded in the activation ledger. Re-verify from an unchallenged network (production runner / customer connection).
+- **M1.10 tumwater_development_review + tumwater_sepa:** ci.tumwater.wa.us is Akamai-edge-denied (403, all clients) from this environment — same policy class as Pierce. Both stay disabled; mitigations: tumwater_development_arcgis (projects + official status) and wa_sepa (Tumwater-lead-agency determinations). Re-verify from an unchallenged network.
 
 ## Assumptions in force
 
