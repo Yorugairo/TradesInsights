@@ -60,10 +60,8 @@ describe("thurston_active_notices (golden fixture)", () => {
     const adapter = new ThurstonActiveNoticesAdapter();
     const ctx = testContext(adapter.key);
     await expect(
-      adapter.parse(rawArtifact("<html><body><h1>New permitting portal</h1></body></html>")),
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      adapter.parse(rawArtifact("<html><body><h1>New permitting portal</h1></body></html>"), ctx),
     ).rejects.toThrow(/page shape changed/);
-    void ctx;
   });
 
   it("parseNoticeHeading extracts number, name, and date", () => {
