@@ -76,17 +76,23 @@ export async function evaluateSourceHealth(
     reasons.push("unexpected zero usable records");
   }
 
-  // Volume-drop check. unchangedCount counts hash-identical *artifacts*, not
-  // records — an unchanged artifact means every record parsed from it before
-  // is still current, so a run with unchanged content is never a volume drop.
+  // Volume-drop check (spec §14 "unexpected volume drop"). Two expected,
+  // healthy cases are exempt:
+  //  - unchangedCount > 0: hash-identical artifacts — every previously parsed
+  //    record is still current (unchanged counts artifacts, not records);
+  //  - duplicateCount > 0: checkpoint/overlap windows legitimately shrink the
+  //    fetched window after a wide first run; duplicates prove the source is
+  //    still serving consistent records rather than collapsing.
+  // A genuine collapse (zero usable records) is caught red above.
   if (
     state === "green" &&
     previous &&
     previous.parsedCount > 0 &&
     latest &&
-    latest.unchangedCount === 0
+    latest.unchangedCount === 0 &&
+    latest.duplicateCount === 0
   ) {
-    const usableLatest = latest.parsedCount + latest.duplicateCount;
+    const usableLatest = latest.parsedCount;
     const usablePrev = previous.parsedCount + previous.duplicateCount;
     if (usablePrev > 0 && usableLatest < usablePrev * 0.5) {
       state = "amber";

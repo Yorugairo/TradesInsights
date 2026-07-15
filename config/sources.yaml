@@ -235,8 +235,14 @@ sources:
     cadence: daily
     county: King
     permitting_jurisdiction: City of Seattle
-    enabled: false
-    notes: Inspect live columns before coding. Bounded $limit, deterministic $order, high-water mark with overlap.
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Live columns inspected 2026-07-15. Bounded $limit=1000, deterministic
+      $order=applieddate,permitnum. Dataset republished nightly (single
+      :updated_at on all rows) → high-water on stable applieddate with 30-day
+      overlap. Socrata open data — public API, robots n/a for the API path.
 
   - key: seattle_land_use_permits
     name: Seattle Land Use Permits (Socrata)
@@ -249,7 +255,13 @@ sources:
     cadence: daily
     county: King
     permitting_jurisdiction: City of Seattle
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Live columns inspected 2026-07-15. Same bounded/deterministic query and
+      applieddate high-water pattern as seattle_building_permits. Stage
+      mapping: MUP pending → entitlement, decision issued → approved.
 
   - key: seattle_source_canary
     name: Seattle Research-a-Project landing canary
@@ -261,7 +273,13 @@ sources:
     cadence: daily
     county: King
     permitting_jurisdiction: City of Seattle
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: research page links both Socrata datasets
+      (76t5-zqzr, ht3q-kdvx); missing either fails the run (dataset
+      move/renumber alarm).
 
   # ── Statewide (P0) ────────────────────────────────────────────────────────
   - key: wa_sepa

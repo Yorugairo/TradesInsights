@@ -7,6 +7,12 @@ import { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 import { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
 import { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 import { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
+import {
+  SEATTLE_BUILDING_CONFIG,
+  SEATTLE_LAND_USE_CONFIG,
+  SeattleSocrataAdapter,
+} from "./seattle-socrata.js";
+import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 
 export { FakeSourceAdapter };
 export { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
@@ -16,6 +22,12 @@ export { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 export { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
 export { KingPublicNoticesAdapter } from "./king-public-notices.js";
 export { KingPermitReportsAdapter } from "./king-permit-reports.js";
+export {
+  SeattleSocrataAdapter,
+  SEATTLE_BUILDING_CONFIG,
+  SEATTLE_LAND_USE_CONFIG,
+} from "./seattle-socrata.js";
+export { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
@@ -26,6 +38,9 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   lewis_source_canary: () => new LewisSourceCanaryAdapter(),
   king_public_notices: () => new KingPublicNoticesAdapter(),
   king_permit_reports: () => new KingPermitReportsAdapter(),
+  seattle_building_permits: () => new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG),
+  seattle_land_use_permits: () => new SeattleSocrataAdapter(SEATTLE_LAND_USE_CONFIG),
+  seattle_source_canary: () => new SeattleSourceCanaryAdapter(),
 };
 
 export function getAdapter(key: string): SourceAdapter {

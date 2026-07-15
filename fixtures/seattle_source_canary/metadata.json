@@ -1,0 +1,24 @@
+{
+  "sourceKey": "seattle_source_canary",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.7 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://www.seattle.gov/construction-and-inspections/resources/research-a-project",
+      "notes": "Live capture of the SDCI Research-a-Project page."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Verified watched official data paths on the live page.",
+    "checks": [
+      "building_permits_dataset → https://data.seattle.gov/Permitting/Building-Permits/76t5-zqzr",
+      "land_use_permits_dataset → https://data.seattle.gov/Permitting/Land-Use-Permits/ht3q-kdvx",
+      "open_data_portal → https://data.seattle.gov/",
+      "permit_history_map → https://maps.seattle.gov/sdcipermithistory/",
+      "Missing either dataset link throws → failed run → health alarm (dataset renumber/move canary)."
+    ],
+    "result": "pass"
+  }
+}

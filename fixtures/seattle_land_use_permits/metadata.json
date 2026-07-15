@@ -1,0 +1,22 @@
+{
+  "sourceKey": "seattle_land_use_permits",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.7 activation",
+  "artifacts": [
+    {
+      "file": "window-90d.json",
+      "url": "https://data.seattle.gov/resource/ht3q-kdvx.json?$where=applieddate >= '2026-04-16T00:00:00'&$order=applieddate, permitnum&$limit=1000",
+      "notes": "90-day applieddate window, 78 rows (full window fits one page)."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed output against the raw Socrata payload.",
+    "checks": [
+      "All 78 rows validate; recordType land_use_permit; county King / City of Seattle.",
+      "Stage mapping documented: land-use (master use) permit is the entitlement instrument — application pending → entitlement, decision issued → approved.",
+      "Same nightly-republish caveat as the building dataset; applieddate window with 30-day overlap."
+    ],
+    "result": "pass"
+  }
+}

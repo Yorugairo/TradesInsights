@@ -119,6 +119,23 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Checkpoint: `monthHighWater` with 1-month overlap (reports get revised); first run covers 4 months.
 - Enabled: 2026-07-15.
 
+### seattle_building_permits / seattle_land_use_permits
+- Checklist run: 2026-07-15 (M1.7, agent session).
+- Live columns inspected before coding (spec §6.4 rule): building 76t5-zqzr (permitnum, permitclass(+mapped), permittype(desc/mapped), description, housingunits, estprojectcost, statuscurrent, applied/issued/completed/expires dates, address, lat/lng, portal link, relatedmup); land-use ht3q-kdvx (subset, same core).
+- **Key finding:** both datasets are fully republished nightly — every row shares one `:updated_at` (verified: count where :updated_at > 90d ago = total count), so `:updated_at` is useless for increments. High-water uses the stable `applieddate` with a 30-day overlap; status changes on records older than the overlap are not re-observed until enrichment (documented limitation).
+- Query discipline: bounded `$limit=1000`, deterministic `$order=applieddate, permitnum`, explicit `$where` window, count-query pagination — never unbounded.
+- Stage mapping (deterministic, date-evidenced): building — completeddate → complete, issueddate → permit_issued, else permit_applied; land-use — MUP is the entitlement instrument: decision issued → approved, pending → entitlement.
+- Fixtures: `fixtures/seattle_building_permits/` (June 2026 window, 514 rows), `fixtures/seattle_land_use_permits/` (90-day window, 78 rows), metadata.json with audits.
+- Live runs: 2026-07-15 — building 2,117 records (applieddate 2026-03-17→07-13), land-use 118 (03-18→07-13), 0 rejected, green; 90-day backfill 1,536 rows all duplicate-by-fingerprint, green; checkpoint reruns green.
+- Health refinement: the §14 volume-drop amber now also exempts runs with `duplicateCount > 0` — checkpoint windows legitimately shrink after a wide first run, and duplicates prove source consistency (collapse is still caught by the zero-usable red rule).
+- Enabled: 2026-07-15.
+
+### seattle_source_canary
+- Checklist run: 2026-07-15 (M1.7, agent session).
+- Watches the SDCI Research-a-Project page for the two Socrata dataset links (76t5-zqzr, ht3q-kdvx — required; open data portal and permit-history map — optional). Missing dataset links throw → failed run → health alarm.
+- Fixtures: `fixtures/seattle_source_canary/`. Live run: 1 record, all four links found, green.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

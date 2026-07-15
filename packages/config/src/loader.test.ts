@@ -28,6 +28,9 @@ describe("sources.yaml", () => {
       "lewis_source_canary",
       "king_public_notices",
       "king_permit_reports",
+      "seattle_building_permits",
+      "seattle_land_use_permits",
+      "seattle_source_canary",
     ]);
   });
 

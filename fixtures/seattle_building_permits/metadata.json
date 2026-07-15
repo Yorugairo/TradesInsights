@@ -1,0 +1,23 @@
+{
+  "sourceKey": "seattle_building_permits",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.7 activation",
+  "artifacts": [
+    {
+      "file": "window-2026-06.json",
+      "url": "https://data.seattle.gov/resource/76t5-zqzr.json?$where=applieddate >= '2026-06-01T00:00:00' AND applieddate <= '2026-06-30T23:59:59'&$order=applieddate, permitnum&$limit=1000",
+      "notes": "June 2026 applieddate window, 514 rows. Live columns inspected before coding per spec §6.4."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed output against the raw Socrata payload.",
+    "checks": [
+      "7097350-CN: applieddate 2026-06-01, estprojectcost 219583 → valuationUsd, housingunits 1.0 → units 1, status 'Corrections Required', stage permit_applied (no issueddate) — match.",
+      "Dataset is fully republished nightly (every row shares one :updated_at) → incremental filtering uses the stable applieddate field with a 30-day overlap; status changes on permits older than the overlap are not re-observed until enrichment (documented limitation).",
+      "Deterministic stage mapping: completeddate → complete; issueddate → permit_issued; applieddate only → permit_applied.",
+      "County King / City of Seattle jurisdiction on every record."
+    ],
+    "result": "pass"
+  }
+}
