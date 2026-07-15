@@ -1,0 +1,23 @@
+{
+  "sourceKey": "lewis_source_canary",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.2 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://lewiscountywa.gov/departments/community-development/",
+      "notes": "Live capture of the Community Development landing page."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Verified all four watched official links are present on the live page.",
+    "checks": [
+      "planning → /departments/community-development/current-planning-applications/",
+      "permits → /departments/community-development/building-permit-data/",
+      "records → https://docs.lewiscountywa.gov/permits/Welcome.aspx?cr=1 (Laserfiche)",
+      "portal → https://co-lewis-wa.smartgovcommunity.com/Public/Home — SmartGov hostname discovered from the official page (wrapped in an Outlook safelink; adapter unwraps it), never guessed per spec §6.2."
+    ],
+    "result": "pass"
+  }
+}

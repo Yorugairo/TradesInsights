@@ -19,7 +19,13 @@ describe("sources.yaml", () => {
     const file = loadSourcesConfig();
     const enabled = file.sources.filter((s) => s.enabled).map((s) => s.key);
     // Grows only when an M1 activation checklist completes (docs/source-policy.md ledger).
-    expect(enabled).toEqual(["fake_source", "lacey_projects_rest", "lacey_project_pages"]);
+    expect(enabled).toEqual([
+      "fake_source",
+      "lacey_projects_rest",
+      "lacey_project_pages",
+      "lewis_current_planning",
+      "lewis_source_canary",
+    ]);
   });
 
   it("getSourceConfig throws on unknown key", () => {

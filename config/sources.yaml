@@ -134,7 +134,14 @@ sources:
     cadence: daily
     county: Lewis
     permitting_jurisdiction: Lewis County
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: 'Planning Applications Under Review' table (14 rows)
+      with per-application detail subpages carrying /documents/ links.
+      robots.txt disallows only /media/oldSite/. Host occasionally resets
+      connections — FetchPolicy retries cover it.
 
   - key: lewis_source_canary
     name: Lewis Community Development landing canary
@@ -146,7 +153,14 @@ sources:
     cadence: daily
     county: Lewis
     permitting_jurisdiction: Lewis County
-    enabled: false
+    enabled: true
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Verified 2026-07-15: watches planning/permits/records/portal links on the
+      official landing page; missing required links fail the run (migration
+      alarm). SmartGov hostname co-lewis-wa.smartgovcommunity.com discovered
+      from this page 2026-07-15 — never guessed.
 
   # ── Pierce County (P0) ────────────────────────────────────────────────────
   - key: pierce_environmental_determinations

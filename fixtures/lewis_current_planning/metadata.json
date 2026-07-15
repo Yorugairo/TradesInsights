@@ -1,0 +1,29 @@
+{
+  "sourceKey": "lewis_current_planning",
+  "capturedAt": "2026-07-15",
+  "capturedBy": "M1.2 activation",
+  "artifacts": [
+    {
+      "file": "landing.html",
+      "url": "https://lewiscountywa.gov/departments/community-development/current-planning-applications/",
+      "notes": "Live capture: 'Planning Applications Under Review' table, 14 application rows, each with a detail-page link."
+    },
+    {
+      "file": "detail-sup25-0002-roamers.html",
+      "url": "https://lewiscountywa.gov/departments/community-development/current-planning-applications/sup25-0002-roamers-rv-park/",
+      "notes": "Detail subpage: h1 restates file number + project; 43 /documents/ links grouped under h2 sections (Public Hearing, Staff Report, SEPA comments, Application Documents)."
+    }
+  ],
+  "manualAudit": {
+    "date": "2026-07-15",
+    "method": "Compared parsed rows/records against the rendered live pages.",
+    "checks": [
+      "Row count: 14 parsed = 14 rows in the live 'Land Use Applications' table.",
+      "SUP25-0001 / SEP25-0011 'Good Crushing Inc – Mining Amendment Project' Special Use — file-number split, name, type, and detail URL match the live table.",
+      "SUP25-0002 detail: h1 'SUP25-0002 - Roamers RV Park – 57 Space RV Park – Special Use Permit' matches; 43 document links found incl. 'SUP25-0002 Notice of Hearing'.",
+      "Stage: rows are explicitly 'active applications being processed' → statusRaw 'under review', normalizedStage 'entitlement' (deterministic mapping from the page's own framing).",
+      "County/jurisdiction: Lewis / Lewis County on all records."
+    ],
+    "result": "pass"
+  }
+}

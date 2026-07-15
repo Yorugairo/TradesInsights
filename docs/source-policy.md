@@ -56,6 +56,27 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Shadow-mode runs: 2026-07-15 — discovered 79, fetched 79, parsed 79, rejected 0, green (70 with address+geometry, 17 with prose parcels, 5 with evidence-bounded proponent orgs); idempotent rerun discovered 1 (checkpoint skip), unchanged 1, green.
 - Enabled: 2026-07-15.
 
+### lewis_current_planning
+- Checklist run: 2026-07-15 (M1.2, agent session).
+- Landing page verified: 2026-07-15 — https://lewiscountywa.gov/departments/community-development/current-planning-applications/ live; "Planning Applications Under Review" table with 14 rows (file numbers / project / type / files link).
+- Format/cadence observed: CMS HTML table + per-application detail subpages (h1 restates file number + name; /documents/ links grouped under h2 sections); daily.
+- Robots/terms: robots.txt disallows only /media/oldSite/ — reviewed 2026-07-15; public county pages.
+- Fixtures captured: `fixtures/lewis_current_planning/` (landing.html, detail-sup25-0002-roamers.html, metadata.json with audit).
+- Manual sample audit: 14-row count + 2 applications field-by-field vs live — pass. Stage mapping: rows are explicitly "active applications being processed" → statusRaw "under review", normalizedStage "entitlement".
+- Live runs: 2026-07-15 — discovered 15 (landing + 14 subpages), parsed 14, rejected 0, green; idempotent rerun 12 unchanged + 3 duplicate (dynamic page bytes, identical normalized fingerprints), green.
+- Backfill: not available — the page lists only current applications; historical apps via Laserfiche lookup class (out of M1 scope).
+- Enabled: 2026-07-15.
+
+### lewis_source_canary
+- Checklist run: 2026-07-15 (M1.2, agent session).
+- Landing page verified: 2026-07-15 — https://lewiscountywa.gov/departments/community-development/ live.
+- Watches: planning (current-planning-applications), permits (building-permit-data), records (docs.lewiscountywa.gov Laserfiche), portal (SmartGov). Missing required links (planning/permits) throw → failed run → health alarm.
+- SmartGov hostname discovered from the official page 2026-07-15: co-lewis-wa.smartgovcommunity.com (unwrapped from an Outlook safelink) — recorded here per the "never guess hostnames" rule for the future P1 lewis_smartgov adapter.
+- Robots/terms: as lewis_current_planning.
+- Fixtures: `fixtures/lewis_source_canary/` (landing.html, metadata.json).
+- Live runs: 2026-07-15 — 1 canary record, all four links found, green; idempotent rerun unchanged, green.
+- Enabled: 2026-07-15.
+
 ## Known migration canaries (watch during M1)
 
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.

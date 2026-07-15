@@ -120,7 +120,7 @@ export class LaceyProjectPagesAdapter implements SourceAdapter {
     return httpFetchArtifact(item, ctx);
   }
 
-  async parse(raw: RawArtifact, ctx: RunContext): Promise<ParsedSourceRecord[]> {
+  async parse(raw: RawArtifact, _ctx: RunContext): Promise<ParsedSourceRecord[]> {
     const meta = MetaSchema.parse(raw.discovered.meta ?? {});
     const $ = loadHtml(raw.body);
 
@@ -141,9 +141,9 @@ export class LaceyProjectPagesAdapter implements SourceAdapter {
       : null;
     const lat = Number(marker.attr("data-lat"));
     const lng = Number(marker.attr("data-lng"));
-    const geometry =
+    const geometry: { type: "Point"; coordinates: [number, number] } | null =
       Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0
-        ? ({ type: "Point", coordinates: [lng, lat] } as const)
+        ? { type: "Point", coordinates: [lng, lat] }
         : null;
 
     const parcelIds = description ? parcelsFromText(description) : [];
