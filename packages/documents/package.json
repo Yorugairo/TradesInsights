@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@otn/domain": "workspace:*"
+    "@otn/domain": "workspace:*",
+    "cheerio": "^1.2.0",
+    "domhandler": "^6.0.1"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

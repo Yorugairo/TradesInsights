@@ -42,8 +42,14 @@ export interface RunContext {
   userAgent: string;
   fixturesDir: string;
   objectStore: ObjectStore;
-  /** Checkpoint from the previous run (pagination high-water mark etc.). */
+  /** Checkpoint from the previous completed run (pagination high-water mark etc.). */
   checkpoint: Record<string, unknown> | null;
+  /**
+   * Persist a checkpoint for the next run. Written to source_runs.checkpoint_json
+   * when the run completes (succeeded or completed_with_errors) — never on failure,
+   * so a failed run re-covers the same window.
+   */
+  setCheckpoint(checkpoint: Record<string, unknown>): void;
   backfill: BackfillWindow | null;
 }
 

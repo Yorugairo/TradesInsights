@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import {
   evidenceItems,
@@ -79,6 +79,24 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
   }
 
   const traceId = randomUUID();
+
+  // Load the checkpoint from the most recent completed run (spec §5 —
+  // paginated/checkpointed backfill with an overlap window).
+  const [previousRun] = await db
+    .select({ checkpointJson: sourceRuns.checkpointJson })
+    .from(sourceRuns)
+    .where(
+      and(
+        eq(sourceRuns.sourceId, source.id),
+        inArray(sourceRuns.status, ["succeeded", "completed_with_errors"]),
+        isNotNull(sourceRuns.checkpointJson),
+      ),
+    )
+    .orderBy(desc(sourceRuns.startedAt))
+    .limit(1);
+  const previousCheckpoint =
+    (previousRun?.checkpointJson as Record<string, unknown> | null) ?? null;
+
   const [run] = await db
     .insert(sourceRuns)
     .values({ sourceId: source.id, status: "running" })
@@ -91,6 +109,7 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
     traceId,
   });
 
+  let nextCheckpoint: Record<string, unknown> | null = null;
   const ctx: RunContext = {
     sourceKey: adapter.key,
     sourceRunId: run.id,
@@ -99,7 +118,10 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
     userAgent,
     fixturesDir,
     objectStore,
-    checkpoint: null,
+    checkpoint: previousCheckpoint,
+    setCheckpoint: (cp) => {
+      nextCheckpoint = cp;
+    },
     backfill: opts.backfill ?? null,
   };
 
@@ -305,6 +327,9 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
         errorCount: metrics.errors,
         schemaFingerprint: runSchemaFingerprint,
         metricsJson: { ...metrics, deadLetters },
+        // Carry the previous checkpoint forward when the adapter didn't set a
+        // new one, so an intermediate no-checkpoint run doesn't lose the mark.
+        checkpointJson: nextCheckpoint ?? previousCheckpoint,
       })
       .where(eq(sourceRuns.id, run.id));
 
