@@ -65,9 +65,13 @@ Protects data integrity that every downstream memo depends on.
   run" is deferred: the printed-total reconciliation already catches live layout
   drift, and the fixture golden tests catch parser-code regression in CI, so a
   runtime fixture re-parse is redundant for now.)
-- **D2 — field-fill (null-rate) instrumentation.** Per-run required-field fill
-  rates; wire the spec §14 "required-field drop >20%" red trigger that
-  `packages/source-sdk/src/health.ts` documents but doesn't implement.
+- **D2 — field-fill (null-rate) instrumentation.** ✅ **Shipped 2026-07-16.**
+  The runner records per-run fill over `MONITORED_FILL_FIELDS` into
+  `source_runs.metrics_json.fieldFill`; `evaluateSourceHealth` reds a source when
+  a field that was ≥50% present drops >20% relative vs its previous parsed run —
+  the spec §14 "required-field drop >20%" trigger that health.ts documented but
+  never implemented. Self-referential per source, so structurally-null fields
+  never false-trip.
 - **D3 — schema-fingerprint drift action.** `source_runs.schema_fingerprint` is
   recorded but never compared; alert amber + canary on change.
 - **D4 — substitute-coverage dependency.** Model "`wa_sepa` mitigates

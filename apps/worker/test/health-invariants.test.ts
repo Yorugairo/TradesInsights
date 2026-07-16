@@ -65,3 +65,50 @@ describe("D1 invariant → health", () => {
     expect(health.state).toBe("green");
   });
 });
+
+describe("D2 required-field fill drop → health", () => {
+  // Runs are ordered by startedAt desc; insert previous first, then latest.
+  async function twoRuns(prevFill: Record<string, number>, latestFill: Record<string, number>) {
+    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${sourceId}`);
+    await db.insert(sourceRuns).values({
+      sourceId,
+      status: "succeeded",
+      startedAt: new Date(Date.now() - 3600_000),
+      completedAt: new Date(Date.now() - 3600_000),
+      discoveredCount: 10,
+      fetchedCount: 10,
+      parsedCount: 10,
+      metricsJson: { fieldFill: prevFill, deadLetters: [] },
+    });
+    await db.insert(sourceRuns).values({
+      sourceId,
+      status: "succeeded",
+      startedAt: new Date(),
+      completedAt: new Date(),
+      discoveredCount: 10,
+      fetchedCount: 10,
+      parsedCount: 10,
+      metricsJson: { fieldFill: latestFill, deadLetters: [] },
+    });
+  }
+
+  it("a required field that stops being emitted (100%→40%) is red", async () => {
+    await twoRuns({ valuationUsd: 1.0, addressRaw: 1.0 }, { valuationUsd: 0.4, addressRaw: 1.0 });
+    const health = await evaluateSourceHealth(db, "fake_source");
+    expect(health.state).toBe("red");
+    expect(health.reasons.some((r) => /valuationUsd.*drop/i.test(r))).toBe(true);
+  });
+
+  it("a stable fill rate is green (no false positive)", async () => {
+    await twoRuns({ valuationUsd: 1.0, addressRaw: 0.9 }, { valuationUsd: 0.95, addressRaw: 0.9 });
+    const health = await evaluateSourceHealth(db, "fake_source");
+    expect(health.state).toBe("green");
+  });
+
+  it("a field structurally sparse in both runs never trips (self-referential)", async () => {
+    // valuation absent in both (SEPA-like) — a 0→0 is not a drop.
+    await twoRuns({ valuationUsd: 0.0, addressRaw: 1.0 }, { valuationUsd: 0.0, addressRaw: 1.0 });
+    const health = await evaluateSourceHealth(db, "fake_source");
+    expect(health.state).toBe("green");
+  });
+});

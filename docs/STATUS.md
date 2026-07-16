@@ -3,14 +3,14 @@
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
 **Current task:** backlog complete through M4 — remaining items are key/authorization-gated: set `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` to activate extraction→verification→publication and measure the live review-time gate; customer authorizations unlock the bid inbox (Solis) and re-verification of Pierce/Tumwater/Thurston-WebLink/Olympia sources; §22 customer calibration finalizes provisional rules.
-**Last completed:** Phase D1 (parser self-reconciliation invariants) — 2026-07-16, first item of the `docs/roadmap-strengthening.md` durability track. Earlier 2026-07-16: M4 exit gate; two M3.8 §22 calibration items closed (field-work regression guard + dual-citation `unitCountDisagreement`). 221/221 tests.
+**Last completed:** Phase D2 (required-field fill-drop health, spec §14) — 2026-07-16, second item of the `docs/roadmap-strengthening.md` durability track (D1 parser invariants shipped same day). Earlier 2026-07-16: M4 exit gate; two M3.8 §22 calibration items closed (field-work regression guard + dual-citation `unitCountDisagreement`). 221/221 tests.
 
 ## Durability track (docs/roadmap-strengthening.md — Phase D)
 
 | Task | Status | Evidence |
 |---|---|---|
 | D1 parser self-reconciliation invariants | ✅ 2026-07-16 | `source-sdk/invariants.ts` (reconcileCount/reconcileSum/checkNumericRange/checkDateWindow/checkPattern); optional `SourceAdapter.checkInvariants` called by the runner per artifact, violations stored in `source_runs.metrics_json` + counted; `evaluateSourceHealth` red on any. Lacey census reconciles the PDF's own printed permit count + unit total + valuation grand total (the manual-audit checks, now every fetch) + units-shape ceiling; Lewis inspections guards permit-id format + column-shift (permit/date bleeding into type/reason). Zero false positives on both live layouts; catches dropped-row, column-swap, column-shift. 15 tests (7 unit + 5 adapter + 3 health) |
-| D2 field-fill (null-rate) instrumentation | ⏳ next | spec §14 required-field drop >20% → red |
+| D2 field-fill (null-rate) instrumentation | ✅ 2026-07-16 | runner accumulates per-run fill over `MONITORED_FILL_FIELDS` (address/dates/valuation/units/geometry/orgs) → `source_runs.metrics_json.fieldFill`; `evaluateSourceHealth` red when a field ≥50%-present drops >20% relative vs the source's previous parsed run (spec §14, self-referential so structurally-null fields never trip). 3 health tests (drop→red, stable→green, sparse-both→green) |
 | D3 schema-fingerprint drift action | ⏳ | fingerprint recorded but not compared → amber/canary |
 | D4 substitute-coverage dependency | ⏳ | escalate when wa_sepa (mitigates Pierce/Tumwater/Olympia) goes red |
 | D5 parser replay by parserVersion | ⏳ | reprocess stored immutable artifacts after a parser fix |

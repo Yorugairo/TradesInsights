@@ -9,6 +9,29 @@ const CADENCE_MS: Record<string, number> = {
   monthly: 31 * 24 * 60 * 60 * 1000,
 };
 
+/**
+ * D2 — normalized fields whose per-run fill rate is tracked so a source that
+ * silently stops emitting a column (spec §14 "required-field drop >20%") turns
+ * red. The comparison is self-referential (this source's latest parsed run vs
+ * its previous parsed run), so a field that is structurally null for a source
+ * (e.g. valuation on a SEPA notice) never trips — only a field that WAS
+ * reliably present and dropped does.
+ */
+export const MONITORED_FILL_FIELDS = [
+  "addressRaw",
+  "applicationDate",
+  "issueDate",
+  "valuationUsd",
+  "units",
+  "geometry",
+  "organizations",
+] as const;
+
+/** A field counts as "reliably present" before a drop is meaningful. */
+const FILL_BASELINE_MIN = 0.5;
+/** Spec §14: a drop of more than 20% (relative) of a required field. */
+const FILL_DROP_RATIO = 0.8;
+
 export interface HealthReport {
   sourceKey: string;
   state: SourceHealthState;
@@ -86,6 +109,26 @@ export async function evaluateSourceHealth(
   if (invariantViolations > 0) {
     state = "red";
     reasons.push(`parser invariant violation (${invariantViolations}) — possible layout drift`);
+  }
+
+  // D2 — required-field drop (spec §14). Compare the two most recent runs that
+  // actually parsed records; a monitored field that was reliably present and
+  // then dropped >20% relative means the source silently stopped emitting it.
+  const fills = completed
+    .map((r) => (r.metricsJson as { fieldFill?: Record<string, number> } | null)?.fieldFill)
+    .filter((f): f is Record<string, number> => !!f && Object.keys(f).length > 0);
+  if (fills.length >= 2) {
+    const [latestFill, prevFill] = fills;
+    for (const field of MONITORED_FILL_FIELDS) {
+      const prev = prevFill![field];
+      const cur = latestFill![field];
+      if (prev !== undefined && cur !== undefined && prev >= FILL_BASELINE_MIN && cur < prev * FILL_DROP_RATIO) {
+        state = "red";
+        reasons.push(
+          `required-field '${field}' fill dropped ${Math.round(prev * 100)}%→${Math.round(cur * 100)}% (>20% drop)`,
+        );
+      }
+    }
   }
 
   // Volume-drop check (spec §14 "unexpected volume drop"). Two expected,

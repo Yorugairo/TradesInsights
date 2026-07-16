@@ -18,6 +18,7 @@ import type {
   SourceAdapter,
 } from "./types.js";
 import type { InvariantViolation } from "./invariants.js";
+import { MONITORED_FILL_FIELDS } from "./health.js";
 
 export interface DeadLetterEntry {
   idempotencyKey: string;
@@ -138,6 +139,9 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
   };
   const deadLetters: DeadLetterEntry[] = [];
   const invariantViolationDetails: (InvariantViolation & { canonicalUrl: string })[] = [];
+  // D2 — per-run required-field fill instrumentation.
+  const fillCounts: Record<string, number> = {};
+  let fillTotal = 0;
   let runSchemaFingerprint: string | null = null;
 
   try {
@@ -224,6 +228,19 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
             continue;
           }
           runSchemaFingerprint ??= schemaFingerprint(p.rawFields);
+          // D2 — count field fill over every current record (incl. duplicates:
+          // they represent what the source emits right now). Empty string and
+          // empty array count as absent.
+          fillTotal++;
+          for (const f of MONITORED_FILL_FIELDS) {
+            const v = (record as Record<string, unknown>)[f];
+            const present =
+              v !== null &&
+              v !== undefined &&
+              !(typeof v === "string" && v.trim() === "") &&
+              !(Array.isArray(v) && v.length === 0);
+            if (present) fillCounts[f] = (fillCounts[f] ?? 0) + 1;
+          }
           const fingerprint = normalizedFingerprint(record);
 
           const [existing] = await db
@@ -332,6 +349,10 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
     }
 
     metrics.invariantViolations = invariantViolationDetails.length;
+    const fieldFill: Record<string, number> = {};
+    if (fillTotal > 0) {
+      for (const f of MONITORED_FILL_FIELDS) fieldFill[f] = (fillCounts[f] ?? 0) / fillTotal;
+    }
     const status = metrics.errors > 0 ? "completed_with_errors" : "succeeded";
     await db
       .update(sourceRuns)
