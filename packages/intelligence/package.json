@@ -13,7 +13,7 @@
     "@otn/db": "workspace:*",
     "@otn/domain": "workspace:*",
     "@otn/resolution": "workspace:*",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.44.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {

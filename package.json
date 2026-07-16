@@ -24,7 +24,8 @@
     "map:verify": "sigmap verify",
     "map:evidence": "sigmap evidence",
     "resolve:run": "pnpm --filter @otn/worker resolve:run",
-    "review": "pnpm --filter @otn/worker review"
+    "review": "pnpm --filter @otn/worker review",
+    "score:run": "pnpm --filter @otn/worker score:run"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
