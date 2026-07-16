@@ -126,7 +126,24 @@ async function main() {
       .onConflictDoNothing();
   }
 
+  // Link account-scoped private sources to their owning account (accounts are
+  // seeded after sources, so this runs last). A configured account_key that
+  // matches no account is an error — private data must never be unscoped.
+  for (const s of sourcesFile.sources) {
+    if (!s.account_key) continue;
+    const res = await db.execute(
+      sql`UPDATE sources SET account_profile_id =
+            (SELECT id FROM account_profiles WHERE key = ${s.account_key})
+          WHERE key = ${s.key}
+          RETURNING account_profile_id`,
+    );
+    const linked = (res.rows[0] as { account_profile_id: string | null } | undefined)
+      ?.account_profile_id;
+    if (!linked) throw new Error(`source ${s.key}: unknown account_key ${s.account_key}`);
+  }
+
   await pool.end();
+
   console.log(
     JSON.stringify({
       msg: "seed complete",

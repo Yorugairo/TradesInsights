@@ -1,0 +1,33 @@
+{
+  "account_key": "solis_interiors",
+  "exported_at": "2026-07-10T18:00:00Z",
+  "platform": "fixture-plan-room",
+  "invitations": [
+    {
+      "id": "INV-90001",
+      "project_name": "Fixture Office TI – Suite 400",
+      "scope": "Drywall and paint package for 12,000 sf office TI",
+      "general_contractor": "FIXTURE BUILDERS LLC",
+      "estimator_contact": "estimator@fixturebuilders.invalid",
+      "address": "400 FIXTURE AVE SE, LACEY, WA 98503",
+      "county": "Thurston",
+      "jurisdiction": "City of Lacey",
+      "invitation_status": "invited",
+      "received_at": "2026-07-09",
+      "bid_due_date": "2026-07-24"
+    },
+    {
+      "id": "INV-90002",
+      "project_name": "Fixture Retail Shell",
+      "scope": "Interior finishes, scope preliminary",
+      "general_contractor": null,
+      "estimator_contact": null,
+      "address": null,
+      "county": "Thurston",
+      "jurisdiction": null,
+      "invitation_status": "preliminary_interest",
+      "received_at": "2026-07-08",
+      "bid_due_date": null
+    }
+  ]
+}

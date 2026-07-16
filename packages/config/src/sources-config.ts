@@ -14,6 +14,7 @@ export const SourceAccessClassSchema = z.enum([
   "authenticated",
   "landing_canary",
   "fixture",
+  "private_authorized",
 ]);
 
 export const SourceCadenceSchema = z.enum([
@@ -41,6 +42,10 @@ export const SourceConfigSchema = z
     enabled: z.boolean().default(false),
     terms_reviewed_at: z.string().nullable().default(null),
     robots_reviewed_at: z.string().nullable().default(null),
+    // Account-scoped private source (spec §6.4 customer_bid_inbox): records,
+    // artifacts, and evidence from this source belong to ONE account and are
+    // never visible to any other (CLAUDE.md account-isolation invariant).
+    account_key: z.string().nullable().default(null),
     notes: z.string().nullable().default(null),
   })
   .strict();

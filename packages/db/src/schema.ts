@@ -43,6 +43,8 @@ export const sources = pgTable(
     enabled: boolean("enabled").notNull().default(false),
     termsReviewedAt: timestamp("terms_reviewed_at", { withTimezone: true }),
     robotsReviewedAt: timestamp("robots_reviewed_at", { withTimezone: true }),
+    /** Non-null = private, account-scoped source (customer bid inbox). */
+    accountProfileId: uuid("account_profile_id"),
     createdAt: now(),
   },
   (t) => [uniqueIndex("sources_key_ux").on(t.key)],
@@ -447,6 +449,27 @@ export const resolutionReviews = pgTable(
     index("resolution_reviews_status_ix").on(t.status),
     index("resolution_reviews_record_ix").on(t.sourceRecordId),
   ],
+);
+
+// ── Private-artifact access audit (spec §20) ─────────────────────────────────
+
+/**
+ * Every read of a customer's private invitation artifact/evidence is logged
+ * (spec §20 "audit access to customer invitation artifacts"). Append-only.
+ */
+export const artifactAccessLog = pgTable(
+  "artifact_access_log",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    rawArtifactId: uuid("raw_artifact_id").notNull().references(() => rawArtifacts.id),
+    /** The account that OWNS the private artifact. */
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    /** Session identity that read it (account key or admin). */
+    accessedBy: text("accessed_by").notNull(),
+    purpose: text("purpose").notNull(),
+    createdAt: now(),
+  },
+  (t) => [index("artifact_access_log_artifact_ix").on(t.rawArtifactId)],
 );
 
 // ── Model runs (spec §13 AI contract) ────────────────────────────────────────

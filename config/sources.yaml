@@ -40,6 +40,28 @@ sources:
       pagination. robots.txt is empty (no restrictions). Public city data, no
       terms restricting automated access found on cityoflacey.org.
 
+  - key: customer_bid_inbox_solis
+    name: Solis Interiors Bid Inbox (customer-authorized export)
+    authority: Customer-authorized (Solis Interiors)
+    priority: P1
+    landing_url: https://private.invalid/customer_bid_inbox_solis
+    format: json_export
+    access_class: private_authorized
+    cadence: on_demand
+    county: null
+    permitting_jurisdiction: null
+    enabled: false
+    account_key: solis_interiors
+    notes: >-
+      M4.6 scaffolding (2026-07-16). Reads customer-provided JSON exports from
+      a local inbox directory (CUSTOMER_BID_INBOX_DIR) — never scraped, never
+      fetched with customer credentials (prohibited). ALL data is private to
+      solis_interiors (sources.account_profile_id); reads are access-audited
+      (artifact_access_log). The ONLY source class allowed to set
+      bidding_confirmed, and only for explicit invitation/solicitation
+      statuses. BLOCKED until Solis grants written authorization and provides
+      the export path/platform (spec 22 calibration item); fixture-tested.
+
   - key: lacey_permit_reports
     name: Lacey Monthly Census Reports (New Construction)
     authority: City of Lacey Community & Economic Development

@@ -1,4 +1,5 @@
 import type { SourceAdapter } from "@otn/source-sdk";
+import { CustomerBidInboxAdapter } from "./customer-bid-inbox.js";
 import { FakeSourceAdapter } from "./fake-source.js";
 import { KingPermitReportsAdapter } from "./king-permit-reports.js";
 import { KingPublicNoticesAdapter } from "./king-public-notices.js";
@@ -20,6 +21,7 @@ import { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 import { WaSepaAdapter } from "./wa-sepa.js";
 
 export { FakeSourceAdapter };
+export { CustomerBidInboxAdapter } from "./customer-bid-inbox.js";
 export { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 export { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
 export { LaceyPermitReportsAdapter } from "./lacey-permit-reports.js";
@@ -41,6 +43,7 @@ export { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
+  customer_bid_inbox_solis: () => new CustomerBidInboxAdapter("customer_bid_inbox_solis", "solis_interiors"),
   lacey_projects_rest: () => new LaceyProjectsRestAdapter(),
   lacey_permit_reports: () => new LaceyPermitReportsAdapter(),
   lacey_project_pages: () => new LaceyProjectPagesAdapter(),

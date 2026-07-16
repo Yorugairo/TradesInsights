@@ -125,6 +125,10 @@ Feedback (M3.7): relevant / new / timely / pursue booleans plus a **controlled d
 
 `pnpm dev` serves the authenticated surface on :3000. Pilot auth is a shared passphrase (`AUTH_SECRET` in `.env`) with an HMAC-signed HttpOnly session cookie: customer sessions are bound to one account (`/login` → account picker) and every `/api/app/*` query is scoped to that account; admin sessions (`role=admin`) unlock `/app/admin/*` (sources with run/disable controls, resolution review queue with merge/reject, coverage) and `/api/admin/*`. §16 routes and §17 APIs are implemented 1:1; "run source" enqueues a durable pg-boss `source-run` job (the worker must be running to execute it). E2E: `pnpm --filter @otn/web test:e2e` (needs local Postgres + seeded corpus; set `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium` in this environment).
 
+## Customer bid inbox (M4.6 — blocked until authorized)
+
+`customer_bid_inbox_<account>` sources ingest **customer-provided JSON exports** from a local inbox directory (`CUSTOMER_BID_INBOX_DIR`; fixtures dir in tests) — never scraped, never fetched with customer credentials. All ingested data is private to the owning account (`sources.account_profile_id`), excluded from the shared project graph (per-account graph overlays are activation-time work), surfaced only via `/app/invitations` + `GET /api/app/invitations`, and every read is appended to `artifact_access_log` (spec §20). This is the ONLY source class that may set `bidding_confirmed`, and only for explicit invitation/solicitation statuses — anything else keeps its verbatim status with stage `unknown`. `customer_bid_inbox_solis` ships **disabled** until Solis grants written authorization and names the platform/export path.
+
 ## Running sources
 
 ```bash

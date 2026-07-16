@@ -499,7 +499,13 @@ export async function resolveUnresolved(
     .where(
       sql`NOT EXISTS (SELECT 1 FROM record_resolutions rr WHERE rr.source_record_id = ${sourceRecords.id} AND rr.status = 'active')
           AND NOT EXISTS (SELECT 1 FROM resolution_reviews rv WHERE rv.source_record_id = ${sourceRecords.id} AND rv.status = 'pending')
-          ${opts.includeTestSources ? sql`` : sql`AND ${sources.priority} != 'test'`}`,
+          ${opts.includeTestSources ? sql`` : sql`AND ${sources.priority} != 'test'`}
+          -- Account-scoped private records (customer bid inboxes) stay out of
+          -- the SHARED project graph: merging them would let a private
+          -- invitation move a shared project's stage/events, leaking one
+          -- account's private signal to others. Per-account graph overlays
+          -- are activation-time work (M4.6 scaffold boundary, see STATUS).
+          AND ${sources.accountProfileId} IS NULL`,
     )
     .orderBy(sourceRecords.firstSeenAt)
     .limit(limit);

@@ -1,0 +1,8 @@
+{
+  "source_key": "customer_bid_inbox_solis",
+  "captured_at": "2026-07-16",
+  "provenance": "SYNTHETIC fixture (no real customer data exists yet — activation is blocked pending Solis's written authorization). Shape mirrors a generic plan-room export.",
+  "manual_audit": {
+    "notes": "INV-90001 status 'invited' → the only path to bidding_confirmed; INV-90002 'preliminary_interest' → stage stays unknown, raw status preserved. estimator_contact never leaves rawFields."
+  }
+}

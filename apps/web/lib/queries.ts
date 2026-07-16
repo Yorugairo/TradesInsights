@@ -219,7 +219,7 @@ export async function opportunityDetail(
 
   const [roles, evidence, timeline, extraction, verification, gate] = await Promise.all([
     projectRoles(db, projectId),
-    projectEvidence(db, projectId),
+    projectEvidence(db, projectId, { accountProfileId }),
     projectTimeline(db, projectId),
     latestExtraction(db, projectId),
     latestVerification(db, projectId),
@@ -284,7 +284,14 @@ export async function projectRoles(db: Db, projectId: string): Promise<RoleView[
   }));
 }
 
-export async function projectEvidence(db: Db, projectId: string): Promise<EvidenceView[]> {
+export async function projectEvidence(
+  db: Db,
+  projectId: string,
+  viewer: { accountProfileId: string | null } = { accountProfileId: null },
+): Promise<EvidenceView[]> {
+  // Account isolation, defense in depth: private-source evidence is visible
+  // only to the owning account even if a private record ever reaches the
+  // shared graph (today the resolver keeps them out entirely).
   const res = await db.execute(sql`
     SELECT ei.id, ei.fact_path, ei.evidence_text, ei.page_or_section, ei.source_url,
       ei.authority_grade, ra.retrieved_at, s.name AS source_name
@@ -293,6 +300,7 @@ export async function projectEvidence(db: Db, projectId: string): Promise<Eviden
     JOIN raw_artifacts ra ON ra.id = ei.raw_artifact_id
     JOIN sources s ON s.id = ra.source_id
     WHERE rr.project_id = ${projectId} AND rr.status = 'active'
+      AND (s.account_profile_id IS NULL OR s.account_profile_id = ${viewer.accountProfileId})
     ORDER BY ei.fact_path
     LIMIT 200`);
   return (res.rows as Record<string, unknown>[]).map((r) => ({
@@ -513,4 +521,76 @@ export async function listCoverage(db: Db): Promise<Record<string, unknown>[]> {
     FROM coverage_entries ce JOIN sources s ON s.id = ce.source_id
     ORDER BY ce.county NULLS LAST, s.key`);
   return res.rows as Record<string, unknown>[];
+}
+
+// ── Private bid invitations (M4.6 — account-scoped, access-audited) ──────────
+
+export interface InvitationView {
+  recordId: string;
+  externalId: string;
+  title: string | null;
+  scope: string | null;
+  status: string | null;
+  stage: string;
+  address: string | null;
+  county: string | null;
+  bidDueDate: string | null;
+  generalContractor: string | null;
+  platform: string | null;
+  receivedAt: string | null;
+}
+
+/**
+ * The account's own bid invitations (records from ITS private sources only —
+ * the SQL is scoped by sources.account_profile_id, so no other account's
+ * inbox is reachable from here). Every call appends artifact_access_log rows
+ * (spec §20: audit access to customer invitation artifacts).
+ */
+export async function listAccountInvitations(
+  db: Db,
+  accountProfileId: string,
+  accessedBy: string,
+): Promise<InvitationView[]> {
+  const res = await db.execute(sql`
+    SELECT sr.id, sr.external_id, sr.raw_artifact_id,
+      sr.normalized_json->>'title' AS title,
+      sr.normalized_json->>'description' AS scope,
+      sr.normalized_json->>'statusRaw' AS status,
+      sr.normalized_json->>'normalizedStage' AS stage,
+      sr.normalized_json->>'addressRaw' AS address,
+      sr.normalized_json->>'county' AS county,
+      sr.raw_fields_json->>'bid_due_date' AS bid_due_date,
+      sr.raw_fields_json->>'general_contractor' AS gc,
+      sr.raw_fields_json->>'platform' AS platform,
+      sr.raw_fields_json->>'received_at' AS received_at
+    FROM source_records sr
+    JOIN sources s ON s.id = sr.source_id
+    WHERE s.account_profile_id = ${accountProfileId}
+      AND sr.record_type = 'bid_invitation'
+    ORDER BY sr.last_seen_at DESC
+    LIMIT 200`);
+  const rows = res.rows as Record<string, unknown>[];
+
+  // Spec §20 access audit — one row per distinct private artifact read.
+  const artifactIds = [...new Set(rows.map((r) => r["raw_artifact_id"] as string))];
+  for (const rawArtifactId of artifactIds) {
+    await db.execute(sql`
+      INSERT INTO artifact_access_log (raw_artifact_id, account_profile_id, accessed_by, purpose)
+      VALUES (${rawArtifactId}, ${accountProfileId}, ${accessedBy}, 'invitation_list_view')`);
+  }
+
+  return rows.map((r) => ({
+    recordId: r["id"] as string,
+    externalId: r["external_id"] as string,
+    title: (r["title"] as string | null) ?? null,
+    scope: (r["scope"] as string | null) ?? null,
+    status: (r["status"] as string | null) ?? null,
+    stage: (r["stage"] as string | null) ?? "unknown",
+    address: (r["address"] as string | null) ?? null,
+    county: (r["county"] as string | null) ?? null,
+    bidDueDate: (r["bid_due_date"] as string | null) ?? null,
+    generalContractor: (r["gc"] as string | null) ?? null,
+    platform: (r["platform"] as string | null) ?? null,
+    receivedAt: (r["received_at"] as string | null) ?? null,
+  }));
 }
