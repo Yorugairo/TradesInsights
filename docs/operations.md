@@ -102,9 +102,13 @@ Merge decisions create a `record_resolutions` row with `decision=review_approved
 ```bash
 pnpm score:run                             # route + score every project into opportunities (deterministic, idempotent)
 pnpm extract:run [--project <id>] [--limit N]   # model extraction over stored evidence (spec §13)
+pnpm verify:run  [--project <id>] [--limit N]   # independent verification of extracted facts (spec §15)
+pnpm gate:run    [--opportunity <id>] [--limit N]   # read-only §15 publication-gate evaluation
 ```
 
 `score:run` re-scores all projects; manual opportunity states (`dismissed`, `promoted`) are sticky and never clobbered. `extract:run` picks the highest-scoring digest-band-or-better projects without a succeeded extraction (or one explicit `--project`), sends each project's stored evidence items to the model, and Zod-validates the §13 payload — unknown evidence IDs reject the run. Every attempt (succeeded / rejected / blocked / error) is persisted to `model_runs` with provider, model, prompt version, tokens, cost, latency, and result hash.
+
+`verify:run` is the independent verifier: a second, separate model call that re-checks each extracted fact against the exact evidence it cites (one verdict per fact; verdicts for facts never extracted, or missing verdicts, reject the run). `gate:run` evaluates the full §15 gate per opportunity — source health (suppress red-only support), identity/geography/stage/event-date, A-grade core event, every fact evidenced (D never publishable, C never alone), inferences labeled, no pending identity review, ≤180-day activity, score ≥ digest threshold, verifier verdict — and reports `pass` / `fail` / `blocked_on_verifier`. Until model keys are set, expect `blocked_on_verifier` for everything that clears the deterministic checks: nothing publishes without the independent verifier having passed.
 
 **Key activation:** without `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` the pipeline stays in a *visible blocked state* — a batch `extract:run` logs `modelJobs: "blocked"` and exits cleanly; a targeted `--project` run records a `status='blocked'` `model_runs` row. Setting the two env vars activates the Anthropic provider (`claude-opus-4-8`, official SDK, proxy-aware) with no code changes. `LLM_JOB_BUDGET_USD` caps the worst-case cost per job (default $0.50); the monthly check sums `model_runs.cost_usd` for the current UTC month and blocks *before* spending.
 

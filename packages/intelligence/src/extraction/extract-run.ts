@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { modelRuns, type Db } from "@otn/db";
+import type { Db } from "@otn/db";
 import { checkBudget, type BudgetConfig } from "./budget.js";
 import {
   EXTRACTION_PROMPT_VERSION,
@@ -8,6 +8,7 @@ import {
   type ModelExtraction,
 } from "./contract.js";
 import type { ModelProvider } from "./provider.js";
+import { persistModelRun, type ModelRunRow } from "./runs.js";
 
 /**
  * Model extraction over a project's stored evidence (spec §13). Deterministic
@@ -138,41 +139,8 @@ export interface ExtractionRunResult {
   reason?: string;
 }
 
-interface RunRow {
-  jobType: string;
-  projectId: string;
-  provider: string;
-  model: string;
-  status: "succeeded" | "rejected" | "blocked" | "error";
-  inputTokens?: number;
-  outputTokens?: number;
-  costUsd?: number;
-  latencyMs?: number;
-  resultHash?: string;
-  resultJson?: unknown;
-  error?: string;
-}
-
-async function persistRun(db: Db, row: RunRow): Promise<string> {
-  const [inserted] = await db
-    .insert(modelRuns)
-    .values({
-      jobType: row.jobType,
-      projectId: row.projectId,
-      provider: row.provider,
-      model: row.model,
-      promptVersion: EXTRACTION_PROMPT_VERSION,
-      inputTokens: row.inputTokens ?? null,
-      outputTokens: row.outputTokens ?? null,
-      costUsd: row.costUsd ?? null,
-      latencyMs: row.latencyMs ?? null,
-      resultHash: row.resultHash ?? null,
-      resultJson: row.resultJson ?? null,
-      status: row.status,
-      error: row.error ?? null,
-    })
-    .returning({ id: modelRuns.id });
-  return inserted!.id;
+async function persistRun(db: Db, row: Omit<ModelRunRow, "promptVersion">): Promise<string> {
+  return persistModelRun(db, { ...row, promptVersion: EXTRACTION_PROMPT_VERSION });
 }
 
 export interface ExtractOptions {

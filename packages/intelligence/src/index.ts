@@ -9,3 +9,8 @@ export * from "./extraction/provider.js";
 export * from "./extraction/anthropic.js";
 export * from "./extraction/budget.js";
 export * from "./extraction/extract-run.js";
+export * from "./extraction/runs.js";
+// M3.4: independent verifier + §15 publication gate.
+export * from "./gate/verifier-contract.js";
+export * from "./gate/verify.js";
+export * from "./gate/gate.js";
