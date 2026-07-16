@@ -113,6 +113,50 @@ describe("D2 required-field fill drop → health", () => {
   });
 });
 
+describe("D2 per-source required fields (absolute floor)", () => {
+  let laceyId: string;
+  beforeAll(async () => {
+    laceyId = await resetSource(db, "lacey_permit_reports"); // declares required_fields
+  });
+  afterAll(async () => {
+    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${laceyId}`);
+  });
+
+  async function oneRun(fill: Record<string, number>) {
+    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${laceyId}`);
+    await db.insert(sourceRuns).values({
+      sourceId: laceyId,
+      status: "succeeded",
+      startedAt: new Date(),
+      completedAt: new Date(),
+      discoveredCount: 10,
+      fetchedCount: 10,
+      parsedCount: 10,
+      metricsJson: { fieldFill: fill, deadLetters: [] },
+    });
+  }
+
+  it("a declared required field near-absent in the FIRST run is red (starts broken)", async () => {
+    await oneRun({ addressRaw: 1.0, issueDate: 1.0, valuationUsd: 0.1 });
+    const h = await evaluateSourceHealth(db, "lacey_permit_reports");
+    expect(h.state).toBe("red");
+    expect(h.reasons.some((r) => /valuationUsd.*floor/i.test(r))).toBe(true);
+  });
+
+  it("all declared required fields present → no floor violation", async () => {
+    await oneRun({ addressRaw: 1.0, issueDate: 1.0, valuationUsd: 0.9 });
+    const h = await evaluateSourceHealth(db, "lacey_permit_reports");
+    expect(h.reasons.some((r) => /floor/i.test(r))).toBe(false);
+  });
+
+  it("a NON-required field being sparse does not trip the floor", async () => {
+    // units is not declared required for this source → sparse units is fine.
+    await oneRun({ addressRaw: 1.0, issueDate: 1.0, valuationUsd: 0.9, units: 0.05 });
+    const h = await evaluateSourceHealth(db, "lacey_permit_reports");
+    expect(h.reasons.some((r) => /units.*floor/i.test(r))).toBe(false);
+  });
+});
+
 describe("D3 schema-fingerprint drift → health", () => {
   async function twoRuns(prevFp: string, latestFp: string) {
     await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${sourceId}`);

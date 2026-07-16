@@ -51,6 +51,13 @@ export const SourceConfigSchema = z
     // direct sources are access-blocked). When a source that mitigates others
     // goes red, the alert escalates: its dependents lose their fallback too.
     mitigates: z.array(z.string()).default([]),
+    // D2 — normalized fields this source is EXPECTED to reliably emit. When set,
+    // health adds an absolute-floor check (a required field near-absent → red,
+    // even on the first broken run) and scopes the relative-drop check to these
+    // fields. Empty (default) → the global MONITORED_FILL_FIELDS relative check.
+    // Declare only fields verified present in the source's real output (the
+    // "verify before enabling" invariant — a wrong entry causes false alarms).
+    required_fields: z.array(z.string()).default([]),
     notes: z.string().nullable().default(null),
   })
   .strict();

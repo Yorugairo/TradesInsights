@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import { coverageEntries, sourceRuns, sources } from "@otn/db";
+import { getSourceConfig } from "@otn/config";
 import type { SourceHealthState } from "@otn/domain";
 
 const CADENCE_MS: Record<string, number> = {
@@ -31,6 +32,19 @@ export const MONITORED_FILL_FIELDS = [
 const FILL_BASELINE_MIN = 0.5;
 /** Spec §14: a drop of more than 20% (relative) of a required field. */
 const FILL_DROP_RATIO = 0.8;
+/** A source-declared required field present on fewer than this fraction of the
+ * latest run's records is treated as broken (catches a source that STARTS
+ * broken, before there is a prior run to compare against). */
+const FILL_ABSOLUTE_MIN = 0.25;
+
+/** The source's declared required fields, or [] when none / unknown source. */
+function requiredFieldsFor(sourceKey: string): string[] {
+  try {
+    return getSourceConfig(sourceKey).required_fields;
+  } catch {
+    return []; // test sources / sources not in config — fall back to the global list
+  }
+}
 
 export interface HealthReport {
   sourceKey: string;
@@ -111,15 +125,35 @@ export async function evaluateSourceHealth(
     reasons.push(`parser invariant violation (${invariantViolations}) — possible layout drift`);
   }
 
-  // D2 — required-field drop (spec §14). Compare the two most recent runs that
-  // actually parsed records; a monitored field that was reliably present and
-  // then dropped >20% relative means the source silently stopped emitting it.
+  // D2 — required-field drop (spec §14). A source may declare `required_fields`
+  // (config); when it does, the check is scoped to those fields and gains an
+  // absolute floor. Otherwise it falls back to the global monitored list with
+  // the self-referential relative-drop check only.
+  const required = requiredFieldsFor(sourceKey);
+  const fieldsToCheck = required.length > 0 ? required : [...MONITORED_FILL_FIELDS];
   const fills = completed
     .map((r) => (r.metricsJson as { fieldFill?: Record<string, number> } | null)?.fieldFill)
     .filter((f): f is Record<string, number> => !!f && Object.keys(f).length > 0);
+
+  // Absolute floor: a DECLARED required field near-absent in the latest run is
+  // broken even without a prior run to compare against (source starts broken).
+  if (required.length > 0 && fills.length >= 1) {
+    const latestFill = fills[0]!;
+    for (const field of required) {
+      const cur = latestFill[field];
+      if (cur !== undefined && cur < FILL_ABSOLUTE_MIN) {
+        state = "red";
+        reasons.push(
+          `required-field '${field}' present on only ${Math.round(cur * 100)}% of records (< ${Math.round(FILL_ABSOLUTE_MIN * 100)}% floor)`,
+        );
+      }
+    }
+  }
+
+  // Relative drop: a field reliably present, then dropped >20% relative.
   if (fills.length >= 2) {
     const [latestFill, prevFill] = fills;
-    for (const field of MONITORED_FILL_FIELDS) {
+    for (const field of fieldsToCheck) {
       const prev = prevFill![field];
       const cur = latestFill![field];
       if (prev !== undefined && cur !== undefined && prev >= FILL_BASELINE_MIN && cur < prev * FILL_DROP_RATIO) {

@@ -75,6 +75,9 @@ sources:
     enabled: true
     terms_reviewed_at: "2026-07-16"
     robots_reviewed_at: "2026-07-16"
+    # D2: verified always-present in the census parser output (addressRaw, the
+    # census issue date, and the valuation the report is fundamentally about).
+    required_fields: [addressRaw, issueDate, valuationUsd]
     notes: >-
       Verified 2026-07-16 (M4.5, measured coverage gap: zero Lacey
       permit-stage records). Permit Reports page lists monthly "Census Report
@@ -205,6 +208,9 @@ sources:
     enabled: true
     terms_reviewed_at: "2026-07-16"
     robots_reviewed_at: "2026-07-16"
+    # D2: an inspection record always carries a site address; valuation/units are
+    # structurally absent (an inspection is not a permit) so they are NOT required.
+    required_fields: [addressRaw]
     notes: >-
       Verified 2026-07-16 (M4.5). Page links the current day's
       "MM.DD.YYYY_Scheduled_Inspections_-_Permitting.pdf" (302 to

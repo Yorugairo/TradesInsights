@@ -1,8 +1,11 @@
 import { extractLinks, loadHtml, readXlsx, type XlsxCell } from "@otn/documents";
 import {
+  checkDateWindow,
+  checkNumericRange,
   httpFetchArtifact,
   httpGet,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -274,6 +277,41 @@ export class KingPermitReportsAdapter implements SourceAdapter {
       );
     }
     ctx.logger.info({ month: meta.month, kind: meta.kind, rows: out.length }, "report parsed");
+    return out;
+  }
+
+  /**
+   * D1 — self-reconciliation for the Excel reports. A column insert/reorder in a
+   * monthly workbook can silently land a job value in the units column (or a
+   * date in the valuation column) without changing our field-name fingerprint or
+   * the row count. Value-shape checks catch it: valuation and unit counts must be
+   * plausible, and dates must fall in a sane window. Nulls are skipped.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    const v = checkNumericRange(parsed, (p) => p.record.valuationUsd, {
+      min: 0,
+      max: 5_000_000_000,
+      check: "king_valuation_range",
+    });
+    if (v) out.push(v);
+    const u = checkNumericRange(parsed, (p) => p.record.units, {
+      min: 0,
+      max: 10_000,
+      check: "king_units_range",
+    });
+    if (u) out.push(u);
+    for (const [field, get] of [
+      ["issue", (p: ParsedSourceRecord) => p.record.issueDate],
+      ["application", (p: ParsedSourceRecord) => p.record.applicationDate],
+    ] as const) {
+      const d = checkDateWindow(parsed, get, {
+        minIso: "2000-01-01",
+        maxIso: "2100-01-01",
+        check: `king_${field}_date_window`,
+      });
+      if (d) out.push(d);
+    }
     return out;
   }
 }

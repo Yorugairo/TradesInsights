@@ -61,6 +61,13 @@ describe("king_permit_reports issued-permits xlsx (golden fixture)", () => {
     const raw = addc.rawFields as { accelaUrl: string | null; parcelGisUrl: string | null };
     expect(raw.accelaUrl).toContain("accela.com");
     expect(raw.parcelGisUrl).toContain("parcelviewer");
+
+    // D1 — the golden workbook reconciles; a value/date column swap is flagged.
+    const artifact = rawArtifact(body, "https://cdn.kingcounty.gov/x/kingcounty-issued-permits-2026-06.xlsx", { kind: "issued_permits", month: "2026-06" });
+    expect(adapter.checkInvariants!(artifact, parsed)).toEqual([]);
+    const tampered = structuredClone(parsed);
+    (tampered[0]!.record as { issueDate: string | null }).issueDate = "1970-01-01"; // epoch-ish → out of window
+    expect(adapter.checkInvariants!(artifact, tampered).some((v) => v.check === "king_issue_date_window")).toBe(true);
   });
 
   it("parses new applications with permit_applied stage and zero job value → null", async () => {

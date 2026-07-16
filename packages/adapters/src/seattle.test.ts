@@ -64,6 +64,23 @@ describe("seattle_building_permits parse (golden fixture)", () => {
     expect(ctx.savedCheckpoint).toEqual({ appliedDateHighWater: "2026-06-30" });
   });
 
+  it("D1 checkInvariants: golden parse is clean; a swapped valuation is flagged", async () => {
+    const adapter = new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG);
+    const ctx = testContext(adapter.key);
+    const raw = rawArtifact(
+      await readFile(join(FIXTURES_DIR, "seattle_building_permits/window-2026-06.json")),
+      "https://data.seattle.gov/resource/76t5-zqzr.json?x",
+    );
+    const parsed = await adapter.parse(raw, ctx);
+    expect(adapter.checkInvariants!(raw, parsed)).toEqual([]); // reconciles
+
+    // A column reorder lands a wild value in `cost` → out-of-range violation.
+    const tampered = structuredClone(parsed);
+    (tampered[0]!.record as { valuationUsd: number | null }).valuationUsd = 9_000_000_000;
+    const violations = adapter.checkInvariants!(raw, tampered);
+    expect(violations.some((v) => v.check === "seattle_valuation_range")).toBe(true);
+  });
+
   it("emits a runner-rejectable record for a malformed row (missing permitnum)", async () => {
     const adapter = new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG);
     const ctx = testContext(adapter.key);

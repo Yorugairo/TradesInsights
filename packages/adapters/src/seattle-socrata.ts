@@ -1,8 +1,11 @@
 import { z } from "zod";
 import {
+  checkDateWindow,
+  checkNumericRange,
   httpFetchArtifact,
   httpGet,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -236,6 +239,43 @@ export class SeattleSocrataAdapter implements SourceAdapter {
 
     if (this.maxApplied && !ctx.backfill) {
       ctx.setCheckpoint({ appliedDateHighWater: this.maxApplied });
+    }
+    return out;
+  }
+
+  /**
+   * D1 — self-reconciliation for a JSON API. A Socrata column rename/reorder
+   * (the datasets are republished nightly) can silently land the wrong value in
+   * `cost`/`estprojectcost` or a date field without changing our field-name
+   * fingerprint. Value-shape checks catch it at runtime: a valuation must be a
+   * plausible non-negative amount, and dates must fall in a sane window. Never
+   * fabricates — nulls are skipped.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    const rec = (p: ParsedSourceRecord) => p.record as NormalizedSourceRecord;
+    const v = checkNumericRange(parsed, (p) => rec(p).valuationUsd, {
+      min: 0,
+      max: 5_000_000_000, // a single Seattle permit above $5B ⇒ a swapped column
+      check: "seattle_valuation_range",
+    });
+    if (v) out.push(v);
+    const u = checkNumericRange(parsed, (p) => rec(p).units, {
+      min: 0,
+      max: 10_000,
+      check: "seattle_units_range",
+    });
+    if (u) out.push(u);
+    for (const [field, get] of [
+      ["issue", (p: ParsedSourceRecord) => rec(p).issueDate],
+      ["application", (p: ParsedSourceRecord) => rec(p).applicationDate],
+    ] as const) {
+      const d = checkDateWindow(parsed, get, {
+        minIso: "2000-01-01",
+        maxIso: "2100-01-01",
+        check: `seattle_${field}_date_window`,
+      });
+      if (d) out.push(d);
     }
     return out;
   }
