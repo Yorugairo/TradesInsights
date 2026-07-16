@@ -55,6 +55,7 @@ export function renderDigestHtml(model: DigestModel): string {
     model.sections.coverage.length === 0 &&
     model.suppressed.gateFailed === 0 &&
     model.suppressed.blockedOnVerifier === 0 &&
+    model.suppressed.customerSuppressed === 0 &&
     model.reviewQueue.length === 0
       ? "<p>All enabled sources green; nothing suppressed.</p>"
       : `<ul>
@@ -74,6 +75,11 @@ ${
 ${
   model.reviewQueue.length > 0
     ? `<li>${model.reviewQueue.length} verified item${model.reviewQueue.length === 1 ? "" : "s"} held for human review before inclusion (controlled automation).</li>`
+    : ""
+}
+${
+  model.suppressed.customerSuppressed > 0
+    ? `<li>${model.suppressed.customerSuppressed} matching project${model.suppressed.customerSuppressed === 1 ? "" : "s"} suppressed at your request (project/organization on your suppression list).</li>`
     : ""
 }
 </ul>`;

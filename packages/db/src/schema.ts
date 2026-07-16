@@ -626,6 +626,89 @@ export const relationshipInteractions = pgTable(
   (t) => [index("relationship_interactions_rel_ix").on(t.relationshipId, t.occurredAt)],
 );
 
+// ── Outcome / ROI + trust controls (S5, strengthening addendum §8/§9) ────────
+// Every metric reproduces from stored events; no manually edited aggregates.
+// Attributable revenue requires an explicit human influenced_by_otn flag.
+
+export const opportunityOutcomes = pgTable(
+  "opportunity_outcomes",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    pursuitId: uuid("pursuit_id").references(() => pursuits.id),
+    outcomeType: text("outcome_type").notNull(),
+    influencedByOtn: boolean("influenced_by_otn").notNull().default(false),
+    attributableValue: doublePrecision("attributable_value"),
+    outcomeAt: timestamp("outcome_at", { withTimezone: true }),
+    reasonCode: text("reason_code"),
+    notes: text("notes"),
+    createdBy: text("created_by"),
+    createdAt: now(),
+  },
+  (t) => [index("opportunity_outcomes_opp_ix").on(t.opportunityId)],
+);
+
+export const roiEvents = pgTable(
+  "roi_events",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+    pursuitId: uuid("pursuit_id").references(() => pursuits.id),
+    eventType: text("event_type").notNull(),
+    estimatedValue: doublePrecision("estimated_value"),
+    metadataJson: jsonb("metadata_json"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [index("roi_events_account_ix").on(t.accountProfileId, t.eventType)],
+);
+
+export const researchTimeEntries = pgTable(
+  "research_time_entries",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+    minutesSavedEstimate: doublePrecision("minutes_saved_estimate"),
+    estimationMethod: text("estimation_method"),
+    createdAt: now(),
+  },
+  (t) => [index("research_time_entries_account_ix").on(t.accountProfileId)],
+);
+
+export const accountSuppressions = pgTable(
+  "account_suppressions",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    targetType: text("target_type").notNull(), // 'project' | 'organization'
+    targetId: uuid("target_id").notNull(),
+    reason: text("reason"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    createdAt: now(),
+  },
+  (t) => [index("account_suppressions_ix").on(t.accountProfileId, t.targetType, t.targetId)],
+);
+
+export const claimCorrections = pgTable(
+  "claim_corrections",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    evidenceItemId: uuid("evidence_item_id").references(() => evidenceItems.id),
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id),
+    correctionType: text("correction_type").notNull(),
+    priorValueJson: jsonb("prior_value_json"),
+    correctedValueJson: jsonb("corrected_value_json"),
+    reason: text("reason"),
+    sourceRecordId: uuid("source_record_id").references(() => sourceRecords.id),
+    createdBy: text("created_by"),
+    createdAt: now(),
+  },
+  (t) => [index("claim_corrections_opp_ix").on(t.opportunityId)],
+);
+
 // ── Delivery & coverage ──────────────────────────────────────────────────────
 
 export const deliveries = pgTable(

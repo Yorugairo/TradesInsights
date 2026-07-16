@@ -38,6 +38,9 @@ importers:
       '@otn/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@otn/delivery':
+        specifier: workspace:*
+        version: link:../../packages/delivery
       '@otn/intelligence':
         specifier: workspace:*
         version: link:../../packages/intelligence

@@ -189,6 +189,38 @@ test.describe("customer surface", () => {
     await other.dispose();
   });
 
+  test("ROI scorecard, suppression, outcome, and admin correction", async ({ page, request }) => {
+    await login(request, "solis_interiors");
+    const scorecard = await (await request.get("/api/app/roi")).json();
+    expect(typeof scorecard.opportunitiesDelivered).toBe("number");
+    expect(scorecard.unsupportedFactCount).toBe(0);
+
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/roi");
+    await expect(page.getByTestId("roi-table")).toBeVisible();
+    await expect(page.getByTestId("unsupported-facts")).toBeVisible();
+
+    // Suppression create + lift, and a non-attributed outcome.
+    const list = await (await request.get("/api/app/opportunities?limit=1")).json();
+    const oppId = list.items[0].id as string;
+    const detail = await (await request.get(`/api/app/opportunities/${oppId}`)).json();
+    const projectId = detail.project.id as string;
+
+    const sup = await request.post("/api/app/suppressions", { data: { targetType: "project", targetId: projectId, reason: "e2e" } });
+    expect(sup.status()).toBe(201);
+    const supId = (await sup.json()).id as string;
+    const del = await request.delete(`/api/app/suppressions/${supId}`);
+    expect(del.ok()).toBe(true);
+
+    const outcome = await request.post("/api/app/outcomes", { data: { opportunityId: oppId, outcomeType: "won", influencedByOtn: false } });
+    expect(outcome.status()).toBe(201);
+
+    // Admin-only immutable correction.
+    await login(request, null, "admin");
+    const corr = await request.post("/api/admin/corrections", { data: { correctionType: "unit_count", priorValue: 198, correctedValue: 180, reason: "e2e" } });
+    expect(corr.status()).toBe(201);
+  });
+
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
     await login(request, "solis_interiors");
     const list = await (await request.get("/api/app/opportunities?limit=1")).json();

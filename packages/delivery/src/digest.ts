@@ -5,6 +5,7 @@ import {
   evaluateGate,
   latestExtraction,
   latestVerification,
+  suppressedProjectIds,
   type GateResult,
   type InclusionDecision,
 } from "@otn/intelligence";
@@ -67,7 +68,7 @@ export interface DigestModel {
   };
   /** Gate-passing items withheld from automation for a human decision. */
   reviewQueue: DigestItem[];
-  suppressed: { gateFailed: number; blockedOnVerifier: number };
+  suppressed: { gateFailed: number; blockedOnVerifier: number; customerSuppressed: number };
   ruleVersions: Record<string, number>;
   candidateCount: number;
 }
@@ -302,10 +303,11 @@ export async function buildDigest(
   period: { start: Date; end: Date },
 ): Promise<DigestModel> {
   const account = await accountInfo(db, accountProfileId);
-  const [candidates, delivered, coverage] = await Promise.all([
+  const [candidates, delivered, coverage, suppressedProjects] = await Promise.all([
     loadCandidates(db, accountProfileId),
     previouslyDelivered(db, accountProfileId),
     coverageCaveats(db),
+    suppressedProjectIds(db, accountProfileId),
   ]);
 
   const sections: DigestModel["sections"] = {
@@ -316,9 +318,15 @@ export async function buildDigest(
     coverage,
   };
   const reviewQueue: DigestItem[] = [];
-  const suppressed = { gateFailed: 0, blockedOnVerifier: 0 };
+  const suppressed = { gateFailed: 0, blockedOnVerifier: 0, customerSuppressed: 0 };
 
   for (const c of candidates) {
+    // §9: suppression is applied BEFORE assembly — a suppressed project/org
+    // never reaches gate evaluation or an item build.
+    if (suppressedProjects.has(c.project_id)) {
+      suppressed.customerSuppressed++;
+      continue;
+    }
     const gate: GateResult | null = await evaluateGate(db, c.id);
     if (!gate || gate.status !== "pass") {
       if (gate?.status === "blocked_on_verifier") suppressed.blockedOnVerifier++;

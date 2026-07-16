@@ -61,6 +61,20 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **model_runs** (M3.3 — migration `0002_model_runs`) — one row per model invocation *or blocked/rejected attempt* (spec §13): `job_type` (extraction | verification | brief_draft), nullable `project_id`/`account_profile_id`, `provider`, `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, `result_hash` (SHA-256 of raw model output), `result_json` (the Zod-validated facts/inferences/missingCriticalFacts payload — null for rejected runs), `status` (succeeded | rejected | blocked | error), `error`. The monthly budget check sums `cost_usd` over the current UTC month, so every spending call must persist a row. AI is never the system of record: `result_json` feeds the verifier/UI and never overwrites parsed facts.
 
+## Outcome / ROI + trust controls (S5 — migration `0012_roi_trust`)
+
+Every metric reproduces from stored events; no manually edited aggregates.
+
+**opportunity_outcomes** — human-recorded outcomes: `outcome_type`, `influenced_by_otn` (attributable revenue counts only when a human sets this true), `attributable_value`, `outcome_at`, `reason_code`.
+
+**roi_events** — account-scoped ROI event log: `event_type`, `estimated_value`, `metadata_json`, `occurred_at`.
+
+**research_time_entries** — `minutes_saved_estimate`, `estimation_method` — the research-time-saved metric sums these (never a guessed aggregate).
+
+**account_suppressions** — `target_type` (project/organization), `target_id`, `expires_at`. `suppressedProjectIds()` resolves direct + transitive (via a suppressed org's roles) suppressions; digest assembly filters candidates against this set BEFORE building any item (§9). `roiScorecard()` in `packages/delivery` reproduces the §8 metrics; the urgent-alert whitelist (`URGENT_ALERT_CATEGORIES`, 5 categories) lives in `packages/intelligence/src/trust.ts`.
+
+**claim_corrections** — append-only corrections: `evidence_item_id`, `opportunity_id`, `correction_type`, `prior_value_json`, `corrected_value_json`, `reason`, `source_record_id`. A correction is a new row — evidence and prior corrections are never mutated (§9).
+
 ## GC relationship intelligence (S4 — migration `0011_relationships`)
 
 Account-specific, kept strictly distinct from the shared graph's public `project_roles`.
