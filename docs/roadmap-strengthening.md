@@ -72,8 +72,11 @@ Protects data integrity that every downstream memo depends on.
   the spec §14 "required-field drop >20%" trigger that health.ts documented but
   never implemented. Self-referential per source, so structurally-null fields
   never false-trip.
-- **D3 — schema-fingerprint drift action.** `source_runs.schema_fingerprint` is
-  recorded but never compared; alert amber + canary on change.
+- **D3 — schema-fingerprint drift action.** ✅ **Shipped 2026-07-16.**
+  `evaluateSourceHealth` now compares the two most recent parsed runs'
+  `schema_fingerprint` (recorded since M0, never compared); a change raises amber
+  with a "review the parser" reason — a visible canary rather than a value that
+  sat unused in a column.
 - **D4 — substitute-coverage dependency.** Model "`wa_sepa` mitigates
   Pierce/Tumwater/Olympia" as first-class; escalate severity when a
   substitute source goes red (currently a hidden single point of failure).

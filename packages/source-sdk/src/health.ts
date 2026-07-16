@@ -131,6 +131,18 @@ export async function evaluateSourceHealth(
     }
   }
 
+  // D3 — schema-fingerprint drift. The fingerprint (a hash of the raw field
+  // names) is recorded per run but was never compared. A change means the
+  // source altered its field names — the parser may still work, but it warrants
+  // a human look, so raise amber (a review canary), never silently swallow it.
+  const fingerprints = completed
+    .map((r) => r.schemaFingerprint)
+    .filter((f): f is string => !!f);
+  if (fingerprints.length >= 2 && fingerprints[0] !== fingerprints[1]) {
+    if (state === "green") state = "amber";
+    reasons.push("raw schema fingerprint changed since previous run — source field names shifted, review the parser");
+  }
+
   // Volume-drop check (spec §14 "unexpected volume drop"). Two expected,
   // healthy cases are exempt:
   //  - unchangedCount > 0: hash-identical artifacts — every previously parsed

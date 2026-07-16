@@ -112,3 +112,44 @@ describe("D2 required-field fill drop → health", () => {
     expect(health.state).toBe("green");
   });
 });
+
+describe("D3 schema-fingerprint drift → health", () => {
+  async function twoRuns(prevFp: string, latestFp: string) {
+    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${sourceId}`);
+    await db.insert(sourceRuns).values({
+      sourceId,
+      status: "succeeded",
+      startedAt: new Date(Date.now() - 3600_000),
+      completedAt: new Date(Date.now() - 3600_000),
+      discoveredCount: 5,
+      fetchedCount: 5,
+      parsedCount: 5,
+      schemaFingerprint: prevFp,
+      metricsJson: { deadLetters: [] },
+    });
+    await db.insert(sourceRuns).values({
+      sourceId,
+      status: "succeeded",
+      startedAt: new Date(),
+      completedAt: new Date(),
+      discoveredCount: 5,
+      fetchedCount: 5,
+      parsedCount: 5,
+      schemaFingerprint: latestFp,
+      metricsJson: { deadLetters: [] },
+    });
+  }
+
+  it("a changed fingerprint raises amber (review canary), not silent", async () => {
+    await twoRuns("aaaa", "bbbb");
+    const health = await evaluateSourceHealth(db, "fake_source");
+    expect(health.state).toBe("amber");
+    expect(health.reasons.some((r) => /fingerprint changed/i.test(r))).toBe(true);
+  });
+
+  it("a stable fingerprint stays green", async () => {
+    await twoRuns("aaaa", "aaaa");
+    const health = await evaluateSourceHealth(db, "fake_source");
+    expect(health.state).toBe("green");
+  });
+});
