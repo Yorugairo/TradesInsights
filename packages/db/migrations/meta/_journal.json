@@ -57,6 +57,20 @@
       "when": 1784238149557,
       "tag": "0007_decision_memos",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784238747038,
+      "tag": "0008_pursuits",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784239024956,
+      "tag": "0009_pursuit_updated_at",
+      "breakpoints": true
     }
   ]
 }

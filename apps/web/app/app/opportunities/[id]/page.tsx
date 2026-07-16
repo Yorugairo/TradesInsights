@@ -5,7 +5,7 @@ import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { accountByKey, opportunityDetail } from "../../../../lib/queries.js";
 import { Badge, cell, fmtDate, fmtMoney, healthTone, table } from "../../../../lib/ui.js";
-import { FeedbackForm, StateButtons } from "./actions.js";
+import { FeedbackForm, StartPursuitButton, StateButtons } from "./actions.js";
 
 const CAPACITY_TONE: Record<string, "green" | "amber" | "red"> = {
   likely_fit: "green",
@@ -227,6 +227,9 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
 
       <h2>Your decision</h2>
       <StateButtons opportunityId={o.id} state={o.state} dispositions={DISPOSITION_REASONS} />
+      <p style={{ marginTop: "0.75rem" }}>
+        <StartPursuitButton opportunityId={o.id} />
+      </p>
       <h2>Feedback</h2>
       <FeedbackForm opportunityId={o.id} dispositions={DISPOSITION_REASONS} />
     </main>

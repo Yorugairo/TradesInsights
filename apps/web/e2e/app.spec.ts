@@ -100,6 +100,40 @@ test.describe("customer surface", () => {
     expect(bad.status()).toBe(400);
   });
 
+  test("pursuit workflow: create, list, invalid transition blocked, isolation", async ({ request, playwright, baseURL }) => {
+    await login(request, "solis_interiors");
+    const list = await (await request.get("/api/app/opportunities?limit=1")).json();
+    const oppId = list.items[0].id as string;
+
+    // Idempotent create (re-runnable against seeded data).
+    const created = await request.post("/api/app/pursuits", { data: { opportunityId: oppId } });
+    expect(created.ok()).toBe(true);
+    const pursuitId = (await created.json()).id as string;
+
+    const board = await (await request.get("/api/app/pursuits")).json();
+    expect(board.items.some((p: { id: string }) => p.id === pursuitId)).toBe(true);
+
+    const detail = await (await request.get(`/api/app/pursuits/${pursuitId}`)).json();
+    expect(Array.isArray(detail.allowedTransitions)).toBe(true);
+
+    // 'discovered' is never a valid target — the state machine rejects it (422).
+    const bad = await request.post(`/api/app/pursuits/${pursuitId}/transition`, { data: { to: "discovered" } });
+    expect(bad.status()).toBe(422);
+
+    // Task-type validation.
+    const badTask = await request.post(`/api/app/pursuits/${pursuitId}/tasks`, {
+      data: { title: "x", taskType: "nope" },
+    });
+    expect(badTask.status()).toBe(422);
+
+    // Account isolation: another account cannot read this pursuit.
+    const other = await playwright.request.newContext({ baseURL: baseURL! });
+    await login(other, "lacey_glass_at_home");
+    const cross = await other.get(`/api/app/pursuits/${pursuitId}`);
+    expect(cross.status()).toBe(404);
+    await other.dispose();
+  });
+
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
     await login(request, "solis_interiors");
     const list = await (await request.get("/api/app/opportunities?limit=1")).json();

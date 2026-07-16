@@ -410,6 +410,81 @@ export const feedback = pgTable(
   (t) => [index("feedback_opportunity_ix").on(t.opportunityId)],
 );
 
+// ── Pursuit workflow (S2, strengthening addendum §4) ─────────────────────────
+// An operational pipeline over qualified opportunities. Transitions are
+// validated + audited server-side; human-only states can never be moved into by
+// an AI job. Every active pursuit has a state and an owner.
+
+export const pursuits = pgTable(
+  "pursuits",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    state: text("state").notNull().default("discovered"),
+    priority: integer("priority"),
+    ownerUserId: text("owner_user_id").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().default(sql`now()`),
+    nextActionAt: timestamp("next_action_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    estimatedContractValue: doublePrecision("estimated_contract_value"),
+    submittedValue: doublePrecision("submitted_value"),
+    outcomeValue: doublePrecision("outcome_value"),
+    createdAt: now(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("pursuits_account_opportunity_ux").on(t.accountProfileId, t.opportunityId),
+    index("pursuits_account_state_ix").on(t.accountProfileId, t.state),
+  ],
+);
+
+export const pursuitTransitions = pgTable(
+  "pursuit_transitions",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    pursuitId: uuid("pursuit_id").notNull().references(() => pursuits.id),
+    fromState: text("from_state"),
+    toState: text("to_state").notNull(),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id"),
+    reason: text("reason"),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: now(),
+  },
+  (t) => [index("pursuit_transitions_pursuit_ix").on(t.pursuitId, t.createdAt)],
+);
+
+export const pursuitTasks = pgTable(
+  "pursuit_tasks",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    pursuitId: uuid("pursuit_id").notNull().references(() => pursuits.id),
+    title: text("title").notNull(),
+    taskType: text("task_type").notNull(),
+    ownerUserId: text("owner_user_id"),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    status: text("status").notNull().default("open"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: now(),
+  },
+  (t) => [index("pursuit_tasks_pursuit_ix").on(t.pursuitId, t.status)],
+);
+
+export const pursuitNotes = pgTable(
+  "pursuit_notes",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    pursuitId: uuid("pursuit_id").notNull().references(() => pursuits.id),
+    authorUserId: text("author_user_id").notNull(),
+    body: text("body").notNull(),
+    visibility: text("visibility").notNull().default("account"),
+    createdAt: now(),
+  },
+  (t) => [index("pursuit_notes_pursuit_ix").on(t.pursuitId, t.createdAt)],
+);
+
 // ── Delivery & coverage ──────────────────────────────────────────────────────
 
 export const deliveries = pgTable(

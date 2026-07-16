@@ -142,3 +142,36 @@ export function FeedbackForm({
     </form>
   );
 }
+
+export function StartPursuitButton({ opportunityId }: { opportunityId: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function start() {
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch(`/api/app/pursuits`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ opportunityId }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      const { id } = (await res.json()) as { id: string };
+      router.push(`/app/pursuits/${id}`);
+    } else {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setMsg(body.error === undefined ? "could not start pursuit" : body.error);
+    }
+  }
+
+  return (
+    <span>
+      <button disabled={busy} onClick={start} data-testid="start-pursuit">
+        Start a pursuit
+      </button>
+      {msg && <span style={{ marginLeft: "0.5rem", color: "#b00" }}>{msg}</span>}
+    </span>
+  );
+}
