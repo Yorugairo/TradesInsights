@@ -73,6 +73,13 @@ export async function deliverDigest(
       candidateCount: model.candidateCount,
       opportunityIds: items.map((i) => i.opportunityId),
       eventIds: items.flatMap((i) => i.eventIds),
+      // Per-item audit trail — the M4.2 duplicate/expired metrics read this.
+      items: items.map((i) => ({
+        opportunityId: i.opportunityId,
+        projectId: i.projectId,
+        isNew: i.isNew,
+        whatChanged: i.whatChanged,
+      })),
       coverage: model.sections.coverage,
     };
     const inserted = await db.execute(sql`

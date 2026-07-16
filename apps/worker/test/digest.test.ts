@@ -21,7 +21,13 @@ import {
   type Db,
 } from "@otn/db";
 import { MockProvider, extractProject, verifyProject } from "@otn/intelligence";
-import { buildDigest, deliverDigest, renderDigestHtml, weeklyIdempotencyKey } from "@otn/delivery";
+import {
+  buildDigest,
+  deliverDigest,
+  deliveryQualityMetrics,
+  renderDigestHtml,
+  weeklyIdempotencyKey,
+} from "@otn/delivery";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toUpperCase();
@@ -293,5 +299,51 @@ describe("M3.6 weekly digest", () => {
     ].find((i) => i.projectId === projectPassId)!;
     expect(item.isNew).toBe(false);
     expect(item.whatChanged).toBe("no change since your last digest");
+  });
+
+  it("M4.2: duplicate and expired rates are measured, not asserted", async () => {
+    // Deliver next week's digest too (repeat item, correctly not-new).
+    const nextEnd = new Date(PERIOD_END.getTime() + 7 * 86_400_000);
+    const model = await buildDigest(db, accountId, { start: PERIOD_END, end: nextEnd });
+    await deliverDigest(db, model);
+
+    const clean = await deliveryQualityMetrics(db, { accountProfileId: accountId });
+    expect(clean.deliveries).toBe(2);
+    expect(clean.items).toBe(2);
+    expect(clean.duplicateNewItems).toBe(0); // prevented by delivery history
+    expect(clean.expiredItems).toBe(0); // prevented by the §15 timing check
+    expect(clean.gates).toEqual({ duplicatePass: true, expiredPass: true });
+
+    // The metric itself must detect violations: fabricate a delivery whose
+    // metadata claims the same opportunity as "new" again.
+    const model2 = await buildDigest(db, accountId, {
+      start: nextEnd,
+      end: new Date(nextEnd.getTime() + 7 * 86_400_000),
+    });
+    const items = [
+      ...model2.sections.priorityNew,
+      ...model2.sections.stageChanges,
+      ...model2.sections.missingFacts,
+      ...model2.sections.monitoring,
+    ];
+    await db.execute(sql`
+      INSERT INTO deliveries
+        (account_profile_id, delivery_type, period_start, period_end, status,
+         idempotency_key, metadata_json)
+      VALUES
+        (${accountId}, 'weekly_digest', ${nextEnd.toISOString()},
+         ${new Date(nextEnd.getTime() + 7 * 86_400_000).toISOString()}, 'draft',
+         ${`test-dup-${RUN}`},
+         ${JSON.stringify({
+           items: items.map((i) => ({
+             opportunityId: i.opportunityId,
+             projectId: i.projectId,
+             isNew: true, // deliberately wrong — the metric must catch this
+             whatChanged: "fabricated",
+           })),
+         })})`);
+    const dirty = await deliveryQualityMetrics(db, { accountProfileId: accountId });
+    expect(dirty.duplicateNewItems).toBeGreaterThanOrEqual(1);
+    expect(dirty.gates.duplicatePass).toBe(false); // 1/3 ≥ 3%
   });
 });

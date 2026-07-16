@@ -6,7 +6,7 @@ import { stageOrder } from "@otn/resolution";
  * Final scores are arithmetic over stored components — model prose never
  * sets a score (spec §13).
  */
-export const SCORING_ALGORITHM_VERSION = "1.0.0";
+export const SCORING_ALGORITHM_VERSION = "1.1.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -46,18 +46,41 @@ const RE = {
   glazing: /\b(glazing|curtain ?wall|storefront|window|glass|skylight|mirror|shower door)\b/,
   interior: /\b(drywall|gypsum|paint|interior|partition|ceiling)\b/,
   /** Work that mentions interiors but is not an interior-finishes package. */
-  notInteriorTrade: /\b(re-?roof|fire (suppression|sprinkler|alarm)|hood suppression|mechanical only|plumbing only|electrical only|solar|antenna|cell tower)\b/,
+  notInteriorTrade:
+    /\b(re-?roof|fire (suppression|sprinkler|alarm)|hood suppression|mechanical (only|replacement)|boiler|furnace|heat pump|freezer|condenser|ductless|rooftop unit|water heater|plumbing only|electrical only|solar|antenna|cell tower)\b/,
   publicWork: /\b(school district|city of|county|wsdot|public works|port of|fire district)\b/,
   subdivision: /\b(plat|subdivision|lots?)\b/,
+  /** Outdoor field/site scope with no building envelope (M3.8 turf-field finding). */
+  fieldWork: /\b(synthetic turf|athletic field|ball ?fields?|playground|sports? court|track resurfac\w*)\b/,
+  /** "73 single-family lots", "24 lot townhome", "65-unit apartment" — deterministic text parse. */
+  lotCount:
+    /(\d{1,4})[- ](?:(?:single|multi)[- ]?family |townho\w+ |residential |detached |apartment )?(?:lots?\b|units?\b|dwellings?\b|homes?\b)/g,
 } as const;
+
+/** Largest lot/unit count stated in stored text; null when none stated. */
+export function derivedUnitsFromText(text: string): number | null {
+  let max: number | null = null;
+  for (const m of text.matchAll(RE.lotCount)) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0 && n <= 5000 && (max === null || n > max)) max = n;
+  }
+  return max;
+}
 
 export function classify(f: ProjectFeatures) {
   const units = f.maxUnits ?? 0;
   const isSfr = RE.sfr.test(f.text);
   const isMultifamily = RE.multifamily.test(f.text) || units >= 3;
   const lowRiseMultifamily = isMultifamily && (f.maxUnits === null || units <= 30);
+  // Repeatable-units evidence: parsed units field OR a lot/unit count stated
+  // in the stored text ("73 single-family lots"). Deterministic parse, not a
+  // guess — null stays null when nothing is stated.
+  const derivedUnits = derivedUnitsFromText(f.text);
+  const effectiveUnits = Math.max(units, derivedUnits ?? 0);
   return {
     isSfr,
+    effectiveUnits,
+    isFieldWork: RE.fieldWork.test(f.text),
     isMultifamily,
     lowRiseMultifamily,
     isCommercial: RE.commercial.test(f.text),
@@ -122,7 +145,9 @@ function timingResidentialGlass(stage: string): number {
     construction: 0.7, near_final: 0.6, entitlement: 0.5, preapplication: 0.3,
     concept: 0.2, bidding_confirmed: 1,
   };
-  return map[stage] ?? 0.1;
+  // Unknown stage is unknown, not dead: several sources (SEPA, project pages)
+  // publish no mappable stage. A 0.1 there was an implicit worst-case guess.
+  return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
 }
 
 function timingInterior(stage: string): number {
@@ -131,7 +156,7 @@ function timingInterior(stage: string): number {
     approved: 0.6, construction_documents: 0.6, near_final: 0.5, entitlement: 0.4,
     preapplication: 0.2, concept: 0.2,
   };
-  return map[stage] ?? 0.1;
+  return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
 }
 
 /**
@@ -143,6 +168,20 @@ function recencyFactor(lastMaterialChangeAt: Date | null, now: Date): number {
   const days = (now.getTime() - lastMaterialChangeAt.getTime()) / 86_400_000;
   if (days <= 60) return 1;
   if (days <= 180) return 0.6;
+  return 0.3;
+}
+
+/**
+ * Residential glass installs months AFTER the permit: windows/doors go in
+ * mid-construction, showers/mirrors near finish (§12.1 "late-stage shower/
+ * mirror opportunities"). A permit issued 4 months ago is prime window, not
+ * stale — the generic 60-day decay was mis-timed for this trade.
+ */
+function recencyResidentialGlass(lastMaterialChangeAt: Date | null, now: Date): number {
+  if (!lastMaterialChangeAt) return 0.5;
+  const days = (now.getTime() - lastMaterialChangeAt.getTime()) / 86_400_000;
+  if (days <= 180) return 1;
+  if (days <= 365) return 0.6;
   return 0.3;
 }
 
@@ -171,12 +210,12 @@ export function routeAtHome(
       (residentialFit ? 0.7 : 0.4) + (c.hasGlazing ? 0.3 : 0) + (c.lowRiseMultifamily ? 0.1 : 0),
     ),
     repeatable_units_or_builder_value:
-      f.clusterSize >= 5 || (f.maxUnits ?? 0) >= 10
+      f.clusterSize >= 5 || c.effectiveUnits >= 10
         ? 1
-        : f.clusterSize >= 3 || (f.maxUnits ?? 0) >= 4
+        : f.clusterSize >= 3 || c.effectiveUnits >= 4
           ? 0.6
           : 0.2,
-    timing: timingResidentialGlass(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
+    timing: timingResidentialGlass(f.stage) * recencyResidentialGlass(f.lastMaterialChangeAt, now),
     territory: 1,
     builder_developer_identified: orgIdentified(f, [
       "applicant", "owner", "proponent", "primary_contractor",
@@ -214,11 +253,22 @@ export function routeCommercial(
   if (f.county === "King") signals.push("king_routes_commercial");
 
   const components = {
-    division_08_system_fit: c.hasGlazing ? 1 : c.isCommercial ? 0.7 : c.isMultifamily ? 0.4 : 0.2,
+    // Outdoor field/site scope has no building envelope — never Division 08
+    // (M3.8 turf-field false positive).
+    division_08_system_fit:
+      c.isFieldWork && !c.hasGlazing
+        ? 0.2
+        : c.hasGlazing
+          ? 1
+          : c.isCommercial
+            ? 0.7
+            : c.isMultifamily
+              ? 0.4
+              : 0.2,
     scale_value:
-      (f.maxValuation ?? 0) >= 1_000_000 || (f.maxUnits ?? 0) >= 20
+      (f.maxValuation ?? 0) >= 1_000_000 || c.effectiveUnits >= 20
         ? 1
-        : (f.maxValuation ?? 0) >= 250_000 || (f.maxUnits ?? 0) >= 5
+        : (f.maxValuation ?? 0) >= 250_000 || c.effectiveUnits >= 5
           ? 0.6
           : f.maxValuation === null
             ? 0.3
