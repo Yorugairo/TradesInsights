@@ -43,6 +43,13 @@
       "when": 1784236533633,
       "tag": "0005_replay_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784237513898,
+      "tag": "0006_capacity_snapshots",
+      "breakpoints": true
     }
   ]
 }

@@ -142,6 +142,25 @@ async function main() {
     if (!linked) throw new Error(`source ${s.key}: unknown account_key ${s.account_key}`);
   }
 
+  // S0 (§5) — seed a PROVISIONAL Solis capacity snapshot so capacity-aware
+  // qualification has an effective snapshot to read. Values are placeholders
+  // flagged provisional (spec §12.3 forbids finalizing before calibration);
+  // real numbers land when Solis approves S0. Idempotent: skip if any snapshot
+  // already exists for the account.
+  await db.execute(sql`
+    INSERT INTO account_capacity_snapshots
+      (account_profile_id, effective_from, minimum_contract_value, ideal_contract_value,
+       maximum_contract_value, accepts_public_work, trade_capacity_json, provisional,
+       notes, created_by)
+    SELECT ap.id, timestamptz '2026-07-15', 50000, 400000, 2000000, false,
+      ${JSON.stringify({ drywall: "provisional", painting: "provisional" })}::jsonb, true,
+      'Provisional placeholder pending Solis S0 calibration — not customer-confirmed.',
+      'system_provisional'
+    FROM account_profiles ap
+    WHERE ap.key = 'solis_interiors'
+      AND NOT EXISTS (
+        SELECT 1 FROM account_capacity_snapshots s WHERE s.account_profile_id = ap.id)`);
+
   await pool.end();
 
   console.log(

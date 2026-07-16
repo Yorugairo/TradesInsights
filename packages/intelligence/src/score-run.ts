@@ -2,12 +2,30 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import { getActiveAccounts, latestRules } from "./accounts.js";
 import {
+  assessCapacity,
+  effectiveCapacitySnapshot,
+  type CapacityAssessment,
+  type CapacitySnapshot,
+} from "./capacity.js";
+import {
   SCORING_ALGORITHM_VERSION,
   routeProject,
   type AccountScoringInput,
   type ProjectFeatures,
   type RouteResult,
 } from "./scoring.js";
+
+/** Public-work signal for the capacity hard-exclusion (mirrors scoring.ts). */
+const PUBLIC_WORK_RE = /\b(school district|city of|county|wsdot|public works|port of|fire district)\b/;
+
+function bandFor(
+  score: number,
+  delivery: { priority_review_min?: number; weekly_digest_min?: number },
+): RouteResult["state"] {
+  if (score >= (delivery.priority_review_min ?? 80)) return "priority_review";
+  if (score >= (delivery.weekly_digest_min ?? 65)) return "weekly_digest";
+  return "archive";
+}
 
 /**
  * M3.2 — batch routing/scoring over the project graph. Features are
@@ -134,12 +152,35 @@ async function loadAccountInputs(
   return { inputs, ids, ruleVersions };
 }
 
+/**
+ * S0 (§5) — fold the effective capacity snapshot into the deterministic score.
+ * Capacity is a multiplier over the §12 score with a recorded explanation; a
+ * missing snapshot (factor 1) leaves the score untouched, so accounts without a
+ * snapshot behave exactly as before. The adjusted score is re-banded against the
+ * account's own thresholds — so the same project lands in a different band under
+ * a different snapshot without ever rewriting a prior delivered score.
+ */
+function applyCapacity(
+  r: RouteResult,
+  f: ProjectFeatures,
+  snap: CapacitySnapshot | null,
+  delivery: { priority_review_min?: number; weekly_digest_min?: number },
+): { score: number; state: RouteResult["state"]; capacity: CapacityAssessment } {
+  const capacity = assessCapacity(
+    { valuationUsd: f.maxValuation, isPublicWork: PUBLIC_WORK_RE.test(f.text) },
+    snap,
+  );
+  const score = Math.round(r.score * capacity.priorityFactor * 10) / 10;
+  return { score, state: bandFor(score, delivery), capacity };
+}
+
 async function upsertOpportunity(
   db: Db,
   accountProfileId: string,
   f: ProjectFeatures,
   r: RouteResult,
   ruleVersions: Record<string, number>,
+  adjusted: { score: number; state: RouteResult["state"]; capacity: CapacityAssessment },
 ): Promise<void> {
   const rationale = {
     algorithmVersion: SCORING_ALGORITHM_VERSION,
@@ -147,6 +188,13 @@ async function upsertOpportunity(
     components: r.components,
     signals: r.signals,
     route: r.route,
+    baseScore: r.score,
+    capacity: {
+      assessment: adjusted.capacity.assessment,
+      priorityFactor: adjusted.capacity.priorityFactor,
+      explanation: adjusted.capacity.explanation,
+      provisional: adjusted.capacity.provisional,
+    },
   };
   const scoreVersion = `${SCORING_ALGORITHM_VERSION}+rules:${Object.entries(ruleVersions)
     .map(([k, v]) => `${k}=${v}`)
@@ -157,8 +205,8 @@ async function upsertOpportunity(
       (account_profile_id, project_id, current_score, score_version, route, state,
        first_qualified_at, last_material_change_at, rationale_json)
     VALUES
-      (${accountProfileId}, ${f.projectId}, ${r.score}, ${scoreVersion}, ${r.route}, ${r.state},
-       CASE WHEN ${r.state} != 'archive' THEN now() END,
+      (${accountProfileId}, ${f.projectId}, ${adjusted.score}, ${scoreVersion}, ${r.route}, ${adjusted.state},
+       CASE WHEN ${adjusted.state} != 'archive' THEN now() END,
        ${f.lastMaterialChangeAt?.toISOString() ?? null},
        ${JSON.stringify(rationale)})
     ON CONFLICT (account_profile_id, project_id) DO UPDATE SET
@@ -183,19 +231,41 @@ export async function scoreAll(
   const [features, accountData] = await Promise.all([loadFeatures(db), loadAccountInputs(db)]);
   const summary: ScoreRunSummary = { projectsScored: 0, opportunities: 0, byAccount: {} };
 
+  // The capacity snapshot effective at scoring time, per account (§5). Loaded
+  // once per run; a null snapshot leaves scores unchanged.
+  const now = new Date();
+  const deliveryByKey = new Map(accountData.inputs.map((i) => [i.key, i.delivery]));
+  const snapshotByKey = new Map<string, CapacitySnapshot | null>();
+  for (const [key, id] of accountData.ids) {
+    snapshotByKey.set(key, await effectiveCapacitySnapshot(db, id, now));
+  }
+
   for (const f of features) {
     summary.projectsScored++;
-    const results = routeProject(f, accountData.inputs);
+    const results = routeProject(f, accountData.inputs, now);
     for (const r of results) {
       const accountId = accountData.ids.get(r.accountKey)!;
-      await upsertOpportunity(db, accountId, f, r, accountData.ruleVersions.get(r.accountKey) ?? {});
+      const adjusted = applyCapacity(
+        r,
+        f,
+        snapshotByKey.get(r.accountKey) ?? null,
+        deliveryByKey.get(r.accountKey) ?? {},
+      );
+      await upsertOpportunity(
+        db,
+        accountId,
+        f,
+        r,
+        accountData.ruleVersions.get(r.accountKey) ?? {},
+        adjusted,
+      );
       summary.opportunities++;
       const bucket = (summary.byAccount[r.accountKey] ??= {
         total: 0, priority: 0, digest: 0, archive: 0,
       });
       bucket.total++;
-      if (r.state === "priority_review") bucket.priority++;
-      else if (r.state === "weekly_digest") bucket.digest++;
+      if (adjusted.state === "priority_review") bucket.priority++;
+      else if (adjusted.state === "weekly_digest") bucket.digest++;
       else bucket.archive++;
     }
   }

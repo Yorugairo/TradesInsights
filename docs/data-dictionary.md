@@ -45,6 +45,8 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **account_rules** — versioned rules: (account, rule_type, version) unique; `rule_json`, `effective_at`. Rules are never edited in place — a change is a new version.
 
+**account_capacity_snapshots** (S0 — migration `0006_capacity_snapshots`) — versioned capacity state effective over `[effective_from, effective_to)` (`effective_to` null = current). Columns: `available_crews`, `backlog_state`, `preferred_start_window`, `minimum/ideal/maximum_contract_value`, `maximum_travel_minutes`, `accepts_public_work`, `bonding_limit`, `trade_capacity_json`, `provisional` (placeholder values not yet customer-calibrated — §12.3), `notes`, `created_by`. Scoring reads the snapshot effective at scoring time and folds a deterministic, explained capacity factor into the score (`rationale_json.capacity`); historical windows are never rewritten. Seeded provisional for `solis_interiors` (created_by `system_provisional`).
+
 **opportunities** — one per (account, project) unique. `current_score`, `score_version`, `route`, `state`, `rationale_json` (component scores — final score is a deterministic calculation).
 
 **opportunity_evidence** — links every delivered claim to an `evidence_items` row with `claim_type`, `confirmed`, `confidence`. Publication gate requires 100% coverage.

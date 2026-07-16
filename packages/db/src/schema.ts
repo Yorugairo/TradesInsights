@@ -303,6 +303,41 @@ export const accountRules = pgTable(
   ],
 );
 
+/**
+ * S0 (strengthening addendum §5) — versioned capacity snapshots. A snapshot is
+ * effective over [effective_from, effective_to); effective_to null = current.
+ * Re-scoring reads the snapshot effective at scoring time, so the same project
+ * scores differently under different capacity states while historical scores
+ * are never rewritten. `provisional` flags placeholder values pending customer
+ * calibration (governing rule: never present a guess as confirmed).
+ */
+export const accountCapacitySnapshots = pgTable(
+  "account_capacity_snapshots",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull(),
+    effectiveTo: timestamp("effective_to", { withTimezone: true }),
+    availableCrews: integer("available_crews"),
+    backlogState: text("backlog_state"),
+    preferredStartWindow: text("preferred_start_window"),
+    minimumContractValue: doublePrecision("minimum_contract_value"),
+    idealContractValue: doublePrecision("ideal_contract_value"),
+    maximumContractValue: doublePrecision("maximum_contract_value"),
+    maximumTravelMinutes: integer("maximum_travel_minutes"),
+    acceptsPublicWork: boolean("accepts_public_work"),
+    bondingLimit: doublePrecision("bonding_limit"),
+    tradeCapacityJson: jsonb("trade_capacity_json"),
+    provisional: boolean("provisional").notNull().default(false),
+    notes: text("notes"),
+    createdBy: text("created_by").notNull(),
+    createdAt: now(),
+  },
+  (t) => [
+    index("account_capacity_snapshots_account_ix").on(t.accountProfileId, t.effectiveFrom),
+  ],
+);
+
 export const opportunities = pgTable(
   "opportunities",
   {
