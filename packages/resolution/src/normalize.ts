@@ -231,6 +231,8 @@ const REFERENCE_FIELDS = [
   "relatedmup",
   "sepanumber",
   "leadagencyfilenumber",
+  "postId", // Lacey WP post id links the REST listing to its project page
+  "projectNumber",
 ] as const;
 
 export interface MatchFeatures {
@@ -253,8 +255,12 @@ export function extractFeatures(
   for (const f of REFERENCE_FIELDS) {
     const v = rawFields[f];
     if (typeof v === "string" && v.trim()) referenceIds.add(v.trim());
+    if (typeof v === "number") referenceIds.add(String(v));
     if (Array.isArray(v)) {
-      for (const x of v) if (typeof x === "string" && x.trim()) referenceIds.add(x.trim());
+      for (const x of v) {
+        if (typeof x === "string" && x.trim()) referenceIds.add(x.trim());
+        if (typeof x === "number") referenceIds.add(String(x));
+      }
     }
   }
   referenceIds.delete(record.externalId);

@@ -31,6 +31,14 @@ Key columns: `key` (unique), `authority`, `priority` (P0/P1/lookup/context/test)
 
 **project_roles** — org ↔ project with `role`, `source_record_id` provenance, `confirmed`, `confidence`.
 
+## Resolution (M2 — schema extension, migration `0001_resolution`)
+
+Not in the spec §7 table list; required by §10 ("record the resolver version, features, score, merge decision, and evidence; support split/undo — never delete underlying source records") and the §17 review-queue API.
+
+**record_resolutions** — the durable source_record → project link with provenance. `resolver_version`, `matched_rule` (official_id | explicit_reference | parcel_overlap | address_name | proximity_org | development_phase | new_project | review_merge), `features_json` (the extracted match features), `score`, `decision` (auto | review_approved), `status` (active | undone — undo flips status and keeps the history row; source records are never deleted). One *active* resolution per record (partial unique index).
+
+**resolution_reviews** — the human review queue. `candidate_project_id`, `matched_rule`, `features_json`, `score`, `reasons_json` (spec §10 triggers that fired: conflicting_jurisdiction, multiple_parcel_candidates, generic_name, …), `status` (pending | merged | rejected), decision metadata (`decided_at/by`, note).
+
 ## Accounts & intelligence (populated in M3)
 
 **account_profiles** — seeded from `config/account-profiles.yaml`. `key` unique; `capabilities_json`, `territory_json`, `exclusions_json` (e.g. Solis closed UBI 604701295), `capacity_json`, `delivery_config_json` (band thresholds).

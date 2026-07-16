@@ -22,7 +22,8 @@
     "map": "sigmap",
     "map:ask": "sigmap ask",
     "map:verify": "sigmap verify",
-    "map:evidence": "sigmap evidence"
+    "map:evidence": "sigmap evidence",
+    "resolve:run": "pnpm --filter @otn/worker resolve:run"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

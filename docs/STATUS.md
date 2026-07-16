@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M1 exit gate + milestone report.
-**Last completed:** M1.10 (Tumwater ArcGIS enabled + green; review/SEPA pages blocked by Akamai edge — see blockers), 2026-07-15.
+**Current task:** M2.3 (fuzzy/geospatial candidates + review thresholds) — next up.
+**Last completed:** M2.2 (exact/lineage/parcel matching) — 5,555 records resolved: 4,982 projects, 571 cross-record merges (363 parcel / 169 reference / 39 official-id), 0 errors, 2026-07-15. M1 exit gate passed (see ledger).
 
 ## Milestone ledger
 
@@ -20,6 +20,9 @@
 | M1.8 WA SEPA register | ✅ 2026-07-15 | official data.wa.gov dataset mmcb-z6jf (separ UI robots-restricted); 564 pilot-county records, rerun + backfill green; Pierce mitigation live |
 | M1.9 Thurston active notices | ✅ 2026-07-15 | 63 project notices (accordion parser, migration-canary throw), idempotent rerun green |
 | M1.10 Tumwater ArcGIS + pages | ✅/⛔ 2026-07-15 | ArcGIS: 44 projects, official status-domain stage map, green. review/SEPA pages: Akamai-blocked (ledger + mitigations) |
+| **M1 exit gate** | ✅ 2026-07-15 | 13 sources enabled all green, 5,555 records, 83/83 tests + E2E, backfills verified, blockers documented |
+| M2.1 resolution normalizers | ✅ 2026-07-15 | address/parcel/org/name/stage/geometry + extractFeatures; 13 unit tests |
+| M2.2 exact/lineage/parcel matching | ✅ 2026-07-15 | migration 0001_resolution; live corpus: 4,986 projects, 571 merges, 377 multi-record projects, 0 errors; cross-source merges verified (SEPA↔Seattle MUP, King notices↔reports, Thurston↔SEPA, Lewis↔SEPA, Lacey REST↔pages) |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

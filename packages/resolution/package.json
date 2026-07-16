@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@otn/domain": "workspace:*"
+    "@otn/db": "workspace:*",
+    "@otn/domain": "workspace:*",
+    "drizzle-orm": "^0.44.7"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

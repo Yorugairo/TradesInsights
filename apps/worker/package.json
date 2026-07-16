@@ -7,13 +7,15 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx src/main.ts",
     "source:run": "tsx src/cli/source-run.ts",
-    "source:backfill": "tsx src/cli/source-backfill.ts"
+    "source:backfill": "tsx src/cli/source-backfill.ts",
+    "resolve:run": "tsx src/cli/resolve-run.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",
     "@otn/config": "workspace:*",
     "@otn/db": "workspace:*",
     "@otn/domain": "workspace:*",
+    "@otn/resolution": "workspace:*",
     "@otn/source-sdk": "workspace:*",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.44.0",

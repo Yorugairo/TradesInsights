@@ -7,7 +7,11 @@ import {
   createDb,
   createPool,
   evidenceItems,
+  projectEvents,
+  projectRoles,
   rawArtifacts,
+  recordResolutions,
+  resolutionReviews,
   sourceRecords,
   sourceRuns,
   sources,
@@ -67,6 +71,11 @@ export async function resetSource(db: Db, key: string): Promise<string> {
   ).map((r) => r.id);
   if (recordIds.length > 0) {
     await db.delete(evidenceItems).where(inArray(evidenceItems.sourceRecordId, recordIds));
+    // M2 resolution rows reference source records — clear them first.
+    await db.delete(projectEvents).where(inArray(projectEvents.sourceRecordId, recordIds));
+    await db.delete(projectRoles).where(inArray(projectRoles.sourceRecordId, recordIds));
+    await db.delete(recordResolutions).where(inArray(recordResolutions.sourceRecordId, recordIds));
+    await db.delete(resolutionReviews).where(inArray(resolutionReviews.sourceRecordId, recordIds));
   }
   await db.delete(sourceRecords).where(eq(sourceRecords.sourceId, row.id));
   await db.delete(rawArtifacts).where(eq(rawArtifacts.sourceId, row.id));

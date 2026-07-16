@@ -72,6 +72,9 @@ importers:
       '@otn/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@otn/resolution':
+        specifier: workspace:*
+        version: link:../../packages/resolution
       '@otn/source-sdk':
         specifier: workspace:*
         version: link:../../packages/source-sdk
@@ -233,9 +236,15 @@ importers:
 
   packages/resolution:
     dependencies:
+      '@otn/db':
+        specifier: workspace:*
+        version: link:../db
       '@otn/domain':
         specifier: workspace:*
         version: link:../domain
+      drizzle-orm:
+        specifier: ^0.44.7
+        version: 0.44.7(@types/pg@8.20.0)(pg@8.22.0)
     devDependencies:
       typescript:
         specifier: ^5.7.0

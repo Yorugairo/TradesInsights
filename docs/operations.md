@@ -77,6 +77,14 @@ pnpm worker               # pg-boss worker
 
 The app boots **without** model keys; the worker logs `modelJobs: "blocked"` until `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` **and** `LLM_MONTHLY_BUDGET_USD` are set.
 
+## Resolution (M2)
+
+```bash
+pnpm resolve:run [--limit N]   # resolve every source record without an active resolution (oldest first)
+```
+
+Deterministic passes (spec §10 order): official ID → explicit reference → parcel overlap (M2.2); fuzzy/geospatial candidates land in M2.3. Non-project records (source canaries) are skipped; test-priority sources excluded. Conflicts (cross-jurisdiction parcel matches, multiple parcel candidates) go to `resolution_reviews` instead of auto-merging. Inspect: `SELECT matched_rule, count(*) FROM record_resolutions GROUP BY 1;`
+
 ## Running sources
 
 ```bash

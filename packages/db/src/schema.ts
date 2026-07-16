@@ -390,3 +390,61 @@ export const coverageEntries = pgTable(
   },
   (t) => [uniqueIndex("coverage_entries_source_ux").on(t.sourceId)],
 );
+
+// ── Resolution (M2, spec §10) ────────────────────────────────────────────────
+// Not in the spec §7 table list, but required by §10 ("record the resolver
+// version, features, score, merge decision, and evidence; support split/undo")
+// and the §17 review-queue API. Recorded as a schema extension in
+// docs/architecture.md.
+
+export const recordResolutions = pgTable(
+  "record_resolutions",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    projectId: uuid("project_id").notNull().references(() => projects.id),
+    resolverVersion: text("resolver_version").notNull(),
+    /** official_id | explicit_reference | parcel_overlap | address_name | proximity_org | development_phase | new_project | review_merge */
+    matchedRule: text("matched_rule").notNull(),
+    featuresJson: jsonb("features_json").notNull(),
+    score: doublePrecision("score").notNull(),
+    /** auto | review_approved */
+    decision: text("decision").notNull(),
+    /** active | undone — undo never deletes source records or this history row. */
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    undoneReason: text("undone_reason"),
+  },
+  (t) => [
+    uniqueIndex("record_resolutions_active_ux")
+      .on(t.sourceRecordId)
+      .where(sql`status = 'active'`),
+    index("record_resolutions_project_ix").on(t.projectId),
+  ],
+);
+
+export const resolutionReviews = pgTable(
+  "resolution_reviews",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    candidateProjectId: uuid("candidate_project_id").references(() => projects.id),
+    matchedRule: text("matched_rule").notNull(),
+    featuresJson: jsonb("features_json").notNull(),
+    score: doublePrecision("score").notNull(),
+    /** Spec §10 review triggers that fired (conflicting_parcels, generic_name, …). */
+    reasonsJson: jsonb("reasons_json").notNull(),
+    resolverVersion: text("resolver_version").notNull(),
+    /** pending | merged | rejected */
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: text("decided_by"),
+    decisionNote: text("decision_note"),
+  },
+  (t) => [
+    index("resolution_reviews_status_ix").on(t.status),
+    index("resolution_reviews_record_ix").on(t.sourceRecordId),
+  ],
+);
