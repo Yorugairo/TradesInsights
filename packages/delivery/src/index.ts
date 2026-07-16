@@ -3,3 +3,4 @@ export * from "./digest.js";
 export * from "./render.js";
 export * from "./deliver.js";
 export * from "./metrics.js";
+export * from "./alerts.js";

@@ -472,6 +472,34 @@ export const artifactAccessLog = pgTable(
   (t) => [index("artifact_access_log_artifact_ix").on(t.rawArtifactId)],
 );
 
+// ── Operational alerts (spec §21 M4.7) ───────────────────────────────────────
+
+/**
+ * Spend/health/stale/delivery alerts. Idempotent by `idempotency_key`
+ * (type:subject:period) so scheduled re-evaluation never duplicates an
+ * alert; `resolved_at` closes it without deleting history.
+ */
+export const alerts = pgTable(
+  "alerts",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** spend_budget | source_red | source_stale | delivery_unsent */
+    alertType: text("alert_type").notNull(),
+    subjectKey: text("subject_key").notNull(),
+    /** warning | critical */
+    severity: text("severity").notNull(),
+    message: text("message").notNull(),
+    detailsJson: jsonb("details_json"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: now(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("alerts_idempotency_ux").on(t.idempotencyKey),
+    index("alerts_open_ix").on(t.alertType, t.resolvedAt),
+  ],
+);
+
 // ── Model runs (spec §13 AI contract) ────────────────────────────────────────
 
 /**

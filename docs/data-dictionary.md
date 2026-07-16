@@ -63,4 +63,6 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **delivery_items** — ordered opportunity/event inclusions per delivery.
 
+**alerts** (M4.7 — migration `0004_alerts`) — operational alerts (spend_budget | source_red | source_stale | delivery_unsent) with `severity`, `message`, `details_json`, unique `idempotency_key` (type:subject:period — scheduled re-evaluation never duplicates), `resolved_at` closes without deleting history.
+
 **coverage_entries** — one per source: `freshness_state` (green/amber/red, updated by the health evaluator), `last_success_at`, `record_types`, `status`.
