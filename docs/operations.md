@@ -147,6 +147,8 @@ pnpm source:backfill <source-key> --from YYYY-MM-DD --to YYYY-MM-DD [--shadow]
 
 Runs are recorded in `source_runs`; per-item failures are dead-lettered inside `metrics_json` with stage + error, reproducible by re-running the source.
 
+**Source health (`evaluateSourceHealth`, spec §14) turns a source RED on:** two consecutive failed runs; staleness beyond 2× cadence; unexpected zero usable records; or **D1 parser invariant violations** on the latest run. A RED source is suppressed by the §15 publication gate (deliveries supported only by it are withheld). The D1 trigger is the only one that catches a *silent positional mis-parse* — a layout shift that moves a column produces no field-name change, no volume drop, and no zero-record, so without invariant reconciliation it would look green while emitting wrong values. An adapter's `checkInvariants` reconciles its parse against the document's own printed totals (e.g. Lacey census: printed permit count, dwelling-unit total, valuation grand total) and value-shape expectations (units ceiling; Lewis permit-id format + no permit/date bleeding into the type/reason columns). A red-from-invariant means "the parse no longer reconciles — inspect the source layout"; violations are listed in `source_runs.metrics_json.invariantViolationDetails`.
+
 ## Tests
 
 ```bash

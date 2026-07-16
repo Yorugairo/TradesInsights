@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./invariants.js";
 export * from "./logging.js";
 export * from "./object-store.js";
 export * from "./fetch-policy.js";

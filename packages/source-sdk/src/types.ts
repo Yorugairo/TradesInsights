@@ -1,6 +1,7 @@
 import type { NormalizedSourceRecord } from "@otn/domain";
 import type { Logger } from "pino";
 import type { ObjectStore } from "./object-store.js";
+import type { InvariantViolation } from "./invariants.js";
 
 /** An artifact the adapter found during discovery, not yet fetched. */
 export interface DiscoveredArtifact {
@@ -62,6 +63,20 @@ export interface SourceAdapter {
   discover(ctx: RunContext): Promise<DiscoveredArtifact[]>;
   fetch(item: DiscoveredArtifact, ctx: RunContext): Promise<RawArtifact>;
   parse(raw: RawArtifact, ctx: RunContext): Promise<ParsedSourceRecord[]>;
+  /**
+   * D1 — optional per-artifact self-reconciliation. Given the fetched artifact
+   * and the records the parser produced from it, return any invariant
+   * violations (printed-total mismatch, out-of-range value, column-shape
+   * break). The runner records violations into the run and
+   * `evaluateSourceHealth` turns the source red when the latest run has any —
+   * so a silent positional mis-parse cannot look healthy. Return [] when the
+   * parse reconciles.
+   */
+  checkInvariants?(
+    raw: RawArtifact,
+    parsed: ParsedSourceRecord[],
+    ctx: RunContext,
+  ): InvariantViolation[] | Promise<InvariantViolation[]>;
 }
 
 export interface RunMetrics {
@@ -72,4 +87,6 @@ export interface RunMetrics {
   rejected: number;
   duplicate: number;
   errors: number;
+  /** D1 — count of parser self-reconciliation failures across all artifacts. */
+  invariantViolations: number;
 }

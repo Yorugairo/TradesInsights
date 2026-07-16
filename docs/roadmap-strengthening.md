@@ -52,13 +52,19 @@ second product build on the M0–M4 base — plan it as its own milestone series
 
 Protects data integrity that every downstream memo depends on.
 
-- **D1 — runtime parser invariants + golden-diff canary.** Promote the
-  reconciliation checks that today live only in tests (census page totals =
-  printed total; valuation ≫ unit count; dates in range) into **runtime**
-  assertions on the Lacey-census and Lewis-inspection positional parsers; a
-  pinned-fixture re-parse each run flags drift. Wire failures into
-  `packages/source-sdk/src/health.ts` red. *Closes the "silent mis-parse looks
-  green" hole — the worst failure mode for a no-fabrication product.*
+- **D1 — runtime parser invariants.** ✅ **Shipped 2026-07-16.** Optional
+  `SourceAdapter.checkInvariants` hook (`source-sdk/invariants.ts`), called by
+  the runner per artifact; violations stored in `source_runs.metrics_json` and
+  turned red by `evaluateSourceHealth`. Lacey census reconciles the PDF's own
+  printed permit count, dwelling-unit total, and valuation grand total (the
+  manual-audit checks, now every fetch) + a units-shape ceiling; Lewis
+  inspections guards permit-id format + column-shift. Zero false positives on
+  both live layouts; catches dropped-row, units↔valuation swap, and column
+  drift. *Closed the "silent mis-parse looks green" hole — the worst failure
+  mode for a no-fabrication product.* (The heavier "golden-diff re-parse each
+  run" is deferred: the printed-total reconciliation already catches live layout
+  drift, and the fixture golden tests catch parser-code regression in CI, so a
+  runtime fixture re-parse is redundant for now.)
 - **D2 — field-fill (null-rate) instrumentation.** Per-run required-field fill
   rates; wire the spec §14 "required-field drop >20%" red trigger that
   `packages/source-sdk/src/health.ts` documents but doesn't implement.

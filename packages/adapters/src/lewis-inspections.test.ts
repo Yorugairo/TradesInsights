@@ -107,4 +107,23 @@ describe("lewis_inspections daily PDF (2026-07-15 fixture)", () => {
     ).toBe("2026-07-15");
     expect(inspectionDateFromFilename("https://x/media/documents/Exhibit_A_-_2026_Fee_Schedule_Final_Version.pdf")).toBeNull();
   });
+
+  it("D1: clean parse has no column-shape violations; a drift is caught", async () => {
+    const adapter = new LewisInspectionsAdapter();
+    const raw = rawArtifact(await readFile(join(FIXTURES_DIR, GOLDEN)), "x", {
+      inspectionDate: "2026-07-15",
+    });
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+    // Descriptive type/reason values never look like permit numbers or dates.
+    expect(adapter.checkInvariants(raw, parsed)).toEqual([]);
+
+    // Simulate a horizontal column drift: a permit number bleeds into the
+    // inspection-type column.
+    const drifted = parsed.map((p) => ({
+      ...p,
+      rawFields: { ...p.rawFields, inspectionType: "B26-00067" },
+    }));
+    const violations = adapter.checkInvariants(raw, drifted);
+    expect(violations.map((v) => v.check)).toContain("lewis_column_shift");
+  });
 });

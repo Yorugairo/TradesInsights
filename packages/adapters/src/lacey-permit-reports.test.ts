@@ -8,6 +8,7 @@ import {
   LaceyPermitReportsAdapter,
   censusMonthFromUrl,
   parseLaceyCensus,
+  printedPermitCount,
 } from "./lacey-permit-reports.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
 
@@ -131,5 +132,50 @@ describe("lacey_permit_reports census parser (two live layout variants)", () => 
     expect(
       censusMonthFromUrl("https://cityoflacey.org/wp-content/uploads/sites/3/2026/07/June-2026-Construction-Activity.pdf"),
     ).toBeNull(); // activity summaries carry counts, not records
+  });
+});
+
+describe("D1 census parser self-reconciliation invariants", () => {
+  it("reads the PDF's own printed permit count (independent of the column parser)", async () => {
+    const june = await extractPdfTextItems(await readFile(join(FIXTURES_DIR, JUNE)));
+    const may = await extractPdfTextItems(await readFile(join(FIXTURES_DIR, MAY)));
+    expect(printedPermitCount(june)).toBe(14);
+    expect(printedPermitCount(may)).toBe(9);
+  });
+
+  it("a clean parse of both live layouts yields zero violations (no false positives)", async () => {
+    const adapter = new LaceyPermitReportsAdapter();
+    for (const [file, month] of [[JUNE, "2026-06"], [MAY, "2026-05"]] as const) {
+      const raw = rawArtifact(await readFile(join(FIXTURES_DIR, file)), `x/${month}`, {
+        reportMonth: month,
+      });
+      const parsed = await adapter.parse(raw, testContext(adapter.key));
+      const violations = await adapter.checkInvariants(raw, parsed);
+      expect(violations, JSON.stringify(violations)).toEqual([]);
+    }
+  });
+
+  it("catches a dropped row (printed count no longer matches parsed rows)", async () => {
+    const adapter = new LaceyPermitReportsAdapter();
+    const raw = rawArtifact(await readFile(join(FIXTURES_DIR, JUNE)), "x/2026-06", {
+      reportMonth: "2026-06",
+    });
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+    const violations = await adapter.checkInvariants(raw, parsed.slice(0, 12)); // 2 rows dropped
+    expect(violations.map((v) => v.check)).toContain("lacey_printed_permit_count");
+    const v = violations.find((x) => x.check === "lacey_printed_permit_count")!;
+    expect(v.expected).toBe(14);
+    expect(v.observed).toBe(12);
+  });
+
+  it("catches a units↔valuation column swap (money value in the units column)", async () => {
+    const adapter = new LaceyPermitReportsAdapter();
+    const raw = rawArtifact(await readFile(join(FIXTURES_DIR, JUNE)), "x/2026-06", {
+      reportMonth: "2026-06",
+    });
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+    (parsed[0]!.record as { units: number | null }).units = 15_519_768; // a valuation
+    const violations = await adapter.checkInvariants(raw, parsed);
+    expect(violations.map((v) => v.check)).toContain("lacey_units_shape");
   });
 });

@@ -1,8 +1,10 @@
 import { extractLinks, extractPdfTextItems, loadHtml, type PdfTextItem } from "@otn/documents";
 import {
+  checkPattern,
   httpFetchArtifact,
   httpGet,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -202,5 +204,44 @@ export class LewisInspectionsAdapter implements SourceAdapter {
         },
       };
     });
+  }
+
+  /**
+   * D1 — column-shape invariants. The inspections table has no reconcilable
+   * printed total, so guard the geometry directly: the permit-number column
+   * must keep its format, and a permit number or a date must never appear in
+   * the inspection-type or reason column (that is the signature of a horizontal
+   * column drift silently mis-assigning cells). Descriptive type/reason values
+   * ("FINAL INSPECTION", "footing") never match these patterns, so a clean
+   * parse produces no violations.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    const idViolation = checkPattern(
+      parsed,
+      (p) => ((p.rawFields as { permitNumber?: string }).permitNumber ?? null),
+      { re: PERMIT_RE, check: "lewis_permit_id_format" },
+    );
+    if (idViolation) out.push(idViolation);
+
+    const DATE_RE = /\b\d{2}\/\d{2}\/\d{4}\b/;
+    for (const p of parsed) {
+      const rf = p.rawFields as { inspectionType?: string | null; reason?: string | null };
+      for (const [field, val] of [
+        ["inspectionType", rf.inspectionType],
+        ["reason", rf.reason],
+      ] as const) {
+        if (val && (PERMIT_RE.test(val.trim()) || DATE_RE.test(val))) {
+          out.push({
+            check: "lewis_column_shift",
+            detail: `${p.record.externalId}: ${field}="${val}" looks like a permit/date — column drift`,
+            observed: val,
+            expected: `descriptive ${field}`,
+          });
+          break;
+        }
+      }
+    }
+    return out;
   }
 }

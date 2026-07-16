@@ -17,6 +17,7 @@ import type {
   RunMetrics,
   SourceAdapter,
 } from "./types.js";
+import type { InvariantViolation } from "./invariants.js";
 
 export interface DeadLetterEntry {
   idempotencyKey: string;
@@ -133,8 +134,10 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
     rejected: 0,
     duplicate: 0,
     errors: 0,
+    invariantViolations: 0,
   };
   const deadLetters: DeadLetterEntry[] = [];
+  const invariantViolationDetails: (InvariantViolation & { canonicalUrl: string })[] = [];
   let runSchemaFingerprint: string | null = null;
 
   try {
@@ -299,6 +302,22 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
           }
           metrics.parsed++;
         }
+
+        // D1 — parser self-reconciliation. Records are already persisted; a
+        // violation does not drop them, it turns the source red so the
+        // publication gate suppresses deliveries supported only by it (spec
+        // §15) until a human confirms the parse. Runs AFTER persist so the
+        // check is against exactly what was stored.
+        if (adapter.checkInvariants) {
+          const violations = await adapter.checkInvariants(raw, parsed, ctx);
+          for (const v of violations) {
+            invariantViolationDetails.push({ ...v, canonicalUrl: item.canonicalUrl });
+            logger.warn(
+              { check: v.check, observed: v.observed, expected: v.expected, url: item.canonicalUrl },
+              "parser invariant violation",
+            );
+          }
+        }
       } catch (err) {
         metrics.errors++;
         const entry: DeadLetterEntry = {
@@ -312,6 +331,7 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
       }
     }
 
+    metrics.invariantViolations = invariantViolationDetails.length;
     const status = metrics.errors > 0 ? "completed_with_errors" : "succeeded";
     await db
       .update(sourceRuns)
@@ -326,7 +346,7 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
         duplicateCount: metrics.duplicate,
         errorCount: metrics.errors,
         schemaFingerprint: runSchemaFingerprint,
-        metricsJson: { ...metrics, deadLetters },
+        metricsJson: { ...metrics, deadLetters, invariantViolationDetails },
         // Carry the previous checkpoint forward when the adapter didn't set a
         // new one, so an intermediate no-checkpoint run doesn't lose the mark.
         checkpointJson: nextCheckpoint ?? previousCheckpoint,

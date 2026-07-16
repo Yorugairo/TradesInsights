@@ -76,6 +76,18 @@ export async function evaluateSourceHealth(
     reasons.push("unexpected zero usable records");
   }
 
+  // D1 — a parser that failed self-reconciliation (printed-total mismatch,
+  // out-of-range value, column-shape break) is producing values we cannot
+  // trust. This is the one health signal that catches a silent positional
+  // mis-parse — volume, zero-record, and fingerprint checks all stay green
+  // through it. Red so the publication gate suppresses deliveries built on it.
+  const invariantViolations =
+    (latest?.metricsJson as { invariantViolations?: number } | null)?.invariantViolations ?? 0;
+  if (invariantViolations > 0) {
+    state = "red";
+    reasons.push(`parser invariant violation (${invariantViolations}) — possible layout drift`);
+  }
+
   // Volume-drop check (spec §14 "unexpected volume drop"). Two expected,
   // healthy cases are exempt:
   //  - unchangedCount > 0: hash-identical artifacts — every previously parsed

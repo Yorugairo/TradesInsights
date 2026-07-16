@@ -1,8 +1,12 @@
 import { extractLinks, extractPdfTextItems, loadHtml, type PdfTextItem } from "@otn/documents";
 import {
+  checkNumericRange,
   httpFetchArtifact,
   httpGet,
+  reconcileCount,
+  reconcileSum,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -120,6 +124,63 @@ function parseMoney(s: string): number | null {
  * order plus a grand total; they pair by index — on a count mismatch every
  * valuation stays null (never guessed).
  */
+/** Group positioned items into visual lines (rounded y), left-to-right. */
+function linesByY(items: PdfTextItem[]): { y: number; text: string; items: PdfTextItem[] }[] {
+  const byRow = new Map<number, PdfTextItem[]>();
+  for (const it of items) {
+    const key = Math.round(it.y);
+    const row = byRow.get(key) ?? [];
+    row.push(it);
+    byRow.set(key, row);
+  }
+  return [...byRow.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([y, row]) => {
+      const sorted = row.sort((a, b) => a.x - b.x);
+      return { y, text: sorted.map((i) => i.text).join(" "), items: sorted };
+    });
+}
+
+/** The visual row whose text matches `labelRe`, or null. */
+function totalLine(pages: { items: PdfTextItem[] }[], labelRe: RegExp): PdfTextItem[] | null {
+  for (const page of pages) {
+    for (const line of linesByY(page.items)) {
+      if (labelRe.test(line.text)) return line.items;
+    }
+  }
+  return null;
+}
+
+/**
+ * The report's own printed totals — read by plain label search, INDEPENDENT of
+ * the positional column parser. Reconciling these against the parsed rows is
+ * what catches a silent layout drift: the column geometry can move (changing
+ * the parsed rows) while these printed footer lines stay exactly as readable.
+ * Each returns null when its line is not found — an unread total is never a
+ * violation. The label and its value sit on the same visual row (the rest of a
+ * wrapped label continues on later rows), so we take the value off that row.
+ */
+export function printedPermitCount(pages: { items: PdfTextItem[] }[]): number | null {
+  const items = totalLine(pages, /Total Number/i);
+  if (!items) return null;
+  const ints = items.map((i) => i.text.trim()).filter((t) => /^\d{1,4}$/.test(t));
+  return ints.length > 0 ? Number(ints[ints.length - 1]) : null;
+}
+
+export function printedUnitTotal(pages: { items: PdfTextItem[] }[]): number | null {
+  const items = totalLine(pages, /Total New Dwelling Units/i);
+  if (!items) return null;
+  const ints = items.map((i) => i.text.trim()).filter((t) => /^\d{1,6}$/.test(t));
+  return ints.length > 0 ? Number(ints[ints.length - 1]) : null;
+}
+
+export function printedValuationTotal(pages: { items: PdfTextItem[] }[]): number | null {
+  const items = totalLine(pages, /Total Valuation/i);
+  if (!items) return null;
+  const money = items.map((i) => i.text.trim()).find((t) => /^\$?[\d,]+\.\d{2}$/.test(t));
+  return money ? Number(money.replace(/[$,]/g, "")) : null;
+}
+
 export function parseLaceyCensus(pages: { pageNumber: number; items: PdfTextItem[] }[]): {
   rows: LaceyCensusRow[];
   valuationMismatch: boolean;
@@ -339,5 +400,36 @@ export class LaceyPermitReportsAdapter implements SourceAdapter {
         ],
       },
     }));
+  }
+
+  /**
+   * D1 — reconcile the parse against the PDF's own printed totals and against
+   * value-shape expectations. Independent of the positional column parser: the
+   * printed permit count is read by text search, so a geometry drift that
+   * changes the row count is caught. The units ceiling catches a units↔
+   * valuation column swap (a money value in the units column is enormous).
+   */
+  async checkInvariants(raw: RawArtifact, parsed: ParsedSourceRecord[]): Promise<InvariantViolation[]> {
+    const pages = await extractPdfTextItems(raw.body);
+    const out: InvariantViolation[] = [];
+    const unitSum = parsed.reduce((a, p) => a + (typeof p.record.units === "number" ? p.record.units : 0), 0);
+    const valSum = parsed.reduce((a, p) => a + (typeof p.record.valuationUsd === "number" ? p.record.valuationUsd : 0), 0);
+
+    // Three reconciliations against the report's own printed footer totals —
+    // the exact manual-audit checks the fixtures make, now run every fetch.
+    const violations = [
+      reconcileCount("lacey_printed_permit_count", printedPermitCount(pages), parsed.length),
+      reconcileSum("lacey_printed_unit_total", printedUnitTotal(pages), unitSum, 0),
+      reconcileSum("lacey_printed_valuation_total", printedValuationTotal(pages), valSum, 0.01),
+      // A units↔valuation column swap would land a money value ($15,519,768) in
+      // the units column — far past any real dwelling-unit count.
+      checkNumericRange(
+        parsed,
+        (p) => (typeof p.record.units === "number" ? p.record.units : null),
+        { max: 2000, check: "lacey_units_shape" },
+      ),
+    ];
+    for (const v of violations) if (v) out.push(v);
+    return out;
   }
 }
