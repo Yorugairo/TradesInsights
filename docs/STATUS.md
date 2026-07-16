@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M3.8 (reviewed samples + M3 exit gate + report). Note: *executing* model extraction/verification needs `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`; the pipelines are built and mock-tested, and stay in a visible blocked state until the keys are set — the publication gate reports `blocked_on_verifier` accordingly.
-**Last completed:** M3.7 (feedback + disposition reasons) — 2026-07-16.
+**Current task:** M4.1 (labeled eval set) — **awaiting go-ahead**; M4 precision gates presume model keys (`ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`) so extraction/verification can run on the live corpus first. Note: *executing* model extraction/verification needs `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`; the pipelines are built and mock-tested, and stay in a visible blocked state until the keys are set — the publication gate reports `blocked_on_verifier` accordingly.
+**Last completed:** M3 (all of M3.1–M3.8) — exit gate green (verifier-execution deferred pending keys, enforced as `blocked_on_verifier`), 2026-07-16.
 
 ## Milestone ledger
 
@@ -35,6 +35,8 @@
 | M3.5 §16 UI + §17 APIs | ✅ 2026-07-16 | all §16 routes + §17 endpoints 1:1; pilot HMAC-cookie auth, account isolation enforced in the query layer and proven by E2E (cross-account read → 404, customer → admin API → 403); opportunity page: facts-vs-inferences, evidence w/ grades+retrieval dates, timeline, gate checks, next action, feedback/state controls; admin: sources (run enqueues pg-boss job, disable), run detail w/ dead letters, review merge/reject, coverage; 9/9 Playwright E2E |
 | M3.6 idempotent weekly digest | ✅ 2026-07-16 | §18: 5 sections, gate-passing items only, withheld items disclosed in section 5; per-item what-changed/why-it-fits/facts/inferences/next-action/source-links; "new" = first-ever inclusion (delivery history), unchanged repeats never labeled new; idempotent per (account, week) incl. never re-sending; Mailpit send verified; live run: 3 drafts, 767 withheld pending verification (honest keyless state); 4 integration tests |
 | M3.7 feedback + disposition reasons | ✅ 2026-07-16 | controlled disposition vocabulary enforced at the API (free-form rejected 400, proven E2E); dismiss/feedback forms use the vocabulary; per-account calibration rollup (rates incl. honest nulls when unanswered, disposition counts, per-route relevance) on /app/feedback + `pnpm feedback:report`; never auto-applied to rules; 3 integration tests + E2E |
+| M3.8 reviewed samples per account | ✅ 2026-07-16 | `docs/pilot-samples.md`: 7 per account from the live corpus, every fact matched verbatim to stored A-grade evidence + source URL; 3 misses found and logged as §22 calibration items (turf-field wrong_trade at 85, min-job-size, cross-source unit-count discrepancy stated not resolved) |
+| **M3 exit gate** | ✅ 2026-07-16 | zero unsupported facts (0 records w/o evidence, 0 live model claims, 0 delivered items, 0 bidding_confirmed); distinct routing proven incl. same project → different routes per account (7096544-CN: Commercial joint_review vs Solis radar); feedback loop complete (capture → controlled dispositions → rollup → versioned rule edit); pilot runs without spreadsheets (UI + review queue + digest + CLIs); 172/172 vitest + 9/9 E2E. Independent-verifier *execution* pending keys — publication correctly held at `blocked_on_verifier` |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
@@ -63,6 +65,7 @@
 
 - **Lacey:** King County coverage for At Home; builder appetite; minimum lots/units; apartment/townhome routing; product lead times; builder relationships.
 - **Solis:** license renewal (registration researched through 2026-08-11 — recheck); detailed drywall/painting scope; capacity; min/ideal job size + geography; preferred/blocked GCs; public-work constraints; invitation platforms + authorized ingestion.
+- **From M3.8 sample review** (`docs/pilot-samples.md`): division_08 trade_fit needs a negative filter for site/field work (turf field scored 85); minimum-job-size floors would demote low-valuation SFR permits and STFI residential remodels; briefs must present both citations when sources disagree on unit count (41st Ave: 198 vs 180).
 
 ## Connections needed later
 
