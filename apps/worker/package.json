@@ -8,7 +8,8 @@
     "start": "tsx src/main.ts",
     "source:run": "tsx src/cli/source-run.ts",
     "source:backfill": "tsx src/cli/source-backfill.ts",
-    "resolve:run": "tsx src/cli/resolve-run.ts"
+    "resolve:run": "tsx src/cli/resolve-run.ts",
+    "review": "tsx src/cli/review.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",

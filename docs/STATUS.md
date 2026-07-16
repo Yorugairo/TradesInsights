@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M2.5 (merge-review/split workflow) — next up.
-**Last completed:** M2.4 (development/phase hierarchy) — 26 developments, 60 projects grouped on live corpus, 2026-07-16.
+**Current task:** M2.6 (permit-cluster velocity events) — next up.
+**Last completed:** M2.5 (merge-review/split workflow) — decide/undo with provenance, review CLI, 2026-07-16.
 
 ## Milestone ledger
 
@@ -25,6 +25,7 @@
 | M2.2 exact/lineage/parcel matching | ✅ 2026-07-15 | migration 0001_resolution; live corpus: 4,986 projects, 571 merges, 377 multi-record projects, 0 errors; cross-source merges verified (SEPA↔Seattle MUP, King notices↔reports, Thurston↔SEPA, Lewis↔SEPA, Lacey REST↔pages) |
 | M2.3 fuzzy/geospatial + review gates | ✅ 2026-07-16 | passes 4–5 (address+name, proximity+org, PostGIS ST_DistanceSphere ≤75m); §10 gates: same-address TI, generic names, fuzzy-without-support → review; resolver 0.3.0 |
 | M2.4 development/phase hierarchy | ✅ 2026-07-16 | name-base grouping w/ permit-vocab distinctiveness guard + org/parcel/proximity support; plat-parents phases; 26 developments / 60 projects live; derived layer rebuildable |
+| M2.5 merge-review/split workflow | ✅ 2026-07-16 | decideReview merge/reject (rejected candidates excluded from re-resolution), undoResolution keeps records + history, review CLI |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

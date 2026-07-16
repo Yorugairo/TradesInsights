@@ -345,21 +345,45 @@ async function persistResolution(
   });
 }
 
-export async function resolveRecord(db: Db, row: RecordRow): Promise<ResolutionOutcome> {
+/** Merge a record into a specific project on a human review decision (M2.5). */
+export async function mergeIntoProjectForReview(
+  db: Db,
+  projectId: string,
+  row: RecordRow,
+): Promise<void> {
+  const features = extractFeatures(row.normalized, row.rawFields);
+  await mergeIntoProject(db, projectId, row, features);
+}
+
+export interface ResolveOptions {
+  /** Projects a reviewer has rejected for this record — never re-matched. */
+  excludeProjectIds?: string[];
+}
+
+export async function resolveRecord(
+  db: Db,
+  row: RecordRow,
+  opts: ResolveOptions = {},
+): Promise<ResolutionOutcome> {
   const record = row.normalized;
+  const excluded = new Set(opts.excludeProjectIds ?? []);
   if (NON_PROJECT_RECORD_TYPES.has(record.recordType)) {
     return { sourceRecordId: row.id, outcome: "skipped", rule: null, projectId: null };
   }
   const features = extractFeatures(record, row.rawFields);
 
-  const idMatch = await matchByIds(db, record, features);
+  let idMatch = await matchByIds(db, record, features);
+  if (idMatch && excluded.has(idMatch.projectId)) idMatch = null;
   if (idMatch) {
     await mergeIntoProject(db, idMatch.projectId, row, features);
     await persistResolution(db, row, idMatch.projectId, idMatch.rule, features, 1);
     return { sourceRecordId: row.id, outcome: "merged", rule: idMatch.rule, projectId: idMatch.projectId };
   }
 
-  const parcelMatch = await matchByParcels(db, record, features);
+  const parcelMatchRaw = await matchByParcels(db, record, features);
+  const parcelMatch = {
+    projectIds: parcelMatchRaw.projectIds.filter((id) => !excluded.has(id)),
+  };
   if (parcelMatch.projectIds.length === 1) {
     const projectId = parcelMatch.projectIds[0]!;
     // Jurisdiction conflict on a parcel match goes to review, not auto-merge.
@@ -398,7 +422,8 @@ export async function resolveRecord(db: Db, row: RecordRow): Promise<ResolutionO
   }
 
   // Passes 4–5 (M2.3) — fuzzy address/proximity with spec-§10 review gates.
-  const fuzzy = await evaluateFuzzy(db, record, features);
+  let fuzzy = await evaluateFuzzy(db, record, features);
+  if (fuzzy && excluded.has(fuzzy.projectId)) fuzzy = null;
   if (fuzzy?.kind === "auto") {
     await mergeIntoProject(db, fuzzy.projectId, row, features);
     await persistResolution(db, row, fuzzy.projectId, fuzzy.rule, features, fuzzy.score);
