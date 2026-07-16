@@ -3,7 +3,7 @@
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
 **Current task:** backlog complete through M4 — remaining items are key/authorization-gated: set `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` to activate extraction→verification→publication and measure the live review-time gate; customer authorizations unlock the bid inbox (Solis) and re-verification of Pierce/Tumwater/Thurston-WebLink/Olympia sources; §22 customer calibration finalizes provisional rules.
-**Last completed:** M4 (all of M4.1–M4.7 + exit gate) — 2026-07-16.
+**Last completed:** M4 (all of M4.1–M4.7 + exit gate) — 2026-07-16. Follow-up 2026-07-16: closed two M3.8 §22 calibration items key-independently — field-work Division-08 false positive (verified already fixed by M4.2, added regression guard) and dual-citation display on unit-count disagreement (new deterministic `unitCountDisagreement`). 206/206 tests.
 
 ## Milestone ledger
 
@@ -73,7 +73,7 @@
 
 - **Lacey:** King County coverage for At Home; builder appetite; minimum lots/units; apartment/townhome routing; product lead times; builder relationships.
 - **Solis:** license renewal (registration researched through 2026-08-11 — recheck); detailed drywall/painting scope; capacity; min/ideal job size + geography; preferred/blocked GCs; public-work constraints; invitation platforms + authorized ingestion.
-- **From M3.8 sample review** (`docs/pilot-samples.md`): division_08 trade_fit needs a negative filter for site/field work (turf field scored 85); minimum-job-size floors would demote low-valuation SFR permits and STFI residential remodels; briefs must present both citations when sources disagree on unit count (41st Ave: 198 vs 180).
+- **From M3.8 sample review** (`docs/pilot-samples.md`): ~~division_08 trade_fit needs a negative filter for site/field work (turf field scored 85)~~ **resolved** — M4.2 field-work demotion; Lakeside turf now scores 72.5 (digest), regression-guarded in `scoring.test.ts`. ~~briefs must present both citations when sources disagree on unit count (41st Ave: 198 vs 180)~~ **resolved** — deterministic `unitCountDisagreement` in the digest surfaces every stated unit count with its own citation; rendered as a "Sources disagree" caveat; tested in `digest.test.ts`. **Remaining (customer-gated):** minimum-job-size floors would demote low-valuation SFR permits and STFI residential remodels — still needs Solis's min/ideal job size before a threshold can be set (not a guess).
 
 ## Connections needed later
 

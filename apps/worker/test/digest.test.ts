@@ -43,6 +43,8 @@ let projectPassId: string;
 let projectBlockedId: string;
 let projectReviewId: string;
 let oppReviewId: string;
+let projectDiscrepancyId: string;
+let accountDiscId: string;
 
 async function seedProject(name: string, artifactId: string, withEvent: boolean) {
   const [project] = await db
@@ -255,6 +257,103 @@ beforeAll(async () => {
     { budget: BUDGET },
   );
   expect(verifyC.allSupported).toBe(true);
+
+  // Project D: two active records that DISAGREE on unit count (the M3.8 41st Ave
+  // case, 198 vs 180). Gate passes (attribute disagreement is not an identity
+  // contradiction); the brief must show both counts with citations, never one.
+  // Isolated under its own account so it never perturbs the delivery-count
+  // assertions of the M3.6/M4.2 tests above.
+  const [discAccount] = await db
+    .insert(accountProfiles)
+    .values({
+      key: `test_disc_${RUN.toLowerCase()}`,
+      name: `Disc Test ${RUN}`,
+      active: true,
+      capabilitiesJson: [],
+      territoryJson: { counties_included: ["Thurston"] },
+      deliveryConfigJson: { priority_review_min: 80, weekly_digest_min: 65 },
+    })
+    .returning({ id: accountProfiles.id });
+  accountDiscId = discAccount!.id;
+  const d = await seedProject(`DIGEST-D-${RUN}`, artifact!.id, true);
+  projectDiscrepancyId = d.projectId;
+  await db.execute(sql`
+    UPDATE source_records
+       SET normalized_json = normalized_json ||
+         ${JSON.stringify({ units: 198, sourceUrl: "https://example.invalid/king-notice" })}::jsonb
+     WHERE external_id = ${`DIGEST-D-${RUN}`} AND source_id = ${sourceId}`);
+  const [recD2] = await db
+    .insert(sourceRecords)
+    .values({
+      sourceId,
+      rawArtifactId: artifact!.id,
+      externalId: `DIGEST-D2-${RUN}`,
+      recordType: "permit",
+      firstSeenAt: new Date(),
+      lastSeenAt: new Date(),
+      rawFieldsJson: {},
+      normalizedJson: {
+        title: `DIGEST-D-${RUN}`,
+        units: 180,
+        sourceUrl: "https://example.invalid/seattle-mup",
+      },
+      normalizedFingerprint: `digest-D2-${RUN}`,
+    })
+    .returning({ id: sourceRecords.id });
+  await db.execute(sql`
+    INSERT INTO record_resolutions
+      (source_record_id, project_id, resolver_version, matched_rule, features_json, score, decision, status)
+    VALUES (${recD2!.id}, ${projectDiscrepancyId}, 'test', 'address_name', '{}', 0.9, 'auto', 'active')`);
+  // Every active record must carry evidence (gate: facts_evidenced).
+  await db.insert(evidenceItems).values({
+    sourceRecordId: recD2!.id,
+    rawArtifactId: artifact!.id,
+    factPath: "project.units",
+    evidenceText: `DIGEST-D-${RUN}: 180 dwelling units.`,
+    pageOrSection: "description",
+    sourceUrl: "https://example.invalid/seattle-mup",
+    authorityGrade: "A",
+    parserVersion: "test",
+  });
+  await db.insert(opportunities).values({
+    accountProfileId: accountDiscId,
+    projectId: projectDiscrepancyId,
+    currentScore: 86,
+    state: "priority_review",
+    firstQualifiedAt: new Date(),
+  });
+  const extractD = await extractProject(
+    db,
+    new MockProvider([
+      {
+        text: JSON.stringify({
+          facts: [
+            { path: "project.units", value: 198, evidenceId: d.evidenceId, confirmed: true, confidence: 0.95 },
+          ],
+          inferences: [],
+          missingCriticalFacts: [],
+        }),
+      },
+    ]),
+    projectDiscrepancyId,
+    { budget: BUDGET },
+  );
+  expect(extractD.status).toBe("succeeded");
+  const verifyD = await verifyProject(
+    db,
+    new MockProvider([
+      {
+        text: JSON.stringify({
+          verdicts: [
+            { path: "project.units", evidenceId: d.evidenceId, supported: true, reason: "stated" },
+          ],
+        }),
+      },
+    ]),
+    projectDiscrepancyId,
+    { budget: BUDGET },
+  );
+  expect(verifyD.allSupported).toBe(true);
 });
 
 afterAll(async () => {
@@ -262,9 +361,18 @@ afterAll(async () => {
     DELETE FROM delivery_items WHERE delivery_id IN
       (SELECT id FROM deliveries WHERE account_profile_id = ${accountId})`);
   await db.execute(sql`DELETE FROM deliveries WHERE account_profile_id = ${accountId}`);
-  await db.execute(sql`DELETE FROM opportunities WHERE account_profile_id = ${accountId}`);
-  await deleteTestProjects(db, [projectPassId, projectBlockedId, projectReviewId]);
-  await db.execute(sql`DELETE FROM account_profiles WHERE id = ${accountId}`);
+  await db.execute(
+    sql`DELETE FROM opportunities WHERE account_profile_id IN (${accountId}, ${accountDiscId})`,
+  );
+  await deleteTestProjects(db, [
+    projectPassId,
+    projectBlockedId,
+    projectReviewId,
+    projectDiscrepancyId,
+  ]);
+  await db.execute(
+    sql`DELETE FROM account_profiles WHERE id IN (${accountId}, ${accountDiscId})`,
+  );
   await pool.end();
 });
 
@@ -412,6 +520,39 @@ describe("M3.6 weekly digest", () => {
     ].map((i) => i.projectId);
     expect(sectionIds).not.toContain(projectReviewId);
     expect(renderDigestHtml(model)).toContain("held for human review");
+  });
+
+  it("M3.8: shows every unit count with its citation when sources disagree", async () => {
+    const model = await buildDigest(db, accountDiscId, { start: PERIOD_START, end: PERIOD_END });
+    const item = [
+      ...model.sections.priorityNew,
+      ...model.sections.stageChanges,
+      ...model.sections.missingFacts,
+      ...model.sections.monitoring,
+    ].find((i) => i.projectId === projectDiscrepancyId)!;
+    expect(item).toBeTruthy();
+    // Both competing counts are surfaced, each carrying its own source link.
+    expect(item.unitCountDisagreement).not.toBeNull();
+    const values = item.unitCountDisagreement!.map((v) => v.units).sort((a, b) => b - a);
+    expect(values).toEqual([198, 180]);
+    for (const entry of item.unitCountDisagreement!) {
+      expect(entry.sources.length).toBeGreaterThan(0);
+      expect(entry.sources[0]!.url).toMatch(/^https:\/\//);
+    }
+    // The rendered brief presents both, not a single silently-chosen number.
+    const html = renderDigestHtml(model);
+    expect(html).toContain("Sources disagree on unit count");
+    expect(html).toContain("198 units");
+    expect(html).toContain("180 units");
+    expect(html).toContain("https://example.invalid/king-notice");
+    expect(html).toContain("https://example.invalid/seattle-mup");
+  });
+
+  it("agreement (or no stated count) produces no disagreement note", async () => {
+    // Project A states no unit count in normalized_json → no false-positive note.
+    const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+    const a = model.sections.priorityNew.find((i) => i.projectId === projectPassId);
+    expect(a?.unitCountDisagreement ?? null).toBeNull();
   });
 
   it("M4.4: a recorded human decision (promote) is the only automation override", async () => {

@@ -61,11 +61,16 @@ five: Lewis County issued-permit reports (grade A).
   SFRs route only to At Home; King routes to Commercial and never to At Home.
 - **Misses found and logged (working as intended — this is what review is for):**
   1. Lakeside turf field routed `division_08` at 85 — wrong_trade; §22 calibration item
-     (negative filter for site/field work in commercial trade_fit).
+     (negative filter for site/field work in commercial trade_fit). **Resolved (M4.2 + 2026-07-16
+     regression guard):** field-work-only scope demotes `division_08_system_fit` to 0.2; the field
+     now scores 72.5 (digest), guarded in `scoring.test.ts`.
   2. Low-valuation Lewis SFR permits and STFI residential remodels score into digest bands —
-     minimum-job-size rules await customer calibration (§22), already listed as pending.
+     minimum-job-size rules await customer calibration (§22), already listed as pending. *(Still open
+     — a threshold without Solis's stated min job size would be a guess.)*
   3. 41st Ave Lacey unit count differs between the Lacey page (198) and SEPA (180) — recorded as a
-     discrepancy, not resolved; the brief must present both citations.
+     discrepancy, not resolved; the brief must present both citations. **Resolved (2026-07-16):**
+     deterministic `unitCountDisagreement` in the digest lists every stated count with its own
+     citation and renders a "Sources disagree on unit count" caveat; tested in `digest.test.ts`.
 - **Delivery posture:** all sampled opportunities remain `blocked_on_verifier` — nothing publishes
   until the independent verifier runs (model keys) and passes, which is the gate working as
   specified, not a defect.

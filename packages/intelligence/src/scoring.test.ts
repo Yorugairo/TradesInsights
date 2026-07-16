@@ -164,6 +164,30 @@ describe("M3.2 routing — the three accounts route differently (exit-gate requi
     expect(routes.length).toBe(1);
   });
 
+  it("a turf/athletic field is not Commercial priority (M3.8 wrong_trade regression)", () => {
+    // The Lakeside School athletic field (7126700-CN ↔ LU ↔ SEPA) is a
+    // high-valuation public-adjacent project with NO Division 08 scope. Under
+    // the v1.0.0 scorer it scored 85 (priority, wrong_trade); the M4.2
+    // field-work demotion must keep it out of the priority band. Guard so a
+    // future glazing/field-work regex edit can't silently regress it.
+    const f = features({
+      county: "King",
+      permittingJurisdiction: "City of Seattle",
+      text: "lakeside school athletic field construct alterations to athletic field including fences netting and scoreboard replace existing natural grass with new synthetic turf",
+      maxValuation: 32_000_000,
+      stage: "permit_applied",
+      orgs: [{ name: "Lakeside School", role: "applicant" }],
+    });
+    const c = classify(f);
+    expect(c.isFieldWork).toBe(true);
+    expect(c.hasGlazing).toBe(false);
+    const commercial = routeProject(f, ACCOUNTS).find(
+      (r) => r.accountKey === "lacey_glass_commercial",
+    )!;
+    expect(commercial.components["division_08_system_fit"]).toBe(0.2);
+    expect(commercial.state).not.toBe("priority_review");
+  });
+
   it("scores are deterministic weighted sums of components", () => {
     const f = features({ text: "single family residence", stage: "permit_applied" });
     const [r] = routeProject(f, [ACCOUNTS[0]!]);

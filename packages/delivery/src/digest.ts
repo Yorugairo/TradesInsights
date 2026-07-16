@@ -38,6 +38,11 @@ export interface DigestItem {
   missingCriticalFacts: string[];
   nextAction: string;
   sourceLinks: { url: string; label: string }[];
+  /** M3.8 — when a project's sources report different unit counts, every
+   * competing value is surfaced with its own citation; the brief never picks
+   * one silently (that would fabricate certainty). Null when sources agree or
+   * only one states a count. */
+  unitCountDisagreement: { units: number; sources: { url: string; label: string }[] }[] | null;
   eventIds: string[];
 }
 
@@ -147,6 +152,43 @@ async function sourceLinks(db: Db, projectId: string): Promise<{ url: string; la
   }));
 }
 
+/**
+ * Distinct non-null unit counts across a project's active resolved records,
+ * each with the sources that state it. Deterministic — reads stored
+ * `normalized_json`, no model. Returns null unless ≥2 records disagree.
+ */
+async function unitCountDisagreement(
+  db: Db,
+  projectId: string,
+): Promise<{ units: number; sources: { url: string; label: string }[] }[] | null> {
+  const res = await db.execute(sql`
+    SELECT (sr.normalized_json->>'units')::int AS units,
+      s.name AS label,
+      sr.normalized_json->>'sourceUrl' AS url
+    FROM record_resolutions rr
+    JOIN source_records sr ON sr.id = rr.source_record_id
+    JOIN sources s ON s.id = sr.source_id
+    WHERE rr.project_id = ${projectId} AND rr.status = 'active'
+      AND sr.normalized_json->>'units' IS NOT NULL
+      AND (sr.normalized_json->>'units') ~ '^[0-9]+$'`);
+  const rows = res.rows as { units: number; label: string; url: string | null }[];
+  const byValue = new Map<number, { url: string; label: string }[]>();
+  for (const r of rows) {
+    const units = Number(r.units);
+    if (!Number.isFinite(units)) continue;
+    const cites = byValue.get(units) ?? [];
+    // De-dupe identical (label,url) citations for the same value.
+    if (!cites.some((c) => c.label === r.label && c.url === (r.url ?? ""))) {
+      cites.push({ url: r.url ?? "", label: r.label });
+    }
+    byValue.set(units, cites);
+  }
+  if (byValue.size < 2) return null; // agreement (or a single count) is not a discrepancy
+  return [...byValue.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([units, sources]) => ({ units, sources }));
+}
+
 function nextAction(item: { isNew: boolean; missing: string[]; state: string }): string {
   if (item.missing.length > 0) {
     return `Verify missing critical facts before outreach: ${item.missing.join(", ")}.`;
@@ -162,11 +204,12 @@ async function buildItem(
   c: CandidateRow,
   opts: { isNew: boolean; periodStart: Date; periodEnd: Date; gate: GateResult },
 ): Promise<DigestItem> {
-  const [events, links, extraction, verification] = await Promise.all([
+  const [events, links, extraction, verification, unitDisagreement] = await Promise.all([
     materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
     sourceLinks(db, c.project_id),
     latestExtraction(db, c.project_id),
     latestVerification(db, c.project_id),
+    unitCountDisagreement(db, c.project_id),
   ]);
   const inclusion = decideInclusion({
     gate: opts.gate,
@@ -216,6 +259,7 @@ async function buildItem(
     missingCriticalFacts: missing,
     nextAction: nextAction({ isNew: opts.isNew, missing, state: c.state }),
     sourceLinks: links,
+    unitCountDisagreement: unitDisagreement,
     eventIds: events.map((e) => e.id),
   };
 }

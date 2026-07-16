@@ -16,6 +16,18 @@ function itemHtml(item: DigestItem): string {
   const missing = item.missingCriticalFacts.length
     ? `<p><strong>Missing critical facts:</strong> ${item.missingCriticalFacts.map(esc).join(", ")}</p>`
     : "";
+  // M3.8 — sources disagree on unit count: show every value with its citation,
+  // never a single silently-chosen number.
+  const unitConflict = item.unitCountDisagreement
+    ? `<p><strong>⚠ Sources disagree on unit count:</strong> ${item.unitCountDisagreement
+        .map(
+          (v) =>
+            `${v.units} units (${v.sources
+              .map((s) => (s.url ? `<a href="${esc(s.url)}">${esc(s.label)}</a>` : esc(s.label)))
+              .join(", ")})`,
+        )
+        .join(" vs. ")} — verify before quoting.</p>`
+    : "";
   const links = item.sourceLinks
     .map((l) => `<a href="${esc(l.url)}">${esc(l.label)}</a>`)
     .join(" · ");
@@ -23,7 +35,7 @@ function itemHtml(item: DigestItem): string {
     <p><strong>${esc(item.projectName)}</strong> — ${esc(item.stage)} · ${esc(item.county)} / ${esc(item.jurisdiction)} · score ${item.score ?? "—"}</p>
     <p><strong>What changed:</strong> ${esc(item.whatChanged)}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
-    ${facts}${inferences}${missing}
+    ${facts}${inferences}${missing}${unitConflict}
     <p><strong>Next action:</strong> ${esc(item.nextAction)}</p>
     <p>Sources: ${links || "—"}</p>
   </li>`;
