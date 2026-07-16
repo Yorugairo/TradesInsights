@@ -135,7 +135,7 @@ Feedback (M3.7): relevant / new / timely / pursue booleans plus a **controlled d
 pnpm alerts:run [--send]     # evaluate spend/health/stale/delivery conditions
 ```
 
-Conditions: LLM monthly spend ≥80% (warning) / ≥100% (critical, "model jobs blocked") of `LLM_MONTHLY_BUDGET_USD`; any enabled source RED (critical, re-alerts daily while red); enabled source stale beyond 2× cadence (warning, daily/weekly/monthly mapped to 1/7/31 days); digest drafts still unsent 3+ days past period end (warning). Fired alerts are durable rows in `alerts` with per-period idempotency keys — reruns dedupe; `--send` emails only *newly fired* alerts to `ALERTS_EMAIL` (Mailpit locally). Run on a schedule (e.g. daily cron) in production.
+Conditions: LLM monthly spend ≥80% (warning) / ≥100% (critical, "model jobs blocked") of `LLM_MONTHLY_BUDGET_USD`; any enabled source RED (critical, re-alerts daily while red — **D4:** when the red source is a substitute feed (`config/sources.yaml` `mitigates`, e.g. `wa_sepa` for Pierce/Tumwater environmental determinations), the alert names the now-uncovered dependents so the concentration risk isn't hidden); enabled source stale beyond 2× cadence (warning, daily/weekly/monthly mapped to 1/7/31 days); digest drafts still unsent 3+ days past period end (warning). Fired alerts are durable rows in `alerts` with per-period idempotency keys — reruns dedupe; `--send` emails only *newly fired* alerts to `ALERTS_EMAIL` (Mailpit locally). Run on a schedule (e.g. daily cron) in production.
 
 ## Running sources
 

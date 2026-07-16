@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import type pg from "pg";
 import { accountProfiles, coverageEntries, sources, type Db } from "@otn/db";
-import { runAlerts } from "@otn/delivery";
+import { evaluateAlertConditions, runAlerts } from "@otn/delivery";
 import { testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toLowerCase();
@@ -116,6 +116,32 @@ describe("M4.7 operational alerts", () => {
     expect(spend).toBeTruthy();
     expect((spend as { severity: string }).severity).toBe("critical");
     expect((spend as { message: string }).message).toContain("blocked");
+  });
+
+  it("D4: a red substitute source escalates, naming its now-uncovered dependents", async () => {
+    const { candidates } = await evaluateAlertConditions(db, {
+      monthlyBudgetUsd: null,
+      substitutes: {
+        [`test_alert_source_${RUN}`]: ["pierce_environmental_determinations", "tumwater_sepa"],
+      },
+    });
+    const red = candidates.find(
+      (c) => c.alertType === "source_red" && c.subjectKey === `test_alert_source_${RUN}`,
+    )!;
+    expect(red).toBeTruthy();
+    expect(red.message).toMatch(/substitute coverage for/i);
+    expect(red.message).toContain("pierce_environmental_determinations");
+    expect((red.details as { mitigatedDependents?: string[] }).mitigatedDependents).toEqual([
+      "pierce_environmental_determinations",
+      "tumwater_sepa",
+    ]);
+
+    // Without a substitute mapping, the same red source keeps the plain message.
+    const plain = await evaluateAlertConditions(db, { monthlyBudgetUsd: null });
+    const plainRed = plain.candidates.find(
+      (c) => c.alertType === "source_red" && c.subjectKey === `test_alert_source_${RUN}`,
+    )!;
+    expect(plainRed.message).not.toMatch(/substitute coverage/i);
   });
 
   it("emails newly fired alerts via Mailpit exactly once", async () => {

@@ -77,9 +77,13 @@ Protects data integrity that every downstream memo depends on.
   `schema_fingerprint` (recorded since M0, never compared); a change raises amber
   with a "review the parser" reason — a visible canary rather than a value that
   sat unused in a column.
-- **D4 — substitute-coverage dependency.** Model "`wa_sepa` mitigates
-  Pierce/Tumwater/Olympia" as first-class; escalate severity when a
-  substitute source goes red (currently a hidden single point of failure).
+- **D4 — substitute-coverage dependency.** ✅ **Shipped 2026-07-16.** A config
+  `mitigates: string[]` field (wa_sepa → the access-blocked
+  Pierce/Tumwater environmental sources) makes the substitution first-class; the
+  M4.7 `source_red` alert escalates when a red source is a substitute, naming the
+  now-uncovered dependents so the concentration is visible instead of hidden.
+  (Scoped to sources actually present in config — Olympia's report source isn't
+  seeded, so it isn't referenced.)
 - **D5 — parser replay by `parserVersion`.** Reprocess stored immutable
   artifacts after a parser fix (raw artifacts already retained forever).
 

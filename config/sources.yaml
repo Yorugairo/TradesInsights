@@ -378,6 +378,13 @@ sources:
     enabled: true
     terms_reviewed_at: "2026-07-15"
     robots_reviewed_at: "2026-07-15"
+    # D4 — substitute coverage: wa_sepa carries the SEPA/environmental
+    # determinations for these access-blocked direct sources, so if wa_sepa
+    # goes red their fallback is gone too (the alert escalates accordingly).
+    mitigates:
+      - pierce_environmental_determinations
+      - tumwater_development_review
+      - tumwater_sepa
     notes: >-
       Verified 2026-07-15: consumed from the official data.wa.gov Socrata
       dataset mmcb-z6jf (provenance "official", attribution WA Ecology) —

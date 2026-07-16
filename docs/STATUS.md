@@ -3,7 +3,7 @@
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
 **Current task:** backlog complete through M4 — remaining items are key/authorization-gated: set `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` to activate extraction→verification→publication and measure the live review-time gate; customer authorizations unlock the bid inbox (Solis) and re-verification of Pierce/Tumwater/Thurston-WebLink/Olympia sources; §22 customer calibration finalizes provisional rules.
-**Last completed:** Phase D3 (schema-fingerprint drift → amber canary) — 2026-07-16; D1 (parser invariants) + D2 (required-field fill-drop) shipped same day. Durability track (`docs/roadmap-strengthening.md`) D1–D3 done; D4–D5 remain. Earlier 2026-07-16: M4 exit gate; two M3.8 §22 calibration items closed (field-work regression guard + dual-citation `unitCountDisagreement`). 221/221 tests.
+**Last completed:** Phase D4 (substitute-coverage alert escalation) — 2026-07-16; D1 (parser invariants) + D2 (fill-drop) + D3 (fingerprint drift) shipped same day. Durability track (`docs/roadmap-strengthening.md`) D1–D4 done; D5 (parser replay) remains. Earlier 2026-07-16: M4 exit gate; two M3.8 §22 calibration items closed (field-work regression guard + dual-citation `unitCountDisagreement`). 221/221 tests.
 
 ## Durability track (docs/roadmap-strengthening.md — Phase D)
 
@@ -12,8 +12,8 @@
 | D1 parser self-reconciliation invariants | ✅ 2026-07-16 | `source-sdk/invariants.ts` (reconcileCount/reconcileSum/checkNumericRange/checkDateWindow/checkPattern); optional `SourceAdapter.checkInvariants` called by the runner per artifact, violations stored in `source_runs.metrics_json` + counted; `evaluateSourceHealth` red on any. Lacey census reconciles the PDF's own printed permit count + unit total + valuation grand total (the manual-audit checks, now every fetch) + units-shape ceiling; Lewis inspections guards permit-id format + column-shift (permit/date bleeding into type/reason). Zero false positives on both live layouts; catches dropped-row, column-swap, column-shift. 15 tests (7 unit + 5 adapter + 3 health) |
 | D2 field-fill (null-rate) instrumentation | ✅ 2026-07-16 | runner accumulates per-run fill over `MONITORED_FILL_FIELDS` (address/dates/valuation/units/geometry/orgs) → `source_runs.metrics_json.fieldFill`; `evaluateSourceHealth` red when a field ≥50%-present drops >20% relative vs the source's previous parsed run (spec §14, self-referential so structurally-null fields never trip). 3 health tests (drop→red, stable→green, sparse-both→green) |
 | D3 schema-fingerprint drift action | ✅ 2026-07-16 | `evaluateSourceHealth` compares the two most recent parsed runs' `schema_fingerprint` (hash of raw field names, recorded since M0 but never compared); a change raises amber with a "review the parser" reason — a visible canary, not silent. 2 health tests (changed→amber, stable→green) |
-| D4 substitute-coverage dependency | ⏳ | escalate when wa_sepa (mitigates Pierce/Tumwater/Olympia) goes red |
-| D5 parser replay by parserVersion | ⏳ | reprocess stored immutable artifacts after a parser fix |
+| D4 substitute-coverage dependency | ✅ 2026-07-16 | config `mitigates: string[]` (wa_sepa → pierce_environmental_determinations, tumwater_development_review, tumwater_sepa); the M4.7 `source_red` alert escalates when a red source is a substitute — names the now-uncovered dependents in message + `details.mitigatedDependents`. Map built from config by `alerts:run`. 1 alerts test (enriched vs plain message) |
+| D5 parser replay by parserVersion | ⏳ next | reprocess stored immutable artifacts after a parser fix |
 
 ## Milestone ledger
 

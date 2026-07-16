@@ -2,6 +2,7 @@ import "../load-env.js";
 import { createDb, createPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
 import { runAlerts } from "@otn/delivery";
+import { loadSourcesConfig } from "@otn/config";
 
 // pnpm alerts:run [--send]
 // Evaluates spend/health/stale/delivery conditions, persists idempotent
@@ -13,10 +14,17 @@ async function main() {
     ? Number(process.env.LLM_MONTHLY_BUDGET_USD)
     : null;
 
+  // D4 — build the substitute-coverage map from config so a red substitute
+  // source escalates for its now-uncovered dependents.
+  const substitutes: Record<string, string[]> = {};
+  for (const s of loadSourcesConfig().sources) {
+    if (s.mitigates.length > 0) substitutes[s.key] = s.mitigates;
+  }
+
   const pool = createPool();
   const db = createDb(pool);
   try {
-    const summary = await runAlerts(db, { monthlyBudgetUsd, send });
+    const summary = await runAlerts(db, { monthlyBudgetUsd, send, substitutes });
     logger.info(
       {
         evaluated: summary.evaluated,

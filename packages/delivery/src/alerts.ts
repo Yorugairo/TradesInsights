@@ -32,9 +32,15 @@ const CADENCE_DAYS: Record<string, number> = { daily: 1, weekly: 7, monthly: 31 
 
 export async function evaluateAlertConditions(
   db: Db,
-  opts: { monthlyBudgetUsd: number | null; now?: Date } = { monthlyBudgetUsd: null },
+  opts: {
+    monthlyBudgetUsd: number | null;
+    now?: Date;
+    /** D4 — source key → keys it provides substitute coverage for. */
+    substitutes?: Record<string, string[]>;
+  } = { monthlyBudgetUsd: null },
 ): Promise<{ candidates: AlertCandidate[]; sourcesChecked: number; deliveriesChecked: number }> {
   const now = opts.now ?? new Date();
+  const substitutes = opts.substitutes ?? {};
   const day = now.toISOString().slice(0, 10);
   const month = day.slice(0, 7);
   const candidates: AlertCandidate[] = [];
@@ -81,12 +87,20 @@ export async function evaluateAlertConditions(
   }[];
   for (const s of sourceRows) {
     if (s.freshness_state === "red") {
+      // D4 — a red source that is the substitute feed for access-blocked
+      // sources takes their fallback down with it: name the now-uncovered
+      // dependents so the concentration risk is visible, not hidden.
+      const dependents = substitutes[s.key] ?? [];
+      const message =
+        dependents.length > 0
+          ? `Source ${s.key} is RED — and it is the substitute coverage for ${dependents.join(", ")}, which now have NO fallback`
+          : `Source ${s.key} is RED — deliveries it solely supports are suppressed`;
       candidates.push({
         alertType: "source_red",
         subjectKey: s.key,
         severity: "critical",
-        message: `Source ${s.key} is RED — deliveries it solely supports are suppressed`,
-        details: { lastSuccessAt: s.last_success_at },
+        message,
+        details: { lastSuccessAt: s.last_success_at, ...(dependents.length > 0 ? { mitigatedDependents: dependents } : {}) },
         idempotencyKey: `source_red:${s.key}:${day}`,
       });
     }
@@ -133,12 +147,15 @@ export interface RunAlertsOptions {
   send?: boolean;
   recipient?: string;
   smtp?: { host: string; port: number };
+  /** D4 — source key → keys it provides substitute coverage for. */
+  substitutes?: Record<string, string[]>;
 }
 
 export async function runAlerts(db: Db, opts: RunAlertsOptions): Promise<AlertsRunSummary> {
   const { candidates, sourcesChecked, deliveriesChecked } = await evaluateAlertConditions(db, {
     monthlyBudgetUsd: opts.monthlyBudgetUsd,
     ...(opts.now ? { now: opts.now } : {}),
+    ...(opts.substitutes ? { substitutes: opts.substitutes } : {}),
   });
 
   const fired: AlertCandidate[] = [];

@@ -7,7 +7,7 @@ Conventions: UUID primary keys (`gen_random_uuid()`); official identifiers are n
 ## Ingestion
 
 **sources** — one row per configured source (seeded from `config/sources.yaml`).
-Key columns: `key` (unique), `authority`, `priority` (P0/P1/lookup/context/test), `landing_url`, `access_url`, `format`, `access_class`, `cadence`, `county`, `permitting_jurisdiction`, `enabled`, `terms_reviewed_at`, `robots_reviewed_at`.
+Key columns: `key` (unique), `authority`, `priority` (P0/P1/lookup/context/test), `landing_url`, `access_url`, `format`, `access_class`, `cadence`, `county`, `permitting_jurisdiction`, `enabled`, `terms_reviewed_at`, `robots_reviewed_at`. Config-only `mitigates: string[]` (D4 — keys this source provides substitute coverage for, e.g. `wa_sepa` → Pierce/Tumwater environmental determinations) is read from config by the alerts CLI, not stored in the table.
 
 **source_runs** — one row per run. `status`: running | succeeded | completed_with_errors | failed. Metrics counters (`discovered/fetched/unchanged/parsed/rejected/duplicate/error_count`), `checkpoint_json` (pagination/high-water mark), `schema_fingerprint` (hash of raw field names — drift detection), `metrics_json` (dead-letter entries: idempotency key, URL, stage, error; plus D1 `invariantViolations` count + `invariantViolationDetails[]` — each `{check, detail, observed, expected, canonicalUrl}` from an adapter's `checkInvariants` self-reconciliation; a non-zero count turns the source red in `evaluateSourceHealth`; plus D2 `fieldFill` — `{field: fill_rate}` over `MONITORED_FILL_FIELDS` for the records this run parsed, compared against the source's previous parsed run so a required field dropping >20% relative turns it red).
 

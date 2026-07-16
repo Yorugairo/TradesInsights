@@ -46,6 +46,11 @@ export const SourceConfigSchema = z
     // artifacts, and evidence from this source belong to ONE account and are
     // never visible to any other (CLAUDE.md account-isolation invariant).
     account_key: z.string().nullable().default(null),
+    // D4 — source keys this source provides substitute coverage for (e.g.
+    // wa_sepa carries Pierce/Tumwater environmental determinations while those
+    // direct sources are access-blocked). When a source that mitigates others
+    // goes red, the alert escalates: its dependents lose their fallback too.
+    mitigates: z.array(z.string()).default([]),
     notes: z.string().nullable().default(null),
   })
   .strict();
