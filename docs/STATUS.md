@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M4.8/M4 exit gate (final task).
-**Last completed:** M4.7 (spend/health/stale/delivery alerts) — 2026-07-16.
+**Current task:** backlog complete through M4 — remaining items are key/authorization-gated: set `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` to activate extraction→verification→publication and measure the live review-time gate; customer authorizations unlock the bid inbox (Solis) and re-verification of Pierce/Tumwater/Thurston-WebLink/Olympia sources; §22 customer calibration finalizes provisional rules.
+**Last completed:** M4 (all of M4.1–M4.7 + exit gate) — 2026-07-16.
 
 ## Milestone ledger
 
@@ -43,6 +43,7 @@
 | M4.5 P1 sources from measured gaps | ✅/⛔ 2026-07-16 | gap measurement: Thurston permit layer missing (Lacey/county/Olympia 0 permit-stage). Activated: `lacey_permit_reports` (monthly census PDFs, 2 layout variants, parser totals reconcile with printed totals; 67 permits Jan–Jun incl. 24/24/30/89-unit MF; 2 held in review correctly) + `lewis_inspections` (daily PDF, FINAL→near_final §12.1 signal; 4/15 merged into existing permit projects via explicit reference). Blocked/deferred with evidence: `thurston_activity_reports` (WebLink robots `Disallow: /`) and `olympia_smartgov_reports` (session-stateful Exago viewer — needs approved headless adapter). Ledger updated; 9 adapter tests |
 | M4.6 invitation ingestion scaffolding | ✅ 2026-07-16 | migration `0003_private_sources` (sources.account_profile_id + artifact_access_log); CustomerBidInboxAdapter reads customer-provided exports (never scraped/credentialed), the ONLY path to `bidding_confirmed` and only for explicit invitation statuses; private records excluded from the shared graph (resolver skip — documented scaffold boundary); /app/invitations + API scoped by owning account with §20 access audit; wrong-account exports refused; contact data never leaves rawFields; source ships disabled pending Solis authorization; 5 integration tests |
 | M4.7 operational alerts | ✅ 2026-07-16 | migration `0004_alerts`; spend (80% warn / 100% critical), source-red (daily while red), stale >2× cadence, unsent-draft digests; idempotent per period (reruns dedupe, proven), email exactly-once via Mailpit (verified through Mailpit API); `pnpm alerts:run [--send]`; live run: 16 enabled sources evaluated, 0 fired (all green — honest); 3 integration tests |
+| **M4 exit gate** | ✅ (measured) / ⏳ (key-gated) 2026-07-16 | **Measured now:** priority precision 100% dev / 100% holdout (gate ≥90%), recall 96.8%/93.5% (≥80%); duplicates 0 & expired 0 over stored deliveries with the metric proven to detect violations (<3%/<2% gates); zero unsupported facts (0 evidence-less records, 0 live model claims, 0 delivered items, 0 bidding_confirmed projects); 203/203 vitest + 9/9 E2E incl. §19 full-chain and account isolation. **Key-gated:** 30–60 min review/account/week is measurable only once model keys enable live delivery cycles — the structural pieces (verified-only auto-include, high-risk review queue, alerts) are in place; Solis priority volume (349) must first come down via §22 calibration |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
