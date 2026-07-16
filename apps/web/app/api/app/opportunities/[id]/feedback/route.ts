@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { DISPOSITION_REASONS } from "@otn/intelligence";
 import { jsonError, withAccount } from "../../../../../../lib/api.js";
 
 const bodySchema = z.object({
@@ -8,7 +9,8 @@ const bodySchema = z.object({
   newToCustomer: z.boolean().nullable().optional(),
   timely: z.boolean().nullable().optional(),
   worthPursuing: z.boolean().nullable().optional(),
-  dispositionReason: z.string().max(500).nullable().optional(),
+  // Controlled vocabulary — free text belongs in notes.
+  dispositionReason: z.enum(DISPOSITION_REASONS).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
 });
 

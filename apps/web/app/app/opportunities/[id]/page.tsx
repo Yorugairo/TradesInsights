@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { DISPOSITION_REASONS } from "@otn/intelligence";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { accountByKey, opportunityDetail } from "../../../../lib/queries.js";
@@ -181,9 +182,9 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
       )}
 
       <h2>Your decision</h2>
-      <StateButtons opportunityId={o.id} state={o.state} />
+      <StateButtons opportunityId={o.id} state={o.state} dispositions={DISPOSITION_REASONS} />
       <h2>Feedback</h2>
-      <FeedbackForm opportunityId={o.id} />
+      <FeedbackForm opportunityId={o.id} dispositions={DISPOSITION_REASONS} />
     </main>
   );
 }

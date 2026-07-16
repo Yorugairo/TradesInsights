@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { feedbackSummary } from "@otn/intelligence";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
 import { accountByKey, listAccountFeedback } from "../../../lib/queries.js";
@@ -15,11 +16,34 @@ export default async function FeedbackPage() {
   if (!session?.accountKey) redirect("/login");
   const account = await accountByKey(db(), session.accountKey);
   if (!account) redirect("/login");
-  const rows = await listAccountFeedback(db(), account.id);
+  const [rows, summary] = await Promise.all([
+    listAccountFeedback(db(), account.id),
+    feedbackSummary(db(), account.id),
+  ]);
 
   return (
     <main>
       <h1>Feedback — {account.name}</h1>
+      <p data-testid="feedback-summary">
+        {summary.total} entries · relevant{" "}
+        {summary.yesRate.relevant === null ? "—" : `${Math.round(summary.yesRate.relevant * 100)}%`} · timely{" "}
+        {summary.yesRate.timely === null ? "—" : `${Math.round(summary.yesRate.timely * 100)}%`} · pursue{" "}
+        {summary.yesRate.worthPursuing === null ? "—" : `${Math.round(summary.yesRate.worthPursuing * 100)}%`}
+        {Object.keys(summary.byDisposition).length > 0 && (
+          <>
+            {" "}
+            · dispositions:{" "}
+            {Object.entries(summary.byDisposition)
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, v]) => `${k.replaceAll("_", " ")} ×${v}`)
+              .join(", ")}
+          </>
+        )}
+      </p>
+      <p style={{ color: "#666" }}>
+        Feedback informs the next rule version; rules are only ever changed by an explicit,
+        versioned edit — never automatically.
+      </p>
       <table style={table}>
         <thead>
           <tr>

@@ -3,17 +3,30 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function StateButtons({ opportunityId, state }: { opportunityId: string; state: string }) {
+export function StateButtons({
+  opportunityId,
+  state,
+  dispositions,
+}: {
+  opportunityId: string;
+  state: string;
+  dispositions: readonly string[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
 
   async function setState(next: "promoted" | "dismissed" | "rescore") {
     setBusy(true);
     await fetch(`/api/app/opportunities/${opportunityId}/state`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ state: next, ...(reason ? { reason } : {}) }),
+      body: JSON.stringify({
+        state: next,
+        ...(next === "dismissed" && reason ? { reason } : {}),
+        ...(next === "dismissed" && notes ? { notes } : {}),
+      }),
     });
     setBusy(false);
     router.refresh();
@@ -27,12 +40,15 @@ export function StateButtons({ opportunityId, state }: { opportunityId: string; 
       <button disabled={busy || state === "dismissed"} onClick={() => setState("dismissed")} data-testid="dismiss-btn">
         Dismiss
       </button>
-      <input
-        placeholder="dismissal reason"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        style={{ width: 220 }}
-      />
+      <select value={reason} onChange={(e) => setReason(e.target.value)} data-testid="dismiss-reason">
+        <option value="">dismissal reason…</option>
+        {dispositions.map((d) => (
+          <option key={d} value={d}>
+            {d.replaceAll("_", " ")}
+          </option>
+        ))}
+      </select>
+      <input placeholder="notes" value={notes} onChange={(e) => setNotes(e.target.value)} style={{ width: 180 }} />
       {(state === "promoted" || state === "dismissed") && (
         <button disabled={busy} onClick={() => setState("rescore")}>
           Return to scoring bands
@@ -42,7 +58,13 @@ export function StateButtons({ opportunityId, state }: { opportunityId: string; 
   );
 }
 
-export function FeedbackForm({ opportunityId }: { opportunityId: string }) {
+export function FeedbackForm({
+  opportunityId,
+  dispositions,
+}: {
+  opportunityId: string;
+  dispositions: readonly string[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -52,6 +74,7 @@ export function FeedbackForm({ opportunityId }: { opportunityId: string }) {
     timely: null,
     worthPursuing: null,
   });
+  const [disposition, setDisposition] = useState("");
   const [notes, setNotes] = useState("");
 
   function TriState({ field, label }: { field: string; label: string }) {
@@ -79,7 +102,11 @@ export function FeedbackForm({ opportunityId }: { opportunityId: string }) {
     const res = await fetch(`/api/app/opportunities/${opportunityId}/feedback`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...answers, notes: notes || null }),
+      body: JSON.stringify({
+        ...answers,
+        dispositionReason: disposition || null,
+        notes: notes || null,
+      }),
     });
     setBusy(false);
     setSaved(res.ok);
@@ -92,12 +119,20 @@ export function FeedbackForm({ opportunityId }: { opportunityId: string }) {
       <TriState field="newToCustomer" label="New to you?" />
       <TriState field="timely" label="Timely?" />
       <TriState field="worthPursuing" label="Worth pursuing?" />
-      <div style={{ margin: "0.5rem 0" }}>
+      <div style={{ margin: "0.5rem 0", display: "flex", gap: "0.5rem" }}>
+        <select value={disposition} onChange={(e) => setDisposition(e.target.value)}>
+          <option value="">disposition…</option>
+          {dispositions.map((d) => (
+            <option key={d} value={d}>
+              {d.replaceAll("_", " ")}
+            </option>
+          ))}
+        </select>
         <input
           placeholder="notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          style={{ width: "60%" }}
+          style={{ width: "50%" }}
         />
       </div>
       <button type="submit" disabled={busy}>

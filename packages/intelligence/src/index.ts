@@ -14,3 +14,5 @@ export * from "./extraction/runs.js";
 export * from "./gate/verifier-contract.js";
 export * from "./gate/verify.js";
 export * from "./gate/gate.js";
+// M3.7: feedback vocabulary + calibration rollup.
+export * from "./feedback.js";

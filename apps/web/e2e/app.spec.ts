@@ -75,6 +75,17 @@ test.describe("customer surface", () => {
       data: { relevant: true, timely: false, dispositionReason: null, notes: "e2e feedback" },
     });
     expect(fb.ok()).toBe(true);
+
+    // Controlled disposition vocabulary (M3.7): known reason accepted,
+    // free-form reason rejected (free text belongs in notes).
+    const good = await request.post(`/api/app/opportunities/${oppId}/feedback`, {
+      data: { relevant: false, dispositionReason: "wrong_trade" },
+    });
+    expect(good.ok()).toBe(true);
+    const bad = await request.post(`/api/app/opportunities/${oppId}/feedback`, {
+      data: { relevant: false, dispositionReason: "just not feeling it" },
+    });
+    expect(bad.status()).toBe(400);
   });
 
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
