@@ -1,0 +1,1 @@
+ALTER TABLE "raw_artifacts" ADD COLUMN "discovery_meta_json" jsonb;

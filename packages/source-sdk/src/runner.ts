@@ -200,6 +200,9 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
             byteSize: put.byteSize,
             headersJson: raw.headers,
             parserVersion: adapter.parserVersion,
+            // D5 — persist discovery context so a future replay can re-parse
+            // these immutable bytes faithfully after a parser fix.
+            discoveryMetaJson: item.meta ?? null,
           })
           .returning({ id: rawArtifacts.id });
         if (!artifact) throw new Error("failed to insert raw_artifacts row");

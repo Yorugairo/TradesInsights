@@ -143,7 +143,10 @@ Conditions: LLM monthly spend ≥80% (warning) / ≥100% (critical, "model jobs 
 pnpm source:run <source-key>              # one run; prints metrics + health
 pnpm source:run <source-key> --shadow     # run a disabled source (shadow mode)
 pnpm source:backfill <source-key> --from YYYY-MM-DD --to YYYY-MM-DD [--shadow]
+pnpm source:replay <source-key>           # D5 — re-parse stored artifacts after a parser fix (no re-fetch)
 ```
+
+`source:replay` (D5) reprocesses a source's stored **immutable** raw artifacts through the current adapter and rewrites `source_records.normalized_json` where the new parse differs — healing already-stored records after a parser bug-fix without re-fetching (the runner's content-hash skip otherwise leaves them stale until content changes). Raw artifacts are only read, never mutated; evidence is append-only, so replay backfills evidence only for records that have none. Idempotent: replaying with an unchanged parser rewrites nothing. Every replay records an audit `source_runs` row with `metrics_json.replay = true`.
 
 Runs are recorded in `source_runs`; per-item failures are dead-lettered inside `metrics_json` with stage + error, reproducible by re-running the source.
 

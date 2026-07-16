@@ -48,9 +48,11 @@ second product build on the M0–M4 base — plan it as its own milestone series
 
 ## Integrated execution order
 
-### Phase D — sourcing durability (start here; un-gated)
+### Phase D — sourcing durability ✅ COMPLETE (2026-07-16)
 
-Protects data integrity that every downstream memo depends on.
+Protects data integrity that every downstream memo depends on. All five items
+shipped: D1 parser invariants, D2 required-field fill-drop, D3 fingerprint
+drift, D4 substitute-coverage escalation, D5 parser replay.
 
 - **D1 — runtime parser invariants.** ✅ **Shipped 2026-07-16.** Optional
   `SourceAdapter.checkInvariants` hook (`source-sdk/invariants.ts`), called by
@@ -84,8 +86,13 @@ Protects data integrity that every downstream memo depends on.
   now-uncovered dependents so the concentration is visible instead of hidden.
   (Scoped to sources actually present in config — Olympia's report source isn't
   seeded, so it isn't referenced.)
-- **D5 — parser replay by `parserVersion`.** Reprocess stored immutable
-  artifacts after a parser fix (raw artifacts already retained forever).
+- **D5 — parser replay by `parserVersion`.** ✅ **Shipped 2026-07-16.**
+  `replaySource` re-parses a source's stored immutable artifacts through the
+  current adapter and rewrites only the changed `source_records.normalized_json`
+  — a parser fix heals history without re-fetching. `raw_artifacts.discovery_
+  meta_json` (migration `0005_replay_meta`) persists discovery context for a
+  faithful re-parse; raw artifacts stay read-only, evidence append-only,
+  idempotent under an unchanged parser. `pnpm source:replay <key>`.
 
 **Exit:** a layout shift that moves a column (no field-name change, no volume
 drop) trips red; a null-rate collapse trips red; fingerprint drift raises a

@@ -92,6 +92,11 @@ export const rawArtifacts = pgTable(
     byteSize: integer("byte_size").notNull(),
     headersJson: jsonb("headers_json"),
     parserVersion: text("parser_version"),
+    // D5 — the discovery-time context the parser needs (e.g. reportMonth,
+    // inspectionDate). Set once at insert, never mutated; lets `replaySource`
+    // re-parse the immutable bytes faithfully after a parser fix without
+    // re-fetching.
+    discoveryMetaJson: jsonb("discovery_meta_json"),
   },
   (t) => [
     // Immutability: one row per distinct content per URL per source.
