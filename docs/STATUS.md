@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M2 exit gate + milestone report.
-**Last completed:** M2.6 (permit-cluster velocity events), 2026-07-16.
+**Current task:** M3.1 (account profiles + routing/scoring foundations) — awaiting go-ahead. Note: M3 model-extraction tasks need `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` (see Connections).
+**Last completed:** M2 (all of M2.1–M2.6) — exit gate green, 2026-07-16.
 
 ## Milestone ledger
 
@@ -27,6 +27,7 @@
 | M2.4 development/phase hierarchy | ✅ 2026-07-16 | name-base grouping w/ permit-vocab distinctiveness guard + org/parcel/proximity support; plat-parents phases; 26 developments / 60 projects live; derived layer rebuildable |
 | M2.5 merge-review/split workflow | ✅ 2026-07-16 | decideReview merge/reject (rejected candidates excluded from re-resolution), undoResolution keeps records + history, review CLI |
 | M2.6 permit-cluster velocity | ✅ 2026-07-16 | one cluster_velocity signal per development (≥5 permits/90d) on the anchor project; idempotent until a newer permit; live corpus max cluster = 4/90d → correctly silent |
+| **M2 exit gate** | ✅ 2026-07-16 | 0 records lost (5,553 resolved + 2 canaries by design); 377 evidence-backed cross-source projects; 31 developments; 10,412 events; review/undo workflow proven; 121/121 tests + E2E |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

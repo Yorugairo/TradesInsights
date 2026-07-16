@@ -208,6 +208,35 @@ describe("M2.4 development grouping", () => {
     expect(phase2.parentProjectId).toBe(plat.projectId);
   });
 
+  it("never groups similar names across counties (spec §19)", async () => {
+    const org = [{ name: `Crosscounty Builders ${RUN} LLC`, role: "applicant", evidenceText: "x" }];
+    const lewis = await insertAndResolve(
+      record({
+        externalId: `XC1-${RUN}`,
+        title: `XC1-${RUN} – Cedar Ridge Estates ${RUN} Phase 1`,
+        county: "Lewis",
+        permittingJurisdiction: "Lewis County",
+        organizations: org,
+      }),
+    );
+    const thurston = await insertAndResolve(
+      record({
+        externalId: `XC2-${RUN}`,
+        title: `XC2-${RUN} – Cedar Ridge Estates ${RUN} Phase 2`,
+        county: "Thurston",
+        permittingJurisdiction: "Thurston County",
+        organizations: org,
+      }),
+    );
+    await buildDevelopments(db);
+    const rows = await db
+      .select({ developmentId: projects.developmentId })
+      .from(projects)
+      .where(inArray(projects.id, [lewis.projectId!, thurston.projectId!]));
+    // Same base name, same org — but different counties never group.
+    expect(rows.every((r) => r.developmentId === null)).toBe(true);
+  });
+
   it("does not group same-name projects without org/parcel/proximity support", async () => {
     const a = await insertAndResolve(
       record({
