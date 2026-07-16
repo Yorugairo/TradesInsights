@@ -10,7 +10,7 @@
 > calculation. Model-authored prose is intentionally absent (no keys) — these
 > are the deterministic facts a customer sees today.
 
-Generated: 2026-07-16. Scores are `SCORING_ALGORITHM_VERSION` 1.2.0.
+Generated: 2026-07-16. Scores are `SCORING_ALGORITHM_VERSION` 1.3.0.
 
 ## Lacey Glass at Home (residential glass) — 3 samples
 
@@ -47,16 +47,27 @@ positive):
   0.4 radar — e.g. Alcott (above) moved 83 → 75.5. **243** projects
   reclassified.
 
-**Honest residual (not force-demoted, and correctly so):** the SpaceX SE04 /
-SE06 and KCIA "DEMO" records that first looked like clean demolitions turned out
-on inspection to be **mixed campus clusters** — a demolition co-resolved with a
-cleanroom **tenant-improvement / interior remodel** and fire permits on the same
-site. Those genuinely carry building scope, so the filter (rightly) leaves them
-alone. Their remaining over-score is a *different* problem — a `hasGlazing`
-keyword firing on campus text plus large valuation — logged as a separate
-`§22` item (glazing-precision / cluster-scope), **not** something to fix by
-weakening the demolition rule and risking real glazing work. The honest miss is
-part of the deliverable.
+**Follow-up — per-record classification (scorer v1.3.0).** The mixed campus
+clusters (SpaceX SE04/SE06, KCIA) drove a structural fix: scope classification
+now runs **per source record** and aggregates by max, instead of over one
+concatenated text blob — so a glazing keyword in a demolition or fire record can
+no longer borrow a sibling record's construction scope. Tracing SpaceX SE04 to
+the record that actually carried "window" revealed it was an **HVAC/ductwork
+permit** ("ductwork penetration through existing window. **no change to
+exterior.**") — a window as a penetration point, not glazing work. Added a
+high-precision `noEnvelope` negative (real glazing *is* exterior work), which
+correctly dropped SE04's `division_08_system_fit` 1 → 0.7. Eval unchanged
+(byte-identical blob path; dev 100%/96.8%, holdout 100%/93.5%).
+
+**Honest residual (the regex boundary):** SE04 still sits at ~90 in priority —
+but now on **scale alone** (a $5M+ commercial site at the generic 0.7
+"commercial, no confirmed glazing" fit), no longer *claiming* glazing scope.
+That's a legitimate large-commercial radar call, not a fabricated glazing bid.
+Cases like the SE06 2nd-floor CUP (whether a permit genuinely carries glazing
+scope vs. an incidental noun) are keyword-semantics questions the spec (§13)
+deliberately assigns to the **key-gated model extraction/verification layer** —
+further regex tuning would risk demoting the real large-commercial glazing work
+Lacey wants. The honest miss is part of the deliverable.
 
 ## What this sample demonstrates
 

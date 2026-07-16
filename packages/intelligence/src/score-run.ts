@@ -80,18 +80,20 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
     ) vel ON true
     LEFT JOIN LATERAL (
       SELECT
-        lower(string_agg(
-          concat_ws(' ',
-            sr.normalized_json->>'title',
-            left(sr.normalized_json->>'description', 800),
-            sr.normalized_json->>'permitType',
-            sr.normalized_json->>'applicationType',
-            sr.normalized_json->>'documentType'
-          ), ' ')) AS text,
+        lower(string_agg(rec_text.t, ' ')) AS text,
+        json_agg(lower(rec_text.t)) AS records,
         max((sr.normalized_json->>'units')::numeric)::float AS max_units,
         max((sr.normalized_json->>'valuationUsd')::numeric)::float AS max_valuation
       FROM record_resolutions rr
       JOIN source_records sr ON sr.id = rr.source_record_id
+      CROSS JOIN LATERAL (
+        SELECT concat_ws(' ',
+          sr.normalized_json->>'title',
+          left(sr.normalized_json->>'description', 800),
+          sr.normalized_json->>'permitType',
+          sr.normalized_json->>'applicationType',
+          sr.normalized_json->>'documentType') AS t
+      ) rec_text
       WHERE rr.project_id = p.id AND rr.status = 'active'
     ) rec ON true
     LEFT JOIN LATERAL (
@@ -111,21 +113,27 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
     ) evt ON true
     WHERE p.permitting_jurisdiction != 'Test Jurisdiction' ${filter}`);
 
-  return (res.rows as Record<string, unknown>[]).map((r) => ({
-    projectId: r["id"] as string,
-    county: r["county"] as string,
-    permittingJurisdiction: r["permitting_jurisdiction"] as string,
-    city: (r["city"] as string | null) ?? null,
-    stage: r["current_stage"] as string,
-    text: (r["text"] as string) ?? "",
-    maxUnits: r["max_units"] === null ? null : Number(r["max_units"]),
-    maxValuation: r["max_valuation"] === null ? null : Number(r["max_valuation"]),
-    clusterSize: Number(r["cluster_size"] ?? 1),
-    hasVelocitySignal: Boolean(r["has_velocity"]),
-    orgs: (r["orgs"] as { name: string; role: string | null }[]) ?? [],
-    aGradeEvidence: Number(r["a_grade"] ?? 0),
-    lastMaterialChangeAt: r["last_material_at"] ? new Date(r["last_material_at"] as string) : null,
-  }));
+  return (res.rows as Record<string, unknown>[]).map((r) => {
+    const records = Array.isArray(r["records"])
+      ? (r["records"] as (string | null)[]).filter((s): s is string => Boolean(s))
+      : [];
+    return {
+      projectId: r["id"] as string,
+      county: r["county"] as string,
+      permittingJurisdiction: r["permitting_jurisdiction"] as string,
+      city: (r["city"] as string | null) ?? null,
+      stage: r["current_stage"] as string,
+      text: (r["text"] as string) ?? "",
+      ...(records.length > 0 ? { records } : {}),
+      maxUnits: r["max_units"] === null ? null : Number(r["max_units"]),
+      maxValuation: r["max_valuation"] === null ? null : Number(r["max_valuation"]),
+      clusterSize: Number(r["cluster_size"] ?? 1),
+      hasVelocitySignal: Boolean(r["has_velocity"]),
+      orgs: (r["orgs"] as { name: string; role: string | null }[]) ?? [],
+      aGradeEvidence: Number(r["a_grade"] ?? 0),
+      lastMaterialChangeAt: r["last_material_at"] ? new Date(r["last_material_at"] as string) : null,
+    };
+  });
 }
 
 async function loadAccountInputs(

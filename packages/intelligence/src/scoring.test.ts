@@ -234,6 +234,60 @@ describe("commercial Division-08 negative filters (S6 demolition/entitlement)", 
   });
 });
 
+describe("per-record Division-08 classification (campus-cluster fix)", () => {
+  function d08(records: string[]): number {
+    const f = features({
+      county: "King",
+      permittingJurisdiction: "Unincorporated King County",
+      text: records.join(" "), // blob, as a control
+      records,
+      maxValuation: 5_000_000,
+      stage: "permit_issued",
+    });
+    return routeProject(f, ACCOUNTS).find((r) => r.accountKey === "lacey_glass_commercial")!
+      .components["division_08_system_fit"]!;
+  }
+
+  it("a glazing keyword in a demolition record does not borrow a sibling record's build scope", () => {
+    // Blob would see demo + "install" (from the fire record) + "glass" → 1.
+    // Per-record: the demo record owns the glazing keyword and has no build
+    // scope → 0.2; the fire record has no glazing → the project stays 0.2.
+    expect(
+      d08(["commercial demo of cleanroom chambers removal glass", "fire sprinkler install and monitor"]),
+    ).toBe(0.2);
+  });
+
+  it("glazing that genuinely co-occurs with construction in one record stays full fit", () => {
+    expect(
+      d08(["demolish existing partitions", "construct new storefront curtain wall glazing"]),
+    ).toBe(1);
+  });
+
+  it("a 'window' referenced in a record that disclaims exterior work is not glazing scope", () => {
+    // The SpaceX HVAC record: a window as a duct-penetration point, "no change
+    // to exterior" — not glazing work.
+    expect(
+      d08([
+        "data center cooling install air handling unit mechanical ductwork penetration through existing window no change to exterior building addition tenant",
+        "commercial demo of chambers",
+      ]),
+    ).toBeLessThan(1);
+  });
+
+  it("the blob path (no records) is unchanged — single record equals prior behavior", () => {
+    const blob = features({
+      county: "King",
+      text: "new commercial office building storefront curtain wall glazing",
+      maxValuation: 5_000_000,
+      stage: "permit_issued",
+    });
+    expect(
+      routeProject(blob, ACCOUNTS).find((r) => r.accountKey === "lacey_glass_commercial")!
+        .components["division_08_system_fit"],
+    ).toBe(1);
+  });
+});
+
 describe("S6 Lacey cost control — shared services, no org-id branches", () => {
   it("Home and Commercial both route through the shared config-keyed pipeline", () => {
     // A project with NO organization still routes for the Lacey profiles — route

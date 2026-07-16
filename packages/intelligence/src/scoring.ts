@@ -6,7 +6,7 @@ import { stageOrder } from "@otn/resolution";
  * Final scores are arithmetic over stored components — model prose never
  * sets a score (spec §13).
  */
-export const SCORING_ALGORITHM_VERSION = "1.2.0";
+export const SCORING_ALGORITHM_VERSION = "1.3.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -17,6 +17,14 @@ export interface ProjectFeatures {
   stage: string;
   /** Lowercased concatenation of titles/descriptions/types from records. */
   text: string;
+  /**
+   * Per-source-record lowercased texts. When present, scope classification runs
+   * PER RECORD and aggregates — so a glazing keyword in a demolition record no
+   * longer inherits a sibling record's construction scope (the campus-cluster
+   * false positive). Absent (e.g. frozen eval examples) → the whole `text` blob
+   * is treated as one record, i.e. exactly the prior behavior.
+   */
+  records?: string[];
   maxUnits: number | null;
   maxValuation: number | null;
   clusterSize: number;
@@ -60,6 +68,10 @@ const RE = {
   /** A bare entitlement action (no construction scope yet) — early radar, not a
    * priority glazing bid (S6 SpaceX-CUP finding). */
   entitlementOnly: /\b(conditional use permit|\bcup\b|rezone|zoning variance|\bvariance\b|comprehensive plan amendment|shoreline (substantial|conditional))\b/,
+  /** The record disclaims exterior/envelope work — so a glazing noun in it (a
+   * "window" referenced as a duct penetration point) is not glazing scope.
+   * High-precision negative: real glazing IS exterior work (SpaceX HVAC finding). */
+  noEnvelope: /\bno (?:change|work|alteration|modification)s? to (?:the )?exterior\b|no exterior (?:change|work|alteration)/,
   /** "73 single-family lots", "24 lot townhome", "65-unit apartment" — deterministic text parse. */
   lotCount:
     /(\d{1,4})[- ](?:(?:single|multi)[- ]?family |townho\w+ |residential |detached |apartment )?(?:lots?\b|units?\b|dwellings?\b|homes?\b)/g,
@@ -75,8 +87,42 @@ export function derivedUnitsFromText(text: string): number | null {
   return max;
 }
 
+/**
+ * Division-08 glazing fit for a single record's text (the §12.2 ladder). Kept as
+ * a per-record function so a demolition/entitlement record cannot borrow a
+ * sibling record's construction scope. Aggregated by max across a project's
+ * records (the strongest genuine glazing scope wins).
+ */
+function segmentDiv08Fit(seg: string, units: number): number {
+  // A glazing noun does not indicate glazing scope in a record that disclaims
+  // exterior/envelope work.
+  const glaz = RE.glazing.test(seg) && !RE.noEnvelope.test(seg);
+  const build = RE.buildingScope.test(seg);
+  if ((RE.demolition.test(seg) && !build) || (RE.fieldWork.test(seg) && !glaz)) return 0.2;
+  if (RE.entitlementOnly.test(seg) && !build) return 0.4;
+  if (glaz) return 1;
+  if (RE.commercial.test(seg)) return 0.7;
+  if (RE.multifamily.test(seg) || units >= 3) return 0.4;
+  return 0.2;
+}
+
+/** A record where a glazing keyword genuinely co-occurs with buildable scope
+ * (not a bare demolition or field-only record). Drives the honest
+ * `division_08_keywords` signal. */
+function segmentHasGlazingScope(seg: string): boolean {
+  return (
+    RE.glazing.test(seg) &&
+    !RE.noEnvelope.test(seg) &&
+    !(RE.demolition.test(seg) && !RE.buildingScope.test(seg)) &&
+    !(RE.fieldWork.test(seg) && !RE.glazing.test(seg))
+  );
+}
+
 export function classify(f: ProjectFeatures) {
   const units = f.maxUnits ?? 0;
+  // Per-record segments when available; else the whole blob is one segment
+  // (frozen eval examples → byte-identical prior behavior).
+  const segments = f.records && f.records.length > 0 ? f.records : [f.text];
   const isSfr = RE.sfr.test(f.text);
   const isMultifamily = RE.multifamily.test(f.text) || units >= 3;
   const lowRiseMultifamily = isMultifamily && (f.maxUnits === null || units <= 30);
@@ -92,6 +138,9 @@ export function classify(f: ProjectFeatures) {
     isDemolition: RE.demolition.test(f.text),
     hasBuildingScope: RE.buildingScope.test(f.text),
     isEntitlementOnly: RE.entitlementOnly.test(f.text),
+    // Per-record Division-08 fit (max across records) + honest glazing signal.
+    division08Fit: Math.max(...segments.map((s) => segmentDiv08Fit(s, units))),
+    hasGlazingScope: segments.some(segmentHasGlazingScope),
     isMultifamily,
     lowRiseMultifamily,
     isCommercial: RE.commercial.test(f.text),
@@ -258,30 +307,17 @@ export function routeCommercial(
   if (!fits) return null;
 
   const signals: string[] = [];
-  if (c.hasGlazing) signals.push("division_08_keywords");
+  if (c.hasGlazingScope) signals.push("division_08_keywords");
   if (c.isPublicWork) signals.push("public_work");
   if (c.isMultifamily) signals.push("multifamily");
   if (f.county === "King") signals.push("king_routes_commercial");
 
   const components = {
-    // A demolition (removal, no new envelope) or outdoor field/site scope has
-    // no Division 08 glazing to install — never priority, even if glazing
-    // keywords appear incidentally (M3.8 turf field; S6 SpaceX "CHAMBER DEMO").
-    // A bare entitlement action (CUP/rezone/variance) with no construction
-    // scope is early radar, not a priority bid — capped even if glazing
-    // keywords appear speculatively (S6 SpaceX 2nd-floor CUP).
-    division_08_system_fit:
-      (c.isDemolition && !c.hasBuildingScope) || (c.isFieldWork && !c.hasGlazing)
-        ? 0.2
-        : c.isEntitlementOnly && !c.hasBuildingScope
-          ? 0.4
-          : c.hasGlazing
-            ? 1
-            : c.isCommercial
-              ? 0.7
-              : c.isMultifamily
-                ? 0.4
-                : 0.2,
+    // Per-record Division-08 fit (§12.2): the demolition/field/entitlement
+    // negative filters are evaluated on each record's own text and aggregated by
+    // max, so a glazing keyword in a demolition record cannot borrow a sibling
+    // record's construction scope (M3.8 turf field; S6 SpaceX campus cluster).
+    division_08_system_fit: c.division08Fit,
     scale_value:
       (f.maxValuation ?? 0) >= 1_000_000 || c.effectiveUnits >= 20
         ? 1
