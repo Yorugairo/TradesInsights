@@ -51,6 +51,8 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **opportunity_evidence** — links every delivered claim to an `evidence_items` row with `claim_type`, `confirmed`, `confidence`. Publication gate requires 100% coverage.
 
+**opportunity_decision_memos** (S1 — migration `0007_decision_memos`) — versioned decision memos, `(opportunity_id, decision_version)` unique. `content_hash` (SHA-256 over the memo's semantic fields) drives idempotent regenerate — a new version is written only when the assembled content changes. `memo_json` is the full §3 memo (summary/whatChanged/whyItFits/timing/recommendedAction, score+components, facts vs inferences vs missing, procurement state, capacity assessment, verifier status). A deterministic assembly over stored rows — AI is never the system of record; the memo feeds the UI and never overwrites parsed facts.
+
 **feedback** — relevant / new_to_customer / timely / worth_pursuing booleans + `disposition_reason`, per user.
 
 **sources.account_profile_id** (M4.6 — migration `0003_private_sources`) — non-null marks a *private, account-scoped* source (customer bid inbox): its records, artifacts, and evidence belong to exactly one account and are excluded from the shared project graph (resolver skip) and from every other account's queries.

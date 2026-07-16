@@ -370,6 +370,29 @@ export const opportunityEvidence = pgTable(
   (t) => [index("opportunity_evidence_opp_ix").on(t.opportunityId)],
 );
 
+/**
+ * S1 (strengthening addendum §3) — persisted, versioned opportunity decision
+ * memos. A new version is written only when the assembled content hash changes
+ * (regenerate is idempotent). The memo is an assembly over stored gate /
+ * extraction / verification / capacity / score rows — AI is never the system of
+ * record; `memo_json` feeds the UI and never overwrites parsed facts.
+ */
+export const opportunityDecisionMemos = pgTable(
+  "opportunity_decision_memos",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    decisionVersion: integer("decision_version").notNull(),
+    contentHash: text("content_hash").notNull(),
+    memoJson: jsonb("memo_json").notNull(),
+    generatedAt: now(),
+  },
+  (t) => [
+    uniqueIndex("opportunity_decision_memos_version_ux").on(t.opportunityId, t.decisionVersion),
+    index("opportunity_decision_memos_opp_ix").on(t.opportunityId),
+  ],
+);
+
 export const feedback = pgTable(
   "feedback",
   {

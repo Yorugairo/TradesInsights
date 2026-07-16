@@ -50,6 +50,13 @@
       "when": 1784237513898,
       "tag": "0006_capacity_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784238149557,
+      "tag": "0007_decision_memos",
+      "breakpoints": true
     }
   ]
 }

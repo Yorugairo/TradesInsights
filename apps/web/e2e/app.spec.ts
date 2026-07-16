@@ -64,12 +64,24 @@ test.describe("customer surface", () => {
     await page.goto(`/app/opportunities/${oppId}`);
     await expect(page.getByTestId("opportunity-title")).toBeVisible();
     await expect(page.getByTestId("next-action")).toBeVisible();
+    // S1 decision memo leads the page with recommended action + capacity/procurement.
+    await expect(page.getByTestId("decision-memo")).toBeVisible();
+    await expect(page.getByTestId("memo-recommended-action")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Confirmed facts vs. inferences" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisible();
 
     const detail = await (await request.get(`/api/app/opportunities/${oppId}`)).json();
     expect(detail.gate.status).toMatch(/pass|fail|blocked_on_verifier/);
     expect(Array.isArray(detail.evidence)).toBe(true);
+
+    // S1 decision-memo API + idempotent regenerate.
+    const memo = await (await request.get(`/api/app/opportunities/${oppId}/decision-memo`)).json();
+    expect(memo.procurementState).toMatch(/unknown|relationship_radar|monitoring|bidding_confirmed|late_or_closed/);
+    expect(Array.isArray(memo.scoreComponents)).toBe(true);
+    const regen = await request.post(`/api/app/opportunities/${oppId}/regenerate-memo`);
+    expect(regen.ok()).toBe(true);
+    const regenBody = await regen.json();
+    expect(typeof regenBody.decisionVersion).toBe("number");
 
     const fb = await request.post(`/api/app/opportunities/${oppId}/feedback`, {
       data: { relevant: true, timely: false, dispositionReason: null, notes: "e2e feedback" },

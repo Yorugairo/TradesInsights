@@ -1,11 +1,19 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { DISPOSITION_REASONS } from "@otn/intelligence";
+import { DISPOSITION_REASONS, buildDecisionMemo } from "@otn/intelligence";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { accountByKey, opportunityDetail } from "../../../../lib/queries.js";
 import { Badge, cell, fmtDate, fmtMoney, healthTone, table } from "../../../../lib/ui.js";
 import { FeedbackForm, StateButtons } from "./actions.js";
+
+const CAPACITY_TONE: Record<string, "green" | "amber" | "red"> = {
+  likely_fit: "green",
+  possible_stretch: "amber",
+  likely_too_large: "amber",
+  excluded: "red",
+  unknown: "amber",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +25,9 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const o = await opportunityDetail(db(), id, account.id);
   if (!o) notFound();
+
+  // S1 decision memo — assembled from stored rows (side-effect-free preview).
+  const memo = await buildDecisionMemo(db(), id);
 
   const rationale = o.rationale as {
     components?: Record<string, number>;
@@ -42,6 +53,39 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
         · Units: {o.project.maxUnits ?? "—"} · Valuation: {fmtMoney(o.project.maxValuation)} ·{" "}
         <Link href={`/app/projects/${o.project.id}`}>project page</Link>
       </p>
+
+      {memo && (
+        <section
+          data-testid="decision-memo"
+          style={{ border: "1px solid #ddd", borderRadius: 8, padding: "1rem", margin: "1rem 0" }}
+        >
+          <h2 style={{ marginTop: 0 }}>Decision memo</h2>
+          <p>
+            <strong>What changed:</strong> {memo.whatChanged}
+          </p>
+          <p data-testid="memo-recommended-action">
+            <strong>Recommended action:</strong> {memo.recommendedAction}
+          </p>
+          <p>
+            <strong>Fit:</strong> score {memo.score ?? "—"} · route {memo.route ?? "—"} ·{" "}
+            <Badge>procurement: {memo.procurementState}</Badge>{" "}
+            <Badge tone={CAPACITY_TONE[memo.capacityAssessment] ?? "amber"}>
+              capacity: {memo.capacityAssessment}
+            </Badge>{" "}
+            <Badge tone={memo.verifierStatus === "passed" ? "green" : memo.verifierStatus === "failed" ? "red" : "amber"}>
+              verifier: {memo.verifierStatus}
+            </Badge>
+          </p>
+          {memo.capacityExplanation && (
+            <p data-testid="memo-capacity">
+              <strong>Capacity note:</strong> {memo.capacityExplanation}
+            </p>
+          )}
+          <p>
+            <strong>Timing:</strong> {memo.timingAssessment}
+          </p>
+        </section>
+      )}
 
       <h2>Recommended next action</h2>
       <p data-testid="next-action">{o.nextAction}</p>
