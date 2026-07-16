@@ -202,6 +202,38 @@ describe("M3.2 routing — the three accounts route differently (exit-gate requi
   });
 });
 
+describe("commercial Division-08 negative filters (S6 demolition/entitlement)", () => {
+  function d08(text: string): number {
+    const f = features({
+      county: "King",
+      permittingJurisdiction: "Unincorporated King County",
+      text,
+      maxValuation: 5_000_000,
+      stage: "permit_issued",
+    });
+    return routeProject(f, ACCOUNTS).find((r) => r.accountKey === "lacey_glass_commercial")!
+      .components["division_08_system_fit"]!;
+  }
+
+  it("a demolition with only incidental glazing keywords is not priority (SpaceX CHAMBER DEMO)", () => {
+    // Glazing words appear, but the scope is removal — nothing to install.
+    expect(d08("commercial demo of cleanroom chambers removal of glass curtain wall")).toBe(0.2);
+  });
+
+  it("a demolish-AND-rebuild keeps full Division-08 fit (real new glazing)", () => {
+    expect(d08("demolish existing building and construct new storefront curtain wall")).toBe(1);
+  });
+
+  it("a bare entitlement action (CUP) with no construction scope is radar, not priority", () => {
+    // Capped even though a glazing keyword appears speculatively.
+    expect(d08("conditional use permit for 2nd floor use window glazing")).toBe(0.4);
+  });
+
+  it("a genuine commercial glazing project is unaffected (control)", () => {
+    expect(d08("new commercial office building storefront curtain wall glazing")).toBe(1);
+  });
+});
+
 describe("S6 Lacey cost control — shared services, no org-id branches", () => {
   it("Home and Commercial both route through the shared config-keyed pipeline", () => {
     // A project with NO organization still routes for the Lacey profiles — route

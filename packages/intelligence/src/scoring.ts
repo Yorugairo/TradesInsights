@@ -6,7 +6,7 @@ import { stageOrder } from "@otn/resolution";
  * Final scores are arithmetic over stored components — model prose never
  * sets a score (spec §13).
  */
-export const SCORING_ALGORITHM_VERSION = "1.1.0";
+export const SCORING_ALGORITHM_VERSION = "1.2.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -52,6 +52,14 @@ const RE = {
   subdivision: /\b(plat|subdivision|lots?)\b/,
   /** Outdoor field/site scope with no building envelope (M3.8 turf-field finding). */
   fieldWork: /\b(synthetic turf|athletic field|ball ?fields?|playground|sports? court|track resurfac\w*)\b/,
+  /** Demolition/removal scope — nothing to glaze (S6 SpaceX-demo finding). */
+  demolition: /\b(demolition|demolish|\bdemo\b|wrecking|tear-?down|razing)\b/,
+  /** New-work intent where glazing actually applies; distinguishes a demo+rebuild
+   * (real glazing) from a bare demolition (no glazing). */
+  buildingScope: /\b(new construction|construct|addition|alter(ation)?|tenant improvement|\bt\.?i\.?\b|remodel|build-?out|install|new building)\b/,
+  /** A bare entitlement action (no construction scope yet) — early radar, not a
+   * priority glazing bid (S6 SpaceX-CUP finding). */
+  entitlementOnly: /\b(conditional use permit|\bcup\b|rezone|zoning variance|\bvariance\b|comprehensive plan amendment|shoreline (substantial|conditional))\b/,
   /** "73 single-family lots", "24 lot townhome", "65-unit apartment" — deterministic text parse. */
   lotCount:
     /(\d{1,4})[- ](?:(?:single|multi)[- ]?family |townho\w+ |residential |detached |apartment )?(?:lots?\b|units?\b|dwellings?\b|homes?\b)/g,
@@ -81,6 +89,9 @@ export function classify(f: ProjectFeatures) {
     isSfr,
     effectiveUnits,
     isFieldWork: RE.fieldWork.test(f.text),
+    isDemolition: RE.demolition.test(f.text),
+    hasBuildingScope: RE.buildingScope.test(f.text),
+    isEntitlementOnly: RE.entitlementOnly.test(f.text),
     isMultifamily,
     lowRiseMultifamily,
     isCommercial: RE.commercial.test(f.text),
@@ -253,18 +264,24 @@ export function routeCommercial(
   if (f.county === "King") signals.push("king_routes_commercial");
 
   const components = {
-    // Outdoor field/site scope has no building envelope — never Division 08
-    // (M3.8 turf-field false positive).
+    // A demolition (removal, no new envelope) or outdoor field/site scope has
+    // no Division 08 glazing to install — never priority, even if glazing
+    // keywords appear incidentally (M3.8 turf field; S6 SpaceX "CHAMBER DEMO").
+    // A bare entitlement action (CUP/rezone/variance) with no construction
+    // scope is early radar, not a priority bid — capped even if glazing
+    // keywords appear speculatively (S6 SpaceX 2nd-floor CUP).
     division_08_system_fit:
-      c.isFieldWork && !c.hasGlazing
+      (c.isDemolition && !c.hasBuildingScope) || (c.isFieldWork && !c.hasGlazing)
         ? 0.2
-        : c.hasGlazing
-          ? 1
-          : c.isCommercial
-            ? 0.7
-            : c.isMultifamily
-              ? 0.4
-              : 0.2,
+        : c.isEntitlementOnly && !c.hasBuildingScope
+          ? 0.4
+          : c.hasGlazing
+            ? 1
+            : c.isCommercial
+              ? 0.7
+              : c.isMultifamily
+                ? 0.4
+                : 0.2,
     scale_value:
       (f.maxValuation ?? 0) >= 1_000_000 || c.effectiveUnits >= 20
         ? 1
