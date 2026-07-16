@@ -1,7 +1,12 @@
 import "../load-env.js";
 import { createDb, createPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
-import { buildDevelopments, computeClusterVelocity, resolveUnresolved } from "@otn/resolution";
+import {
+  buildDevelopments,
+  computeCampusVelocity,
+  computeClusterVelocity,
+  resolveUnresolved,
+} from "@otn/resolution";
 
 // pnpm resolve:run [--limit N]
 async function main() {
@@ -18,7 +23,8 @@ async function main() {
     });
     const developments = await buildDevelopments(db, { logger });
     const velocity = await computeClusterVelocity(db, { logger });
-    logger.info({ summary, developments, velocity }, "resolve run finished");
+    const campus = await computeCampusVelocity(db, { logger });
+    logger.info({ summary, developments, velocity, campus }, "resolve run finished");
   } finally {
     await pool.end();
   }

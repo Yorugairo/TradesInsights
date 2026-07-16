@@ -25,7 +25,7 @@ Key columns: `key` (unique), `authority`, `priority` (P0/P1/lookup/context/test)
 
 **project_external_ids** — namespaced official IDs: (authority, id_type, external_id) unique.
 
-**project_events** — timeline. `event_type` (spec §9 plus the `cluster_velocity` extension required by §21 M2.6 — one signal per ≥5-permit/90-day development cluster, emitted on the anchor project with the tipping permit record as provenance), `event_date` vs `observed_at`, `prior_stage`/`resulting_stage`, `material_change`, `confirmed`, `confidence`. Facts vs inferences separated by `confirmed` + `confidence` (governing rule).
+**project_events** — timeline. `event_type` (spec §9 plus the `cluster_velocity` extension required by §21 M2.6 — one signal per ≥5-permit/90-day development cluster, emitted on the anchor project with the tipping permit record as provenance; and the `campus_velocity` extension (#3) — one signal per ≥5 DISTINCT-named, NOT development-grouped projects sharing a parcel-block prefix with active permits in the window, i.e. a commercial/institutional campus like SpaceX that cluster_velocity misses), `event_date` vs `observed_at`, `prior_stage`/`resulting_stage`, `material_change`, `confirmed`, `confidence`. Facts vs inferences separated by `confirmed` + `confidence` (governing rule).
 
 **organizations / organization_aliases** — canonical entities; `ubi`, `contractor_registration`, `status`, `verified_at` (never show registration status without it). Aliases map raw source spellings.
 

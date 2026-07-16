@@ -43,6 +43,11 @@ export const EVENT_TYPES = [
   // cluster on one development is one opportunity plus a velocity signal,
   // not N leads. Divergence recorded in docs/STATUS.md + architecture.md.
   "cluster_velocity",
+  // M2.6 depth (#3): concentrated permit activity across DISTINCT-named
+  // projects that share a parcel block but are NOT name-grouped into a
+  // development (a campus/portfolio like SpaceX SE02–SE06). cluster_velocity
+  // covers same-development clusters; this covers the campus case it misses.
+  "campus_velocity",
 ] as const;
 
 export const EventTypeSchema = z.enum(EVENT_TYPES);

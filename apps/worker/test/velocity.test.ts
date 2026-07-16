@@ -17,6 +17,7 @@ import {
 import type { NormalizedSourceRecord } from "@otn/domain";
 import {
   buildDevelopments,
+  computeCampusVelocity,
   computeClusterVelocity,
   resolveRecord,
   type ResolutionOutcome,
@@ -184,4 +185,66 @@ describe("M2.6 cluster velocity", () => {
     const ids = new Set([a.projectId, b.projectId]);
     expect(events.filter((e) => ids.has(e.projectId)).length).toBe(0);
   });
+});
+
+describe("M2.6 depth — campus velocity (#3)", () => {
+  const CAMPUS_TAGS = ["Falcon", "Dragon", "Starship", "Raptor", "Merlin", "Grasshopper"];
+  const campusIds = new Set<string>();
+
+  // Distinct names + distinct orgs (so NOT development-grouped) sharing one
+  // numeric parcel BLOCK prefix (6 digits) with distinct lot suffixes — the
+  // campus case cluster_velocity misses. `block` is the 6-digit prefix.
+  function campusPermit(block: string, n: number): NormalizedSourceRecord {
+    const tag = CAMPUS_TAGS[n % CAMPUS_TAGS.length]!;
+    return {
+      ...permit(n),
+      externalId: `CX-${block}-${RUN}-${n}`,
+      title: `CX${n}-${RUN} ${tag}works ${RUN}${n}`,
+      county: "Lewis",
+      parcelIds: [`${block}${n}0`], // e.g. 99110010, 99110020 … → prefix 991100
+      organizations: [{ name: `${tag} Ventures ${RUN}${n} LLC`, role: "applicant", evidenceText: "x" }],
+    };
+  }
+
+  it("emits ONE campus signal for 5 distinct-name projects on one parcel block", async () => {
+    for (let n = 1; n <= 5; n++) {
+      const o = await insertAndResolve(campusPermit("991100", n));
+      expect(o.outcome).toBe("created");
+      campusIds.add(o.projectId!);
+    }
+    const summary = await computeCampusVelocity(db, { county: "Lewis", minProjects: 5, prefixLen: 6 });
+    expect(summary.campusEventsEmitted).toBeGreaterThanOrEqual(1);
+
+    // Exactly one campus_velocity across the block — on the anchor, not 5.
+    const evs = await db
+      .select()
+      .from(projectEvents)
+      .where(eq(projectEvents.eventType, "campus_velocity"));
+    expect(evs.filter((e) => campusIds.has(e.projectId)).length).toBe(1);
+
+    // Idempotent: a second run adds nothing new for the block.
+    await computeCampusVelocity(db, { county: "Lewis", minProjects: 5, prefixLen: 6 });
+    const evs2 = await db
+      .select()
+      .from(projectEvents)
+      .where(eq(projectEvents.eventType, "campus_velocity"));
+    expect(evs2.filter((e) => campusIds.has(e.projectId)).length).toBe(1);
+  });
+
+  it("stays silent for a block below the threshold (4 projects)", async () => {
+    const below = new Set<string>();
+    for (let n = 1; n <= 4; n++) {
+      const o = await insertAndResolve(campusPermit("772200", n));
+      below.add(o.projectId!);
+      campusIds.add(o.projectId!);
+    }
+    await computeCampusVelocity(db, { county: "Lewis", minProjects: 5, prefixLen: 6 });
+    const evs = await db
+      .select()
+      .from(projectEvents)
+      .where(eq(projectEvents.eventType, "campus_velocity"));
+    expect(evs.filter((e) => below.has(e.projectId)).length).toBe(0);
+  });
+  // Cleanup: campus projects are tracked in createdProjects via resolveTracked,
+  // so the file-level afterAll deletes them (and their campus_velocity events).
 });
