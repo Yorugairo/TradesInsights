@@ -41,6 +41,8 @@ let sourceId: string;
 let accountId: string;
 let projectPassId: string;
 let projectBlockedId: string;
+let projectReviewId: string;
+let oppReviewId: string;
 
 async function seedProject(name: string, artifactId: string, withEvent: boolean) {
   const [project] = await db
@@ -172,7 +174,7 @@ beforeAll(async () => {
               reason: "TI without package detail.",
             },
           ],
-          missingCriticalFacts: ["general_contractor"],
+          missingCriticalFacts: [],
         }),
       },
     ]),
@@ -205,6 +207,54 @@ beforeAll(async () => {
     currentScore: 70,
     state: "weekly_digest",
   });
+
+  // Project C: fully verified but with a missing critical fact → gate passes,
+  // controlled automation withholds it for a human (M4.3).
+  const c = await seedProject(`DIGEST-C-${RUN}`, artifact!.id, true);
+  projectReviewId = c.projectId;
+  const [oppC] = await db
+    .insert(opportunities)
+    .values({
+      accountProfileId: accountId,
+      projectId: projectReviewId,
+      currentScore: 82,
+      state: "priority_review",
+      firstQualifiedAt: new Date(),
+    })
+    .returning({ id: opportunities.id });
+  oppReviewId = oppC!.id;
+  const extractC = await extractProject(
+    db,
+    new MockProvider([
+      {
+        text: JSON.stringify({
+          facts: [
+            { path: "project.units", value: 12, evidenceId: c.evidenceId, confirmed: true, confidence: 0.95 },
+          ],
+          inferences: [],
+          missingCriticalFacts: ["general_contractor"],
+        }),
+      },
+    ]),
+    projectReviewId,
+    { budget: BUDGET },
+  );
+  expect(extractC.status).toBe("succeeded");
+  const verifyC = await verifyProject(
+    db,
+    new MockProvider([
+      {
+        text: JSON.stringify({
+          verdicts: [
+            { path: "project.units", evidenceId: c.evidenceId, supported: true, reason: "stated" },
+          ],
+        }),
+      },
+    ]),
+    projectReviewId,
+    { budget: BUDGET },
+  );
+  expect(verifyC.allSupported).toBe(true);
 });
 
 afterAll(async () => {
@@ -213,7 +263,7 @@ afterAll(async () => {
       (SELECT id FROM deliveries WHERE account_profile_id = ${accountId})`);
   await db.execute(sql`DELETE FROM deliveries WHERE account_profile_id = ${accountId}`);
   await db.execute(sql`DELETE FROM opportunities WHERE account_profile_id = ${accountId}`);
-  await deleteTestProjects(db, [projectPassId, projectBlockedId]);
+  await deleteTestProjects(db, [projectPassId, projectBlockedId, projectReviewId]);
   await db.execute(sql`DELETE FROM account_profiles WHERE id = ${accountId}`);
   await pool.end();
 });
@@ -226,7 +276,7 @@ describe("M3.6 weekly digest", () => {
     expect(item.isNew).toBe(true);
     expect(item.confirmedFacts.join(" ")).toContain("project.units");
     expect(item.inferences[0]).toContain("[inference]");
-    expect(item.missingCriticalFacts).toContain("general_contractor");
+    expect(item.inclusion.mode).toBe("auto"); // verified, high-confidence, complete
     expect(item.sourceLinks.length).toBeGreaterThan(0);
     expect(item.whatChanged).toContain("permit_application");
     // Project B is withheld, and the withholding is disclosed, not silent.
@@ -345,5 +395,39 @@ describe("M3.6 weekly digest", () => {
     const dirty = await deliveryQualityMetrics(db, { accountProfileId: accountId });
     expect(dirty.duplicateNewItems).toBeGreaterThanOrEqual(1);
     expect(dirty.gates.duplicatePass).toBe(false); // 1/3 ≥ 3%
+  });
+
+  it("M4.3: withholds verified items with missing critical facts for human review", async () => {
+    const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+    const held = model.reviewQueue.find((i) => i.projectId === projectReviewId);
+    expect(held).toBeTruthy();
+    expect(held!.inclusion.mode).toBe("review_required");
+    expect(held!.inclusion.reasons).toContain("missing_critical_facts");
+    // Not in any customer section, but disclosed in the caveat section.
+    const sectionIds = [
+      ...model.sections.priorityNew,
+      ...model.sections.stageChanges,
+      ...model.sections.missingFacts,
+      ...model.sections.monitoring,
+    ].map((i) => i.projectId);
+    expect(sectionIds).not.toContain(projectReviewId);
+    expect(renderDigestHtml(model)).toContain("held for human review");
+  });
+
+  it("M4.4: a recorded human decision (promote) is the only automation override", async () => {
+    await db
+      .update(opportunities)
+      .set({ state: "promoted" })
+      .where(eq(opportunities.id, oppReviewId));
+    const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+    const item = [
+      ...model.sections.priorityNew,
+      ...model.sections.stageChanges,
+      ...model.sections.missingFacts,
+      ...model.sections.monitoring,
+    ].find((i) => i.projectId === projectReviewId);
+    expect(item).toBeTruthy();
+    expect(item!.inclusion.mode).toBe("auto"); // human decided; policy records it
+    expect(model.reviewQueue.map((i) => i.projectId)).not.toContain(projectReviewId);
   });
 });

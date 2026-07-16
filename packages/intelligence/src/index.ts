@@ -14,6 +14,8 @@ export * from "./extraction/runs.js";
 export * from "./gate/verifier-contract.js";
 export * from "./gate/verify.js";
 export * from "./gate/gate.js";
+// M4.3/M4.4: controlled-automation inclusion policy.
+export * from "./gate/automation.js";
 // M3.7: feedback vocabulary + calibration rollup.
 export * from "./feedback.js";
 // M4.1/M4.2: labeled eval harness for the routing/scoring layer.

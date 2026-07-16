@@ -80,6 +80,13 @@ export async function deliverDigest(
         isNew: i.isNew,
         whatChanged: i.whatChanged,
       })),
+      // M4.3/M4.4 — items withheld from automation, with the policy reasons.
+      reviewQueue: model.reviewQueue.map((i) => ({
+        opportunityId: i.opportunityId,
+        projectId: i.projectId,
+        reasons: i.inclusion.reasons,
+        policyVersion: i.inclusion.policyVersion,
+      })),
       coverage: model.sections.coverage,
     };
     const inserted = await db.execute(sql`

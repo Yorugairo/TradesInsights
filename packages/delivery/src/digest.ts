@@ -1,6 +1,13 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
-import { evaluateGate, latestExtraction, type GateResult } from "@otn/intelligence";
+import {
+  decideInclusion,
+  evaluateGate,
+  latestExtraction,
+  latestVerification,
+  type GateResult,
+  type InclusionDecision,
+} from "@otn/intelligence";
 
 /**
  * Weekly digest (spec §18). Only opportunities that pass the full §15
@@ -13,6 +20,9 @@ import { evaluateGate, latestExtraction, type GateResult } from "@otn/intelligen
 
 export interface DigestItem {
   opportunityId: string;
+  /** M4.3/M4.4 — auto items enter customer sections; review_required items
+   * are withheld into the reviewQueue (count disclosed in section 5). */
+  inclusion: InclusionDecision;
   projectId: string;
   projectName: string;
   stage: string;
@@ -50,6 +60,8 @@ export interface DigestModel {
     monitoring: DigestItem[];
     coverage: CoverageCaveat[];
   };
+  /** Gate-passing items withheld from automation for a human decision. */
+  reviewQueue: DigestItem[];
   suppressed: { gateFailed: number; blockedOnVerifier: number };
   ruleVersions: Record<string, number>;
   candidateCount: number;
@@ -66,13 +78,23 @@ interface CandidateRow {
   route: string | null;
   state: string;
   rationale_json: { signals?: string[]; route?: string } | null;
+  text: string;
+  max_valuation: number | null;
 }
 
 async function loadCandidates(db: Db, accountProfileId: string): Promise<CandidateRow[]> {
   const res = await db.execute(sql`
     SELECT o.id, o.project_id, p.canonical_name, p.county, p.permitting_jurisdiction,
-      p.current_stage, o.current_score, o.route, o.state, o.rationale_json
+      p.current_stage, o.current_score, o.route, o.state, o.rationale_json,
+      COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation
     FROM opportunities o JOIN projects p ON p.id = o.project_id
+    LEFT JOIN LATERAL (
+      SELECT lower(string_agg(concat_ws(' ',
+          sr.normalized_json->>'title', left(sr.normalized_json->>'description', 800)), ' ')) AS text,
+        max((sr.normalized_json->>'valuationUsd')::numeric)::float AS max_valuation
+      FROM record_resolutions rr JOIN source_records sr ON sr.id = rr.source_record_id
+      WHERE rr.project_id = p.id AND rr.status = 'active'
+    ) rec ON true
     WHERE o.account_profile_id = ${accountProfileId}
       AND o.state IN ('priority_review', 'weekly_digest', 'promoted')
     ORDER BY o.current_score DESC NULLS LAST
@@ -138,13 +160,26 @@ function nextAction(item: { isNew: boolean; missing: string[]; state: string }):
 async function buildItem(
   db: Db,
   c: CandidateRow,
-  opts: { isNew: boolean; periodStart: Date; periodEnd: Date },
+  opts: { isNew: boolean; periodStart: Date; periodEnd: Date; gate: GateResult },
 ): Promise<DigestItem> {
-  const [events, links, extraction] = await Promise.all([
+  const [events, links, extraction, verification] = await Promise.all([
     materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
     sourceLinks(db, c.project_id),
     latestExtraction(db, c.project_id),
+    latestVerification(db, c.project_id),
   ]);
+  const inclusion = decideInclusion({
+    gate: opts.gate,
+    extraction: extraction?.extraction ?? null,
+    verification: verification
+      ? { status: verification.status, result: verification.result }
+      : null,
+    route: c.route,
+    state: c.state,
+    maxValuation: c.max_valuation === null ? null : Number(c.max_valuation),
+    stage: c.current_stage,
+    text: c.text ?? "",
+  });
   const facts = extraction?.extraction.facts ?? [];
   const inferences = extraction?.extraction.inferences ?? [];
   const missing = extraction?.extraction.missingCriticalFacts ?? [];
@@ -165,6 +200,7 @@ async function buildItem(
 
   return {
     opportunityId: c.id,
+    inclusion,
     projectId: c.project_id,
     projectName: c.canonical_name,
     stage: c.current_stage,
@@ -235,6 +271,7 @@ export async function buildDigest(
     monitoring: [],
     coverage,
   };
+  const reviewQueue: DigestItem[] = [];
   const suppressed = { gateFailed: 0, blockedOnVerifier: 0 };
 
   for (const c of candidates) {
@@ -245,7 +282,20 @@ export async function buildDigest(
       continue;
     }
     const isNew = !delivered.has(c.id);
-    const item = await buildItem(db, c, { isNew, periodStart: period.start, periodEnd: period.end });
+    const item = await buildItem(db, c, {
+      isNew,
+      periodStart: period.start,
+      periodEnd: period.end,
+      gate,
+    });
+
+    // M4.3/M4.4 — controlled automation: only independently verified,
+    // high-confidence, non-high-risk items enter customer sections; the rest
+    // wait for a human (promote to include, dismiss to drop).
+    if (item.inclusion.mode === "review_required") {
+      reviewQueue.push(item);
+      continue;
+    }
 
     // Exclusive section order (spec §18): priority-new > stage change >
     // missing-fact queue > monitoring.
@@ -267,6 +317,7 @@ export async function buildDigest(
     periodStart: period.start,
     periodEnd: period.end,
     sections,
+    reviewQueue,
     suppressed,
     ruleVersions: account.ruleVersions,
     candidateCount: candidates.length,

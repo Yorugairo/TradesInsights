@@ -42,7 +42,8 @@ export function renderDigestHtml(model: DigestModel): string {
   const coverage =
     model.sections.coverage.length === 0 &&
     model.suppressed.gateFailed === 0 &&
-    model.suppressed.blockedOnVerifier === 0
+    model.suppressed.blockedOnVerifier === 0 &&
+    model.reviewQueue.length === 0
       ? "<p>All enabled sources green; nothing suppressed.</p>"
       : `<ul>
 ${model.sections.coverage
@@ -56,6 +57,11 @@ ${
 ${
   model.suppressed.gateFailed > 0
     ? `<li>${model.suppressed.gateFailed} matching opportunit${model.suppressed.gateFailed === 1 ? "y" : "ies"} withheld by the publication gate (incomplete identity, stale, or unsupported facts).</li>`
+    : ""
+}
+${
+  model.reviewQueue.length > 0
+    ? `<li>${model.reviewQueue.length} verified item${model.reviewQueue.length === 1 ? "" : "s"} held for human review before inclusion (controlled automation).</li>`
     : ""
 }
 </ul>`;
