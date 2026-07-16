@@ -16,3 +16,5 @@ export * from "./gate/verify.js";
 export * from "./gate/gate.js";
 // M3.7: feedback vocabulary + calibration rollup.
 export * from "./feedback.js";
+// M4.1/M4.2: labeled eval harness for the routing/scoring layer.
+export * from "./eval/harness.js";

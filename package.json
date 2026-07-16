@@ -30,7 +30,9 @@
     "verify:run": "pnpm --filter @otn/worker verify:run",
     "gate:run": "pnpm --filter @otn/worker gate:run",
     "digest:run": "pnpm --filter @otn/worker digest:run",
-    "feedback:report": "pnpm --filter @otn/worker feedback:report"
+    "feedback:report": "pnpm --filter @otn/worker feedback:report",
+    "eval:build": "pnpm --filter @otn/worker eval:build",
+    "eval:run": "pnpm --filter @otn/worker eval:run"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

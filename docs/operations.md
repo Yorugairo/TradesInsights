@@ -106,6 +106,8 @@ pnpm verify:run  [--project <id>] [--limit N]   # independent verification of ex
 pnpm gate:run    [--opportunity <id>] [--limit N]   # read-only §15 publication-gate evaluation
 pnpm digest:run  [--account <key>] [--end YYYY-MM-DD] [--send]   # weekly digest draft/send (spec §18)
 pnpm feedback:report [--account <key>]     # per-account calibration rollup (read-only)
+pnpm eval:build --out <path>               # regenerate labeled-eval candidates (M4.1; reviewed before commit)
+pnpm eval:run [--set <jsonl>] [--split dev|holdout|all]   # deterministic gate check vs labels (exit 1 on gate fail)
 ```
 
 `score:run` re-scores all projects; manual opportunity states (`dismissed`, `promoted`) are sticky and never clobbered. `extract:run` picks the highest-scoring digest-band-or-better projects without a succeeded extraction (or one explicit `--project`), sends each project's stored evidence items to the model, and Zod-validates the §13 payload — unknown evidence IDs reject the run. Every attempt (succeeded / rejected / blocked / error) is persisted to `model_runs` with provider, model, prompt version, tokens, cost, latency, and result hash.

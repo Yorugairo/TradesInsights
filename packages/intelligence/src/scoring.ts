@@ -138,16 +138,20 @@ function timingInterior(stage: string): number {
  * Spec §15: a record must be active/current for the relevant trade timing.
  * Signals older than 60 days decay; older than 180 days are radar-only.
  */
-function recencyFactor(lastMaterialChangeAt: Date | null): number {
+function recencyFactor(lastMaterialChangeAt: Date | null, now: Date): number {
   if (!lastMaterialChangeAt) return 0.5;
-  const days = (Date.now() - lastMaterialChangeAt.getTime()) / 86_400_000;
+  const days = (now.getTime() - lastMaterialChangeAt.getTime()) / 86_400_000;
   if (days <= 60) return 1;
   if (days <= 180) return 0.6;
   return 0.3;
 }
 
 /** Route one project for the Lacey Glass at Home profile (spec §12.1). */
-export function routeAtHome(f: ProjectFeatures, acct: AccountScoringInput): RouteResult | null {
+export function routeAtHome(
+  f: ProjectFeatures,
+  acct: AccountScoringInput,
+  now: Date = new Date(),
+): RouteResult | null {
   const included = acct.territory.counties_included ?? [];
   const excluded = acct.territory.counties_excluded ?? [];
   if (!inCounties(f, included, excluded)) return null;
@@ -172,7 +176,7 @@ export function routeAtHome(f: ProjectFeatures, acct: AccountScoringInput): Rout
         : f.clusterSize >= 3 || (f.maxUnits ?? 0) >= 4
           ? 0.6
           : 0.2,
-    timing: timingResidentialGlass(f.stage) * recencyFactor(f.lastMaterialChangeAt),
+    timing: timingResidentialGlass(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
     territory: 1,
     builder_developer_identified: orgIdentified(f, [
       "applicant", "owner", "proponent", "primary_contractor",
@@ -191,7 +195,11 @@ export function routeAtHome(f: ProjectFeatures, acct: AccountScoringInput): Rout
 }
 
 /** Route one project for the Lacey Glass Commercial profile (spec §12.2). */
-export function routeCommercial(f: ProjectFeatures, acct: AccountScoringInput): RouteResult | null {
+export function routeCommercial(
+  f: ProjectFeatures,
+  acct: AccountScoringInput,
+  now: Date = new Date(),
+): RouteResult | null {
   const included = acct.territory.counties_included ?? [];
   const excluded = acct.territory.counties_excluded ?? [];
   if (!inCounties(f, included, excluded)) return null;
@@ -215,7 +223,7 @@ export function routeCommercial(f: ProjectFeatures, acct: AccountScoringInput): 
           : f.maxValuation === null
             ? 0.3
             : 0.15,
-    timing: timingResidentialGlass(f.stage) * recencyFactor(f.lastMaterialChangeAt),
+    timing: timingResidentialGlass(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: 1,
     gc_developer_architect_known: orgIdentified(f, [
       "applicant", "owner", "primary_contractor", "proponent", "lead_agency",
@@ -234,7 +242,11 @@ export function routeCommercial(f: ProjectFeatures, acct: AccountScoringInput): 
 }
 
 /** Route one project for the Solis Interiors profile (spec §12.3, provisional). */
-export function routeSolis(f: ProjectFeatures, acct: AccountScoringInput): RouteResult | null {
+export function routeSolis(
+  f: ProjectFeatures,
+  acct: AccountScoringInput,
+  now: Date = new Date(),
+): RouteResult | null {
   const included = acct.territory.counties_included ?? [];
   const excluded = acct.territory.counties_excluded ?? [];
   if (!inCounties(f, included, excluded)) return null;
@@ -267,7 +279,7 @@ export function routeSolis(f: ProjectFeatures, acct: AccountScoringInput): Route
         : f.maxValuation >= 50_000 && f.maxValuation <= 2_000_000
           ? 1
           : 0.3,
-    timing: timingInterior(f.stage) * recencyFactor(f.lastMaterialChangeAt),
+    timing: timingInterior(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: 1,
     evidence_quality: evidenceQuality(f),
   };
@@ -284,7 +296,7 @@ export function routeSolis(f: ProjectFeatures, acct: AccountScoringInput): Route
 
 const ROUTERS: Record<
   string,
-  (f: ProjectFeatures, acct: AccountScoringInput) => RouteResult | null
+  (f: ProjectFeatures, acct: AccountScoringInput, now?: Date) => RouteResult | null
 > = {
   lacey_glass_at_home: routeAtHome,
   lacey_glass_commercial: routeCommercial,
@@ -295,12 +307,14 @@ const ROUTERS: Record<
 export function routeProject(
   f: ProjectFeatures,
   accounts: AccountScoringInput[],
+  // Injectable clock so frozen eval examples score identically forever.
+  now: Date = new Date(),
 ): RouteResult[] {
   const out: RouteResult[] = [];
   for (const acct of accounts) {
     const router = ROUTERS[acct.key];
     if (!router) continue;
-    const result = router(f, acct);
+    const result = router(f, acct, now);
     if (result) out.push(result);
   }
   return out;

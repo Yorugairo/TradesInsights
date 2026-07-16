@@ -15,7 +15,9 @@
     "verify:run": "tsx src/cli/verify-run.ts",
     "gate:run": "tsx src/cli/gate-run.ts",
     "digest:run": "tsx src/cli/digest-run.ts",
-    "feedback:report": "tsx src/cli/feedback-report.ts"
+    "feedback:report": "tsx src/cli/feedback-report.ts",
+    "eval:build": "tsx src/cli/eval-build.ts",
+    "eval:run": "tsx src/cli/eval-run.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",

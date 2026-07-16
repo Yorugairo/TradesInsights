@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M4.1 (labeled eval set) — **awaiting go-ahead**; M4 precision gates presume model keys (`ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`) so extraction/verification can run on the live corpus first. Note: *executing* model extraction/verification needs `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`; the pipelines are built and mock-tested, and stay in a visible blocked state until the keys are set — the publication gate reports `blocked_on_verifier` accordingly.
-**Last completed:** M3 (all of M3.1–M3.8) — exit gate green (verifier-execution deferred pending keys, enforced as `blocked_on_verifier`), 2026-07-16.
+**Current task:** M4.2 (meet precision/recall gates). Baseline on the labeled dev split: priority precision 97.3% (gate ≥90% ✅), recall 72.3% (gate ≥80% ❌ — At Home 36.8%, misses concentrated in aged-but-active SFRs/plats; one Solis precision leak, LDS mechanical). Model-verified parts of M4 still need `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` — pipelines stay visibly blocked until then.
+**Last completed:** M4.1 (eval harness + 200-example labeled set + holdout) — 2026-07-16.
 
 ## Milestone ledger
 
@@ -37,6 +37,7 @@
 | M3.7 feedback + disposition reasons | ✅ 2026-07-16 | controlled disposition vocabulary enforced at the API (free-form rejected 400, proven E2E); dismiss/feedback forms use the vocabulary; per-account calibration rollup (rates incl. honest nulls when unanswered, disposition counts, per-route relevance) on /app/feedback + `pnpm feedback:report`; never auto-applied to rules; 3 integration tests + E2E |
 | M3.8 reviewed samples per account | ✅ 2026-07-16 | `docs/pilot-samples.md`: 7 per account from the live corpus, every fact matched verbatim to stored A-grade evidence + source URL; 3 misses found and logged as §22 calibration items (turf-field wrong_trade at 85, min-job-size, cross-source unit-count discrepancy stated not resolved) |
 | **M3 exit gate** | ✅ 2026-07-16 | zero unsupported facts (0 records w/o evidence, 0 live model claims, 0 delivered items, 0 bidding_confirmed); distinct routing proven incl. same project → different routes per account (7096544-CN: Commercial joint_review vs Solis radar); feedback loop complete (capture → controlled dispositions → rollup → versioned rule edit); pilot runs without spreadsheets (UI + review queue + digest + CLIs); 172/172 vitest + 9/9 E2E. Independent-verifier *execution* pending keys — publication correctly held at `blocked_on_verifier` |
+| M4.1 eval harness + labeled set + holdout | ✅ 2026-07-16 | `fixtures/eval/eval-set.v1.jsonl`: 200 examples (125 positives: 50 AH / 25 LGC / 50 SI + 75 hard negatives), 150 dev / 50 holdout stratified; features + labeling clock frozen per example → deterministic replay; reviewer rejections auditable in `review-exclusions.v1.json`; `pnpm eval:build` / `pnpm eval:run`; 4 harness unit tests; baseline measured (precision 97.3% ✅ / recall 72.3% ❌ → M4.2) |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

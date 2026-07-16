@@ -23,7 +23,19 @@ export interface ScoreRunSummary {
   byAccount: Record<string, { total: number; priority: number; digest: number; archive: number }>;
 }
 
-async function loadFeatures(db: Db): Promise<ProjectFeatures[]> {
+/**
+ * Set-based feature rollup for scoring. Exported so the M4 eval builder can
+ * snapshot the exact features the scorer sees (frozen into the eval set for
+ * reproducibility). `projectIds` limits the rollup; omitted = whole corpus.
+ */
+export async function loadFeatures(db: Db, projectIds?: string[]): Promise<ProjectFeatures[]> {
+  const filter =
+    projectIds && projectIds.length > 0
+      ? sql`AND p.id IN (${sql.join(
+          projectIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
   const res = await db.execute(sql`
     SELECT
       p.id,
@@ -79,7 +91,7 @@ async function loadFeatures(db: Db): Promise<ProjectFeatures[]> {
       SELECT max(COALESCE(pe.event_date, pe.observed_at)) AS last_material_at
       FROM project_events pe WHERE pe.project_id = p.id
     ) evt ON true
-    WHERE p.permitting_jurisdiction != 'Test Jurisdiction'`);
+    WHERE p.permitting_jurisdiction != 'Test Jurisdiction' ${filter}`);
 
   return (res.rows as Record<string, unknown>[]).map((r) => ({
     projectId: r["id"] as string,
