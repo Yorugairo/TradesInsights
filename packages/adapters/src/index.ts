@@ -3,8 +3,10 @@ import { FakeSourceAdapter } from "./fake-source.js";
 import { KingPermitReportsAdapter } from "./king-permit-reports.js";
 import { KingPublicNoticesAdapter } from "./king-public-notices.js";
 import { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
+import { LaceyPermitReportsAdapter } from "./lacey-permit-reports.js";
 import { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 import { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
+import { LewisInspectionsAdapter } from "./lewis-inspections.js";
 import { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 import { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
 import {
@@ -20,9 +22,11 @@ import { WaSepaAdapter } from "./wa-sepa.js";
 export { FakeSourceAdapter };
 export { LaceyProjectsRestAdapter } from "./lacey-projects-rest.js";
 export { LaceyProjectPagesAdapter } from "./lacey-project-pages.js";
+export { LaceyPermitReportsAdapter } from "./lacey-permit-reports.js";
 export { LewisCurrentPlanningAdapter } from "./lewis-current-planning.js";
 export { LewisIssuedPermitsAdapter } from "./lewis-issued-permits.js";
 export { LewisSourceCanaryAdapter } from "./lewis-source-canary.js";
+export { LewisInspectionsAdapter } from "./lewis-inspections.js";
 export { KingPublicNoticesAdapter } from "./king-public-notices.js";
 export { KingPermitReportsAdapter } from "./king-permit-reports.js";
 export {
@@ -38,9 +42,11 @@ export { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
   lacey_projects_rest: () => new LaceyProjectsRestAdapter(),
+  lacey_permit_reports: () => new LaceyPermitReportsAdapter(),
   lacey_project_pages: () => new LaceyProjectPagesAdapter(),
   lewis_current_planning: () => new LewisCurrentPlanningAdapter(),
   lewis_issued_permits: () => new LewisIssuedPermitsAdapter(),
+  lewis_inspections: () => new LewisInspectionsAdapter(),
   lewis_source_canary: () => new LewisSourceCanaryAdapter(),
   king_public_notices: () => new KingPublicNoticesAdapter(),
   king_permit_reports: () => new KingPermitReportsAdapter(),

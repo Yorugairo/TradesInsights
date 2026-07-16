@@ -1,0 +1,23 @@
+{
+  "source_key": "lewis_inspections",
+  "captured_at": "2026-07-16",
+  "captured_from": "https://lewiscountywa.gov/departments/community-development/building-inspections/daily-building-inspections/",
+  "fixtures": {
+    "landing.html": "Daily Building Inspections page linking the current day's PDF (/documents/19707/... 302 → /media/documents/...)",
+    "07.15.2026_Scheduled_Inspections_-_Permitting.pdf": "3-page daily schedule grouped by inspector (Chris Collins 9 rows + second inspector 6 rows)"
+  },
+  "manual_audit": {
+    "method": "row-by-row comparison of parser output against the rendered PDF, cross-checked against the printed per-inspector totals",
+    "2026_07_15": {
+      "parsed_rows": 15,
+      "printed_totals": "Chris Collins total inspection count: 9 + second inspector: 6 = 15",
+      "spot_checks": [
+        "B26-00067 FOUNDATION / REINSPECTION at 330 42 BROCKWAY RD (type and reason are separate columns)",
+        "B24-00423 FINAL INSPECTION / REQUESTED on 'Single Family Residence' → normalizedStage near_final (§12.1 late-stage signal)",
+        "B26-00507 FOOTING with 2-line wrapped project description kept intact",
+        "B25-00494 SHEETROCK - NAILING (cell x jitter handled by midpoint column bounds)"
+      ]
+    },
+    "notes": "Only the current day's PDF is published — the county replaces the file daily, so there is no backfill archive and freshness is strict. Inspections merge into existing permit projects via rawFields.permitNumbers (explicit-reference pass)."
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "source_key": "lacey_permit_reports",
+  "captured_at": "2026-07-16",
+  "captured_from": "https://cityoflacey.org/permit%20reports/",
+  "fixtures": {
+    "landing.html": "Permit Reports index page (129 PDF links; census + activity series back to 2015)",
+    "June-2026-Census-Report-New-Construction.pdf": "two-page variant: permit table page + separate 'Permit Valuations Amt' page paired by row order",
+    "May-2026-Census-Report-New-Construction.pdf": "single-page variant: inline valuation column, wrapped 3-line subtype cells, wrapped headers"
+  },
+  "manual_audit": {
+    "method": "row-by-row comparison of parser output against the rendered PDFs, cross-checked against the reports' own printed totals",
+    "june_2026": {
+      "parsed_permits": 14,
+      "printed_total_permits": 14,
+      "parsed_total_units": 177,
+      "printed_total_new_dwelling_units": 177,
+      "parsed_total_valuation": 30114355.51,
+      "printed_total_valuation": 30114355.51,
+      "spot_checks": [
+        "BLDG25-0787 = MULTI FAMILY 24 units at 6531 CARPENTER RD SE issued 06/02/2026, $3,589,562.24 (row 1 of PDF page 1 / value 1 of page 2)",
+        "BLDG25-3827 = 89 units, $15,519,768.51 (largest row, verified against page 2 order)",
+        "BLDG26-1676 = last row; footer 'Total Number of Permits Issued 14' correctly excluded"
+      ]
+    },
+    "may_2026": {
+      "parsed_permits": 9,
+      "printed_total_permits": 9,
+      "parsed_total_valuation": 3169415.56,
+      "printed_total_valuation": 3169415.56,
+      "spot_checks": [
+        "BLDG26-0860 subtype ACCESSORY DWELLING UNIT (3-line wrapped cell)",
+        "BLDG26-0925 subtype SINGLE FAMILY RESIDENTIAL (3-line wrapped cell, carried forward to remaining rows)"
+      ]
+    },
+    "notes": "Companion 'Construction Activity' PDFs carry category counts only (verified June 2026: e.g. 'NEW CONSTRUCTION SINGLE-FAMILY 10') — no per-permit rows, deliberately not ingested. April 2026 census filename omits the year; month resolution falls back to the upload-path year."
+  }
+}

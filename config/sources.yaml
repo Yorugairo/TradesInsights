@@ -40,6 +40,30 @@ sources:
       pagination. robots.txt is empty (no restrictions). Public city data, no
       terms restricting automated access found on cityoflacey.org.
 
+  - key: lacey_permit_reports
+    name: Lacey Monthly Census Reports (New Construction)
+    authority: City of Lacey Community & Economic Development
+    priority: P1
+    landing_url: https://cityoflacey.org/permit%20reports/
+    format: pdf_index
+    access_class: pdf_index
+    cadence: monthly
+    county: Thurston
+    permitting_jurisdiction: City of Lacey
+    enabled: true
+    terms_reviewed_at: "2026-07-16"
+    robots_reviewed_at: "2026-07-16"
+    notes: >-
+      Verified 2026-07-16 (M4.5, measured coverage gap: zero Lacey
+      permit-stage records). Permit Reports page lists monthly "Census Report
+      (New Construction)" PDFs back to 2015 with permit-level rows (permit
+      no, subtype, address, issue date, dwelling units) plus a per-row
+      valuation page paired by order (count mismatch => valuations stay
+      null). Companion "Construction Activity" PDFs carry category COUNTS
+      only, not records — deliberately skipped. Some filenames omit the year
+      (April 2026) — report month falls back to the upload-path year.
+      cityoflacey.org robots.txt: no disallow (April review re-confirmed).
+
   - key: lacey_project_pages
     name: Lacey Current Projects pages
     authority: City of Lacey
@@ -145,6 +169,29 @@ sources:
       applicant vs primary-contractor). robots.txt disallows only
       /media/oldSite/. Reports' printed grand total can exceed the sum of
       printed per-row valuations (source-side; we never fabricate).
+
+  - key: lewis_inspections
+    name: Lewis Daily Scheduled Building Inspections
+    authority: Lewis County Community Development
+    priority: P1
+    landing_url: https://lewiscountywa.gov/departments/community-development/building-inspections/daily-building-inspections/
+    format: pdf_daily
+    access_class: pdf_index
+    cadence: daily
+    county: Lewis
+    permitting_jurisdiction: Lewis County
+    enabled: true
+    terms_reviewed_at: "2026-07-16"
+    robots_reviewed_at: "2026-07-16"
+    notes: >-
+      Verified 2026-07-16 (M4.5). Page links the current day's
+      "MM.DD.YYYY_Scheduled_Inspections_-_Permitting.pdf" (302 to
+      /media/documents/). Late-stage trade-timing signal: FINAL INSPECTION on
+      a residence => near_final (spec 12.1 shower/mirror window). Only the
+      current day is published — no archive, so no backfill; strict daily
+      freshness per spec. Rows anchor on permit number; inspections merge
+      into existing permit projects via rawFields.permitNumbers (explicit
+      reference pass).
 
   - key: lewis_current_planning
     name: Lewis Current Planning Applications

@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M4.5 (P1 sources from measured coverage gaps). Model-verified automation is built and mock-tested; it activates with `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`.
-**Last completed:** M4.3 + M4.4 (controlled automation policy) — 2026-07-16.
+**Current task:** M4.6 (customer-authorized invitation ingestion scaffolding).
+**Last completed:** M4.5 (P1 sources from measured coverage gaps) — 2026-07-16.
 
 ## Milestone ledger
 
@@ -40,6 +40,7 @@
 | M4.1 eval harness + labeled set + holdout | ✅ 2026-07-16 | `fixtures/eval/eval-set.v1.jsonl`: 200 examples (125 positives: 50 AH / 25 LGC / 50 SI + 75 hard negatives), 150 dev / 50 holdout stratified; features + labeling clock frozen per example → deterministic replay; reviewer rejections auditable in `review-exclusions.v1.json`; `pnpm eval:build` / `pnpm eval:run`; 4 harness unit tests; baseline measured (precision 97.3% ✅ / recall 72.3% ❌ → M4.2) |
 | M4.2 precision/recall/duplicate/expiry gates | ✅ 2026-07-16 | scorer v1.1.0: residential-glass trade recency (glass installs months after permit — 180d window), lot-count text parse → repeatable-units/scale, unknown-stage timing 0.5 (neutral, not worst-case guess), mechanical-replacement → non-interior trade, field-work-only ⇒ never Division 08 (M3.8 fix). Eval: dev 100%/96.8%, holdout 100%/93.5% (gates ≥90%/≥80%), 0 hard-negative leaks; duplicate/expired measured over stored deliveries via per-item metadata (`pnpm delivery:metrics`, 0/0 live; metric proven to detect fabricated violations); live re-score: AH 12 priority/153 digest (was 0/67) |
 | M4.3+M4.4 controlled automation policy | ✅ 2026-07-16 | `gate/automation.ts` (policy v1.0.0): auto-include requires gate pass + independent verification all-supported + every fact ≥0.9 confidence + no missing critical facts; high-risk categories (deadline/actionable claim, ≥$5M, ambiguous routing, contact data, bidding_confirmed) ALWAYS human — the only override is a recorded human decision (promoted); withheld items go to the digest reviewQueue (stored in delivery metadata with reasons, count disclosed in section 5, never silently dropped); 7 policy unit tests + 3 digest integration tests |
+| M4.5 P1 sources from measured gaps | ✅/⛔ 2026-07-16 | gap measurement: Thurston permit layer missing (Lacey/county/Olympia 0 permit-stage). Activated: `lacey_permit_reports` (monthly census PDFs, 2 layout variants, parser totals reconcile with printed totals; 67 permits Jan–Jun incl. 24/24/30/89-unit MF; 2 held in review correctly) + `lewis_inspections` (daily PDF, FINAL→near_final §12.1 signal; 4/15 merged into existing permit projects via explicit reference). Blocked/deferred with evidence: `thurston_activity_reports` (WebLink robots `Disallow: /`) and `olympia_smartgov_reports` (session-stateful Exago viewer — needs approved headless adapter). Ledger updated; 9 adapter tests |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

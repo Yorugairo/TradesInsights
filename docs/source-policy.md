@@ -179,3 +179,39 @@ One entry per source, appended when the §5 checklist runs. Format:
 - **Thurston County**: new permitting system announced for September 2026 — verify the "what's new" page before and during M1.9.
 - **Lewis County**: `lewis_source_canary` watches the Community Development landing page for link changes; SmartGov hostname must be discovered from the official page, never guessed.
 - **Seattle**: `seattle_source_canary` watches the Research-a-Project page; inspect live Socrata columns before coding M1.7.
+
+### lacey_permit_reports
+- Checklist run: 2026-07-16 (M4.5, agent session; measured gap: zero Lacey permit-stage records in the corpus).
+- Landing page verified: 2026-07-16 — https://cityoflacey.org/permit%20reports/ live; 129 PDF links (monthly "Census Report (New Construction)" + "Construction Activity" series back to 2015).
+- Format/cadence observed: monthly PDF. **Two live layout variants**: June 2026 = permit table page + separate "Permit Valuations Amt" page paired by row order; May 2026 = single page with inline valuation column and wrapped 3-line header/subtype cells. Columns are located from the header band, never assumed. Valuation count mismatch ⇒ all valuations null (never guessed). Companion "Construction Activity" PDFs carry category counts only — deliberately not ingested. April 2026 filename omits the year — month falls back to the upload-path year.
+- Robots/terms: cityoflacey.org has no robots disallow — re-reviewed 2026-07-16.
+- Fixtures captured: `fixtures/lacey_permit_reports/` (landing.html, June + May 2026 PDFs — one per layout variant, metadata.json with audit).
+- Manual sample audit: June 14/14 rows and May 9/9 rows field-by-field vs the rendered PDFs; parser sums reconcile exactly with the reports' printed totals (June: 14 permits / 177 units / $30,114,355.51; May: 9 permits / $3,169,415.56) — pass.
+- Live runs: 2026-07-16 — shadow 4 reports / 50 permits / 0 rejected, green; idempotent rerun all unchanged, green; backfill 2026-01→07: 6 reports / 67 permits total, green. 65/67 auto-resolved; 2 correctly held in merge review (same-address name mismatch).
+- Checkpoint: `censusMonthHighWater` (last month refetched; hash dedupe).
+- Enabled: 2026-07-16.
+
+### lewis_inspections
+- Checklist run: 2026-07-16 (M4.5, agent session; late-stage trade-timing signal per spec §12.1).
+- Landing page verified: 2026-07-16 — https://lewiscountywa.gov/…/daily-building-inspections/ live; links the current day's "MM.DD.YYYY_Scheduled_Inspections_-_Permitting.pdf" (302 → /media/documents/).
+- Format/cadence observed: daily PDF grouped by inspector; columns Scheduled Date / Permit Number / Inspection / Reason / Site Address / Project Description (midpoint column bounds — cell x jitters). Time cells render truncated by the county's generator ("8:...") and are not facts we keep.
+- **No archive exists** — the county replaces the file daily, so there is no backfill; freshness is strict (spec P1 note). Stage mapping: FINAL INSPECTION ⇒ near_final; any other inspection ⇒ construction. Inspections merge into existing permit projects via rawFields.permitNumbers (explicit-reference pass) — verified live: 4/15 merged into M1.3 permit projects (e.g. B26-00232 SFR + FRAMING COMBO).
+- Robots/terms: lewiscountywa.gov robots disallows only /media/oldSite/ — re-reviewed 2026-07-16.
+- Fixtures captured: `fixtures/lewis_inspections/` (landing.html, 07.15.2026 PDF, metadata.json with audit).
+- Manual sample audit: 15/15 rows vs the rendered PDF; printed per-inspector totals (9 + 6) reconcile — pass.
+- Live runs: 2026-07-16 — shadow 1 PDF / 15 inspections / 0 rejected, green; idempotent rerun unchanged, green.
+- Checkpoint: `inspectionDateHighWater` (older days never refetched — files are replaced in place).
+- Enabled: 2026-07-16.
+
+### thurston_activity_reports
+- Checklist run: 2026-07-16 (M4.5, agent session).
+- **Blocked: repository robots-disallowed.** The county's project-status page (verified live 2026-07-16) links "Monthly Land Use Activity Reports & Weekly Building Permit Reports" hosted on Laserfiche WebLink at weblink.co.thurston.wa.us — whose robots.txt disallows everything (`Disallow: /`, plus explicit `/*.pdf`, `/Browse.aspx`). Same policy class as the Ecology separ UI (M1.8): we do not crawl robots-disallowed hosts. Feasibility was confirmed before robots review (folders "Weekly Building Permit Reports" 2009–2026 with dated per-week PDFs at stable /CPED/0/edoc/<id>/Report-YYYY-MM-DD.pdf URLs) — no adapter was built and no crawling occurs.
+- Mitigations: `thurston_active_notices` (M1.9) and `wa_sepa` keep Thurston planning coverage; the county's "BDC Digest" email newsletter is a candidate authorized-email source (discovery preference list) if the county consents; permit-lookup remains Lookup-class enrich-only.
+- Re-verification path: ask Thurston CPED for permission/an alternate feed, or re-check robots.txt periodically.
+- Enabled: no — remains disabled; blocker recorded 2026-07-16.
+
+### olympia_smartgov_reports
+- Checklist run: 2026-07-16 (M4.5, agent session; measured gap: Olympia has zero permit-stage coverage).
+- **Deferred: dynamic Exago BI viewer.** https://ci-olympia-wa.smartgovcommunity.com/Public/ReportsView is live (verified 2026-07-16) and publicly lists exactly the needed reports ("Permit Applications Submitted Last 30 Days", "Permits Issued Last 30 Days"/"Year To Date", "Land Use Activity - Year to Date"), but each opens via `ViewReport?reportId=<guid>&reportType=Exago`, redirecting to a session-stateful ASP.NET/Exago viewer (reports-new.smartgovcommunity.com) whose data loads through AJAX postbacks — no static artifact to fetch. Extraction requires an approved headless-browser adapter (last resort class per source policy); deferred until that approval rather than shipping a brittle session-protocol scraper.
+- Mitigations: `wa_sepa` covers Olympia lead-agency SEPA actions; Olympia remains the top P1 gap for a future approved dynamic adapter.
+- Enabled: no — remains disabled; deferral recorded 2026-07-16 with verified report GUIDs in session notes.

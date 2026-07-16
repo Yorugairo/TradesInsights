@@ -22,10 +22,12 @@ describe("sources.yaml", () => {
     expect(enabled).toEqual([
       "fake_source",
       "lacey_projects_rest",
+      "lacey_permit_reports",
       "lacey_project_pages",
       "thurston_active_notices",
       "tumwater_development_arcgis",
       "lewis_issued_permits",
+      "lewis_inspections",
       "lewis_current_planning",
       "lewis_source_canary",
       "king_public_notices",
