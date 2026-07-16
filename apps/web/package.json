@@ -11,12 +11,21 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@otn/db": "workspace:*",
+    "@otn/intelligence": "workspace:*",
+    "@otn/resolution": "workspace:*",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.44.7",
     "next": "^15.1.0",
+    "pg": "^8.22.0",
+    "pg-boss": "^10.4.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.7.0"

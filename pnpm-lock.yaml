@@ -35,19 +35,46 @@ importers:
 
   apps/web:
     dependencies:
+      '@otn/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@otn/intelligence':
+        specifier: workspace:*
+        version: link:../../packages/intelligence
+      '@otn/resolution':
+        specifier: workspace:*
+        version: link:../../packages/resolution
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
+      drizzle-orm:
+        specifier: ^0.44.7
+        version: 0.44.7(@types/pg@8.20.0)(pg@8.22.0)
       next:
         specifier: ^15.1.0
         version: 15.5.20(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
+      pg-boss:
+        specifier: ^10.4.2
+        version: 10.4.2
       react:
         specifier: ^19.0.0
         version: 19.2.7
       react-dom:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@playwright/test':
         specifier: ^1.50.0
         version: 1.61.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.17

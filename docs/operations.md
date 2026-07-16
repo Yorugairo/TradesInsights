@@ -112,6 +112,10 @@ pnpm gate:run    [--opportunity <id>] [--limit N]   # read-only §15 publication
 
 **Key activation:** without `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` the pipeline stays in a *visible blocked state* — a batch `extract:run` logs `modelJobs: "blocked"` and exits cleanly; a targeted `--project` run records a `status='blocked'` `model_runs` row. Setting the two env vars activates the Anthropic provider (`claude-opus-4-8`, official SDK, proxy-aware) with no code changes. `LLM_JOB_BUDGET_USD` caps the worst-case cost per job (default $0.50); the monthly check sums `model_runs.cost_usd` for the current UTC month and blocks *before* spending.
 
+## Web application (M3.5)
+
+`pnpm dev` serves the authenticated surface on :3000. Pilot auth is a shared passphrase (`AUTH_SECRET` in `.env`) with an HMAC-signed HttpOnly session cookie: customer sessions are bound to one account (`/login` → account picker) and every `/api/app/*` query is scoped to that account; admin sessions (`role=admin`) unlock `/app/admin/*` (sources with run/disable controls, resolution review queue with merge/reject, coverage) and `/api/admin/*`. §16 routes and §17 APIs are implemented 1:1; "run source" enqueues a durable pg-boss `source-run` job (the worker must be running to execute it). E2E: `pnpm --filter @otn/web test:e2e` (needs local Postgres + seeded corpus; set `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium` in this environment).
+
 ## Running sources
 
 ```bash

@@ -24,7 +24,7 @@ pnpm workspace; every package exports TypeScript source directly (`main: src/ind
 
 | Package | Responsibility | Status |
 |---|---|---|
-| `apps/web` | Next.js App Router UI + authenticated APIs | M0: placeholder page; real surface in M3 |
+| `apps/web` | Next.js App Router UI + authenticated APIs | M3.5: §16 pages (opportunities/detail, project, digests, account, feedback, admin sources/runs/review/coverage) + §17 APIs; HMAC-cookie pilot auth, account-scoped queries, admin role gate |
 | `apps/worker` | pg-boss worker, source-run/backfill CLIs | M0: operational |
 | `packages/db` | Drizzle schema (spec §7, 20 tables), migrations, seed | M0: operational |
 | `packages/domain` | Stage/event/county taxonomy, `NormalizedSourceRecord` | M0: operational |
