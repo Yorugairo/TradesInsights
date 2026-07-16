@@ -16,6 +16,7 @@
     "@otn/config": "workspace:*",
     "@otn/db": "workspace:*",
     "@otn/domain": "workspace:*",
+    "@otn/intelligence": "workspace:*",
     "@otn/resolution": "workspace:*",
     "@otn/source-sdk": "workspace:*",
     "dotenv": "^16.4.7",

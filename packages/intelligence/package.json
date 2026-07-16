@@ -9,9 +9,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@otn/domain": "workspace:*"
+    "@otn/config": "workspace:*",
+    "@otn/db": "workspace:*",
+    "@otn/domain": "workspace:*",
+    "@otn/resolution": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10"
   }
 }
