@@ -286,6 +286,9 @@ importers:
       '@otn/db':
         specifier: workspace:*
         version: link:../db
+      '@otn/documents':
+        specifier: workspace:*
+        version: link:../documents
       '@otn/domain':
         specifier: workspace:*
         version: link:../domain

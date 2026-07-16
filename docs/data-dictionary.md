@@ -61,6 +61,18 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **model_runs** (M3.3 — migration `0002_model_runs`) — one row per model invocation *or blocked/rejected attempt* (spec §13): `job_type` (extraction | verification | brief_draft), nullable `project_id`/`account_profile_id`, `provider`, `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, `result_hash` (SHA-256 of raw model output), `result_json` (the Zod-validated facts/inferences/missingCriticalFacts payload — null for rejected runs), `status` (succeeded | rejected | blocked | error), `error`. The monthly budget check sums `cost_usd` over the current UTC month, so every spending call must persist a row. AI is never the system of record: `result_json` feeds the verifier/UI and never overwrites parsed facts.
 
+## Invitation ingestion (S3 — migration `0010_bid_invitations`)
+
+Extends M4.6. Provider-agnostic intake of customer-authorized bid invitations (.eml upload, inbound-email webhook, CSV) — never scrapes portals/credentials. All rows account-scoped private evidence.
+
+**inbound_messages** — one row per ingested message; `(account_profile_id, provider, provider_message_id)` unique → a duplicate forward is ingested once. `sender`, `recipients_json`, `subject`, `received_at`, `raw_artifact_id`, `processing_status`.
+
+**bid_invitations** — the structured invitation: `project_id` (nullable — linked only to a project the account already sees), `gc_organization_id`, `estimator_name/email`, `invitation_status` (invited only when the message carries an explicit solicitation — a forward is not a bid), `bid_due_at`, `job_walk_at`, `scope_summary`, `match_status` (matched/review/unmatched — ambiguous → review), `confidence`, `updated_at`.
+
+**bid_invitation_events** — append-only account-scoped timeline: `invitation_received`, `deadline_changed` (metadata preserves both prior + revised deadlines, `verified:false` until a human confirms — deadline alerts gate on this), `addendum`. Deadline changes never overwrite history and never write to the shared project timeline (isolation boundary).
+
+**bid_documents** — attached bid documents: `document_type`, `access_class` (private_authorized), `extraction_status`.
+
 ## Pursuit workflow (S2 — migration `0008_pursuits`)
 
 **pursuits** — one operational pursuit per `(account_profile_id, opportunity_id)` (unique). `state` (spec §4 pipeline: discovered → qualified → relationship_target → bid_confirmed → bid_decision_pending → estimating → submitted → won/lost/no_bid → follow_up → archived), `owner_user_id` (every active pursuit has an owner), `priority`, `next_action_at`, `closed_at`, `estimated/submitted/outcome_contract_value`, `updated_at` (migration `0009_pursuit_updated_at`). Transitions are validated + audited server-side; states estimating/submitted/won/lost/no_bid can never be entered by an AI/system actor.

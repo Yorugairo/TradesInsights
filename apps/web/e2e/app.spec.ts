@@ -134,6 +134,39 @@ test.describe("customer surface", () => {
     await other.dispose();
   });
 
+  test("invitation upload: ingest, idempotent re-upload, account isolation", async ({ request, playwright, baseURL }) => {
+    await login(request, "solis_interiors");
+    const mid = `e2e-inv-${Date.now()}@acme-gc.com`;
+    const rawEml = [
+      `From: "Acme GC" <estimating@acme-gc.com>`,
+      `To: bids@solis.example`,
+      `Subject: Invitation to Bid`,
+      `Message-ID: <${mid}>`,
+      ``,
+      `You are invited to submit a bid.`,
+      `Project: E2E Nonmatching Project`,
+      `Scope: Division 09 drywall`,
+      `Bids due: August 15, 2026`,
+    ].join("\n");
+
+    const up = await request.post("/api/app/invitations/upload", { data: { rawEml } });
+    expect(up.status()).toBe(201);
+    const first = await up.json();
+    expect(first.deduped).toBe(false);
+    expect(first.invitationId).toBeTruthy();
+
+    // Same Message-ID → idempotent.
+    const up2 = await request.post("/api/app/invitations/upload", { data: { rawEml } });
+    expect((await up2.json()).deduped).toBe(true);
+
+    // Detail is account-scoped: another account gets 404.
+    const other = await playwright.request.newContext({ baseURL: baseURL! });
+    await login(other, "lacey_glass_at_home");
+    const cross = await other.get(`/api/app/invitations/${first.invitationId}`);
+    expect(cross.status()).toBe(404);
+    await other.dispose();
+  });
+
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
     await login(request, "solis_interiors");
     const list = await (await request.get("/api/app/opportunities?limit=1")).json();

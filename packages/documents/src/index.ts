@@ -3,3 +3,4 @@
 export * from "./html.js";
 export * from "./pdf.js";
 export * from "./xlsx.js";
+export * from "./email.js";

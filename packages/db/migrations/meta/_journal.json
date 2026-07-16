@@ -71,6 +71,13 @@
       "when": 1784239024956,
       "tag": "0009_pursuit_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784239491403,
+      "tag": "0010_bid_invitations",
+      "breakpoints": true
     }
   ]
 }

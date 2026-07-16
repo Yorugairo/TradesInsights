@@ -485,6 +485,83 @@ export const pursuitNotes = pgTable(
   (t) => [index("pursuit_notes_pursuit_ix").on(t.pursuitId, t.createdAt)],
 );
 
+// ── Invitation ingestion (S3, strengthening addendum §6) ─────────────────────
+// Provider-agnostic intake of customer-AUTHORIZED bid invitations (.eml upload,
+// inbound-email webhook, CSV). Never scrapes portals/credentials. Every row is
+// account-scoped private evidence; deadline changes create events and never
+// overwrite history.
+
+export const inboundMessages = pgTable(
+  "inbound_messages",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    provider: text("provider").notNull(),
+    providerMessageId: text("provider_message_id").notNull(),
+    sender: text("sender"),
+    recipientsJson: jsonb("recipients_json"),
+    subject: text("subject"),
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    rawArtifactId: uuid("raw_artifact_id").references(() => rawArtifacts.id),
+    processingStatus: text("processing_status").notNull().default("received"),
+    createdAt: now(),
+  },
+  (t) => [
+    // Idempotency: a duplicate forwarded message is ingested once per account.
+    uniqueIndex("inbound_messages_provider_ux").on(t.accountProfileId, t.provider, t.providerMessageId),
+  ],
+);
+
+export const bidInvitations = pgTable(
+  "bid_invitations",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    gcOrganizationId: uuid("gc_organization_id").references(() => organizations.id),
+    estimatorName: text("estimator_name"),
+    estimatorEmail: text("estimator_email"),
+    invitationStatus: text("invitation_status").notNull().default("invited"),
+    bidDueAt: timestamp("bid_due_at", { withTimezone: true }),
+    jobWalkAt: timestamp("job_walk_at", { withTimezone: true }),
+    scopeSummary: text("scope_summary"),
+    sourceMessageId: uuid("source_message_id").references(() => inboundMessages.id),
+    matchStatus: text("match_status").notNull().default("unmatched"),
+    confidence: doublePrecision("confidence"),
+    createdAt: now(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("bid_invitations_account_ix").on(t.accountProfileId, t.invitationStatus)],
+);
+
+export const bidInvitationEvents = pgTable(
+  "bid_invitation_events",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    bidInvitationId: uuid("bid_invitation_id").notNull().references(() => bidInvitations.id),
+    eventType: text("event_type").notNull(),
+    eventAt: timestamp("event_at", { withTimezone: true }),
+    sourceMessageId: uuid("source_message_id").references(() => inboundMessages.id),
+    metadataJson: jsonb("metadata_json"),
+    createdAt: now(),
+  },
+  (t) => [index("bid_invitation_events_invitation_ix").on(t.bidInvitationId, t.createdAt)],
+);
+
+export const bidDocuments = pgTable(
+  "bid_documents",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    bidInvitationId: uuid("bid_invitation_id").notNull().references(() => bidInvitations.id),
+    rawArtifactId: uuid("raw_artifact_id").references(() => rawArtifacts.id),
+    documentType: text("document_type"),
+    accessClass: text("access_class").notNull().default("private_authorized"),
+    extractionStatus: text("extraction_status").notNull().default("pending"),
+    createdAt: now(),
+  },
+  (t) => [index("bid_documents_invitation_ix").on(t.bidInvitationId)],
+);
+
 // ── Delivery & coverage ──────────────────────────────────────────────────────
 
 export const deliveries = pgTable(
