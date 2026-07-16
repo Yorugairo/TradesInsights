@@ -13,12 +13,14 @@
     "score:run": "tsx src/cli/score-run.ts",
     "extract:run": "tsx src/cli/extract-run.ts",
     "verify:run": "tsx src/cli/verify-run.ts",
-    "gate:run": "tsx src/cli/gate-run.ts"
+    "gate:run": "tsx src/cli/gate-run.ts",
+    "digest:run": "tsx src/cli/digest-run.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",
     "@otn/config": "workspace:*",
     "@otn/db": "workspace:*",
+    "@otn/delivery": "workspace:*",
     "@otn/domain": "workspace:*",
     "@otn/intelligence": "workspace:*",
     "@otn/resolution": "workspace:*",

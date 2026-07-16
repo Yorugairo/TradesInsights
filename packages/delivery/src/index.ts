@@ -1,2 +1,4 @@
-// Digest and email rendering (spec §18). Implemented in M3.
-export const PACKAGE = "@otn/delivery";
+// Digest and email rendering (spec §18). M3.6: idempotent weekly digest.
+export * from "./digest.js";
+export * from "./render.js";
+export * from "./deliver.js";

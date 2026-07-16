@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M3.6 (idempotent weekly digest preview/send). Note: *executing* model extraction/verification needs `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`; the pipelines are built and mock-tested, and stay in a visible blocked state until the keys are set — the publication gate reports `blocked_on_verifier` accordingly.
-**Last completed:** M3.5 (§16 UI + §17 APIs) — 2026-07-16.
+**Current task:** M3.7 (feedback + disposition reasons). Note: *executing* model extraction/verification needs `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`; the pipelines are built and mock-tested, and stay in a visible blocked state until the keys are set — the publication gate reports `blocked_on_verifier` accordingly.
+**Last completed:** M3.6 (idempotent weekly digest) — 2026-07-16.
 
 ## Milestone ledger
 
@@ -33,6 +33,7 @@
 | M3.3 model extraction pipeline + budgets | ✅ 2026-07-16 | migration `0002_model_runs`; §13 Zod contract (unknown evidence IDs reject the run); Anthropic provider (official SDK, `claude-opus-4-8`, key-activated) + MockProvider; per-job + monthly budget blocks *before* spend; every attempt persisted with tokens/cost/latency/result hash; visible blocked state without keys; 17 tests (7 contract + 10 integration) |
 | M3.4 independent verifier + publication gate | ✅ 2026-07-16 | verifier: second model pass, one verdict per fact vs its cited evidence (fabricated/missing verdicts reject); gate: all 9 §15 checks deterministic over stored rows (red-source suppression, A-grade core event, D-never/C-not-alone grades, pending-review contradiction, 180d timing, threshold, verifier verdict); live corpus: 988 digest-band opportunities → 986 `blocked_on_verifier` (correct without keys) + 2 honest identity fails (SEPA records with unmappable stage); 16 tests |
 | M3.5 §16 UI + §17 APIs | ✅ 2026-07-16 | all §16 routes + §17 endpoints 1:1; pilot HMAC-cookie auth, account isolation enforced in the query layer and proven by E2E (cross-account read → 404, customer → admin API → 403); opportunity page: facts-vs-inferences, evidence w/ grades+retrieval dates, timeline, gate checks, next action, feedback/state controls; admin: sources (run enqueues pg-boss job, disable), run detail w/ dead letters, review merge/reject, coverage; 9/9 Playwright E2E |
+| M3.6 idempotent weekly digest | ✅ 2026-07-16 | §18: 5 sections, gate-passing items only, withheld items disclosed in section 5; per-item what-changed/why-it-fits/facts/inferences/next-action/source-links; "new" = first-ever inclusion (delivery history), unchanged repeats never labeled new; idempotent per (account, week) incl. never re-sending; Mailpit send verified; live run: 3 drafts, 767 withheld pending verification (honest keyless state); 4 integration tests |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |

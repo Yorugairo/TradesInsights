@@ -9,9 +9,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@otn/domain": "workspace:*"
+    "@otn/db": "workspace:*",
+    "@otn/domain": "workspace:*",
+    "@otn/intelligence": "workspace:*",
+    "drizzle-orm": "^0.44.7",
+    "nodemailer": "^9.0.3"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "@types/nodemailer": "^8.0.1",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10"
   }
 }
