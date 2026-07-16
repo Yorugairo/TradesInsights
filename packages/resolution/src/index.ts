@@ -2,3 +2,4 @@
 // M2.1: normalizers. M2.2: resolver passes 1–3 + persistence.
 export * from "./normalize.js";
 export * from "./resolver.js";
+export * from "./fuzzy.js";

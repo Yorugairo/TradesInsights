@@ -18,13 +18,20 @@ import {
   type Db,
 } from "@otn/db";
 import type { NormalizedSourceRecord } from "@otn/domain";
-import { RESOLVER_VERSION, resolveRecord } from "@otn/resolution";
-import { resetSource, testDb } from "./helpers.js";
+import { RESOLVER_VERSION, resolveRecord, type ResolutionOutcome } from "@otn/resolution";
+import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 let db: Db;
 let pool: pg.Pool;
 let sourceId: string;
 let artifactId: string;
+const createdProjects = new Set<string>();
+
+async function resolveTracked(row: Parameters<typeof resolveRecord>[1]): Promise<ResolutionOutcome> {
+  const outcome = await resolveRecord(db, row);
+  if (outcome.projectId) createdProjects.add(outcome.projectId);
+  return outcome;
+}
 
 // Unique per test run so leftover graph rows from prior runs can't collide.
 const RUN = randomUUID().slice(0, 8).toUpperCase();
@@ -111,6 +118,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await deleteTestProjects(db, [...createdProjects]);
   await pool.end();
 });
 
@@ -128,13 +136,13 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
         normalizedStage: "entitlement",
         statusRaw: "under review",
         parcelIds: [PARCEL],
-        addressRaw: "123 Test Rd, Chehalis, WA 98532",
+        addressRaw: `${RUN.slice(0, 4)} Roamers Test Rd, Chehalis, WA 98532`,
         organizations: [{ name: "Roamers Test LLC", role: "applicant", evidenceText: "x" }],
       }),
       { fileNumbers: [planningId, sepaFileRef] },
       new Date("2026-07-01T00:00:00Z"),
     );
-    const outcome = await resolveRecord(db, row);
+    const outcome = await resolveTracked(row);
     expect(outcome.outcome).toBe("created");
     expect(outcome.rule).toBe("new_project");
     projectId = outcome.projectId!;
@@ -165,7 +173,7 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
       { leadagencyfilenumber: sepaFileRef },
       new Date("2026-07-03T00:00:00Z"),
     );
-    const outcome = await resolveRecord(db, row);
+    const outcome = await resolveTracked(row);
     expect(outcome.outcome).toBe("merged");
     expect(outcome.rule).toBe("explicit_reference");
     expect(outcome.projectId).toBe(projectId);
@@ -185,7 +193,7 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
       {},
       new Date("2026-07-10T00:00:00Z"),
     );
-    const outcome = await resolveRecord(db, row);
+    const outcome = await resolveTracked(row);
     expect(outcome.outcome).toBe("merged");
     expect(outcome.rule).toBe("parcel_overlap");
     expect(outcome.projectId).toBe(projectId);
@@ -220,7 +228,7 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
       {},
       new Date("2026-07-12T00:00:00Z"),
     );
-    const outcome = await resolveRecord(db, row);
+    const outcome = await resolveTracked(row);
     expect(outcome.outcome).toBe("merged");
     expect(outcome.rule).toBe("official_id");
     expect(outcome.projectId).toBe(projectId);
@@ -241,7 +249,7 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
       {},
       new Date("2026-07-11T00:00:00Z"),
     );
-    const outcome = await resolveRecord(db, row);
+    const outcome = await resolveTracked(row);
     expect(outcome.outcome).toBe("review");
     const [review] = await db
       .select()

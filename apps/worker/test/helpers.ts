@@ -8,7 +8,9 @@ import {
   createPool,
   evidenceItems,
   projectEvents,
+  projectExternalIds,
   projectRoles,
+  projects,
   rawArtifacts,
   recordResolutions,
   resolutionReviews,
@@ -81,4 +83,17 @@ export async function resetSource(db: Db, key: string): Promise<string> {
   await db.delete(rawArtifacts).where(eq(rawArtifacts.sourceId, row.id));
   await db.delete(sourceRuns).where(eq(sourceRuns.sourceId, row.id));
   return row.id;
+}
+
+/** Delete test-created projects and every row referencing them (tests only). */
+export async function deleteTestProjects(db: Db, projectIds: string[]): Promise<void> {
+  if (projectIds.length === 0) return;
+  await db.delete(projectEvents).where(inArray(projectEvents.projectId, projectIds));
+  await db.delete(projectRoles).where(inArray(projectRoles.projectId, projectIds));
+  await db.delete(projectExternalIds).where(inArray(projectExternalIds.projectId, projectIds));
+  await db.delete(recordResolutions).where(inArray(recordResolutions.projectId, projectIds));
+  await db
+    .delete(resolutionReviews)
+    .where(inArray(resolutionReviews.candidateProjectId, projectIds));
+  await db.delete(projects).where(inArray(projects.id, projectIds));
 }

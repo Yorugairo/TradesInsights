@@ -20,8 +20,9 @@ import {
   stageOrder,
   type MatchFeatures,
 } from "./normalize.js";
+import { evaluateFuzzy } from "./fuzzy.js";
 
-export const RESOLVER_VERSION = "0.2.0"; // M2.2: passes 1–3
+export const RESOLVER_VERSION = "0.3.0"; // M2.2 passes 1–3 + M2.3 passes 4–5
 
 /** Record types that never become projects (canaries, registry listings). */
 const NON_PROJECT_RECORD_TYPES = new Set(["source_canary"]);
@@ -30,6 +31,8 @@ export type MatchedRule =
   | "official_id"
   | "explicit_reference"
   | "parcel_overlap"
+  | "address_name"
+  | "proximity_org"
   | "new_project";
 
 export interface ResolutionOutcome {
@@ -175,6 +178,15 @@ async function emitEvent(
   });
 }
 
+/** Write the record's point geometry onto the project when it has none. */
+async function fillGeometry(db: Db, projectId: string, row: RecordRow): Promise<void> {
+  if (!row.normalized.geometry) return;
+  await db.execute(sql`
+    UPDATE projects
+    SET geometry = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(row.normalized.geometry)}), 4326)
+    WHERE id = ${projectId} AND geometry IS NULL`);
+}
+
 async function mergeIntoProject(
   db: Db,
   projectId: string,
@@ -211,6 +223,7 @@ async function mergeIntoProject(
 
   await registerExternalIds(db, projectId, record, features);
   await upsertOrganizationsAndRoles(db, projectId, row);
+  await fillGeometry(db, projectId, row);
   await emitEvent(db, projectId, row, {
     priorStage: stageAdvanced ? project.currentStage : null,
     resultingStage: stageAdvanced ? newStage : null,
@@ -237,6 +250,7 @@ async function createProject(db: Db, row: RecordRow, features: MatchFeatures): P
   const projectId = inserted!.id;
   await registerExternalIds(db, projectId, record, features);
   await upsertOrganizationsAndRoles(db, projectId, row);
+  await fillGeometry(db, projectId, row);
   // First observation event (spec §9 project_first_seen) plus none-to-stage.
   await db.insert(projectEvents).values({
     projectId,
@@ -381,6 +395,26 @@ export async function resolveRecord(db: Db, row: RecordRow): Promise<ResolutionO
       resolverVersion: RESOLVER_VERSION,
     });
     return { sourceRecordId: row.id, outcome: "review", rule: "parcel_overlap", projectId: null };
+  }
+
+  // Passes 4–5 (M2.3) — fuzzy address/proximity with spec-§10 review gates.
+  const fuzzy = await evaluateFuzzy(db, record, features);
+  if (fuzzy?.kind === "auto") {
+    await mergeIntoProject(db, fuzzy.projectId, row, features);
+    await persistResolution(db, row, fuzzy.projectId, fuzzy.rule, features, fuzzy.score);
+    return { sourceRecordId: row.id, outcome: "merged", rule: fuzzy.rule, projectId: fuzzy.projectId };
+  }
+  if (fuzzy?.kind === "review") {
+    await db.insert(resolutionReviews).values({
+      sourceRecordId: row.id,
+      candidateProjectId: fuzzy.projectId,
+      matchedRule: fuzzy.rule,
+      featuresJson: features,
+      score: fuzzy.score,
+      reasonsJson: fuzzy.reasons,
+      resolverVersion: RESOLVER_VERSION,
+    });
+    return { sourceRecordId: row.id, outcome: "review", rule: fuzzy.rule, projectId: fuzzy.projectId };
   }
 
   const projectId = await createProject(db, row, features);

@@ -11,6 +11,9 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**"],
     testTimeout: 30_000,
     hookTimeout: 60_000,
+    // Integration files share the fake_source DB fixture (resetSource);
+    // parallel files would clear each other's records mid-run.
+    fileParallelism: false,
     passWithNoTests: false,
     env: {
       // Defaults match docker-compose; real env vars override.

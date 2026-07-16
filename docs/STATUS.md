@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M2.3 (fuzzy/geospatial candidates + review thresholds) — next up.
-**Last completed:** M2.2 (exact/lineage/parcel matching) — 5,555 records resolved: 4,982 projects, 571 cross-record merges (363 parcel / 169 reference / 39 official-id), 0 errors, 2026-07-15. M1 exit gate passed (see ledger).
+**Current task:** M2.4 (development/phase hierarchy + event timeline) — next up.
+**Last completed:** M2.3 (fuzzy/geospatial passes 4–5 with review gates), 2026-07-16.
 
 ## Milestone ledger
 
@@ -23,6 +23,7 @@
 | **M1 exit gate** | ✅ 2026-07-15 | 13 sources enabled all green, 5,555 records, 83/83 tests + E2E, backfills verified, blockers documented |
 | M2.1 resolution normalizers | ✅ 2026-07-15 | address/parcel/org/name/stage/geometry + extractFeatures; 13 unit tests |
 | M2.2 exact/lineage/parcel matching | ✅ 2026-07-15 | migration 0001_resolution; live corpus: 4,986 projects, 571 merges, 377 multi-record projects, 0 errors; cross-source merges verified (SEPA↔Seattle MUP, King notices↔reports, Thurston↔SEPA, Lewis↔SEPA, Lacey REST↔pages) |
+| M2.3 fuzzy/geospatial + review gates | ✅ 2026-07-16 | passes 4–5 (address+name, proximity+org, PostGIS ST_DistanceSphere ≤75m); §10 gates: same-address TI, generic names, fuzzy-without-support → review; resolver 0.3.0 |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
@@ -43,6 +44,7 @@
 - Health volume-drop rule skips runs with `unchangedCount > 0` (hash-identical content is not a drop); required-field null-rate drop (spec §14) still needs per-run field instrumentation — tracked for M1 exit.
 - Lacey REST exposes only the *current* project listing — "≥90-day backfill" for Lacey means the full current listing is ingested and the window filter is verified, not that delisted historical projects are recoverable.
 - The runner's unchanged-artifact skip keys on content hash only: a parser upgrade does not reprocess already-stored artifacts until their content changes. Stored-artifact reprocessing (replay by parserVersion) is a future capability — not required by M1.
+- Fuzzy passes 4–5 apply to records resolved after M2.3 (resolver 0.3.0); the M2.2-era corpus was resolved with passes 1–3 only. Retroactive project-level duplicate candidates surface through the M2.5 merge-review workflow, not by re-running the resolver.
 
 ## Pending calibration (spec §22 — gather from customers, unblocks M3 rule finalization)
 
