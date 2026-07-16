@@ -202,6 +202,45 @@ describe("M3.2 routing — the three accounts route differently (exit-gate requi
   });
 });
 
+describe("S6 Lacey cost control — shared services, no org-id branches", () => {
+  it("Home and Commercial both route through the shared config-keyed pipeline", () => {
+    // A project with NO organization still routes for the Lacey profiles — route
+    // selection is driven by the account key + config weights, never by a
+    // hard-coded Lacey organization id.
+    const f = features({
+      county: "King",
+      permittingJurisdiction: "City of Seattle",
+      text: "new commercial office building storefront curtain wall glazing",
+      maxValuation: 5_000_000,
+      stage: "permit_applied",
+      orgs: [],
+    });
+    const routes = routeProject(f, ACCOUNTS);
+    expect(routes.map((r) => r.accountKey)).toContain("lacey_glass_commercial");
+  });
+
+  it("organization identity does not change the route (no org-id-conditional behavior)", () => {
+    const base = features({
+      county: "Thurston",
+      text: "plat of maple grove single family residence new construction",
+      clusterSize: 6,
+      hasVelocitySignal: true,
+      stage: "permit_issued",
+    });
+    const withoutOrg = routeProject({ ...base, orgs: [] }, ACCOUNTS).find(
+      (r) => r.accountKey === "lacey_glass_at_home",
+    );
+    const withOrg = routeProject(
+      { ...base, orgs: [{ name: "MAPLE GROVE HOMES LLC", role: "applicant" }] },
+      ACCOUNTS,
+    ).find((r) => r.accountKey === "lacey_glass_at_home");
+    // Same route either way; the builder org only affects the evidence/identity
+    // component, never which shared router runs.
+    expect(withoutOrg?.route).toBe(withOrg?.route);
+    expect(withoutOrg?.route).toBe("residential_glass");
+  });
+});
+
 describe("classify", () => {
   it("detects categories from stored text only", () => {
     const c = classify(
