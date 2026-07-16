@@ -51,6 +51,8 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **feedback** — relevant / new_to_customer / timely / worth_pursuing booleans + `disposition_reason`, per user.
 
+**model_runs** (M3.3 — migration `0002_model_runs`) — one row per model invocation *or blocked/rejected attempt* (spec §13): `job_type` (extraction | verification | brief_draft), nullable `project_id`/`account_profile_id`, `provider`, `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, `result_hash` (SHA-256 of raw model output), `result_json` (the Zod-validated facts/inferences/missingCriticalFacts payload — null for rejected runs), `status` (succeeded | rejected | blocked | error), `error`. The monthly budget check sums `cost_usd` over the current UTC month, so every spending call must persist a row. AI is never the system of record: `result_json` feeds the verifier/UI and never overwrites parsed facts.
+
 ## Delivery & coverage
 
 **deliveries** — idempotent by unique `idempotency_key`; stores `rendered_content`, period, `status`, `metadata_json` (rules/models used).

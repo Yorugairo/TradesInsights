@@ -9,11 +9,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@otn/config": "workspace:*",
     "@otn/db": "workspace:*",
     "@otn/domain": "workspace:*",
     "@otn/resolution": "workspace:*",
     "drizzle-orm": "^0.44.7",
+    "undici": "^8.7.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

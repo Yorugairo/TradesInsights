@@ -448,3 +448,41 @@ export const resolutionReviews = pgTable(
     index("resolution_reviews_record_ix").on(t.sourceRecordId),
   ],
 );
+
+// ── Model runs (spec §13 AI contract) ────────────────────────────────────────
+
+/**
+ * One row per model invocation (or per blocked/rejected attempt). AI is never
+ * the system of record: the validated §13 payload lives in result_json for the
+ * verifier/UI; it never overwrites parsed facts. Cost rows are the input to
+ * the monthly budget check, so every spending call must be recorded here.
+ */
+export const modelRuns = pgTable(
+  "model_runs",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** extraction | verification | brief_draft */
+    jobType: text("job_type").notNull(),
+    projectId: uuid("project_id").references(() => projects.id),
+    accountProfileId: uuid("account_profile_id").references(() => accountProfiles.id),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costUsd: doublePrecision("cost_usd"),
+    latencyMs: integer("latency_ms"),
+    /** SHA-256 of the raw model output text. */
+    resultHash: text("result_hash"),
+    /** Zod-validated §13 payload (facts/inferences/missingCriticalFacts). */
+    resultJson: jsonb("result_json"),
+    /** succeeded | rejected | blocked | error */
+    status: text("status").notNull(),
+    error: text("error"),
+    createdAt: now(),
+  },
+  (t) => [
+    index("model_runs_project_ix").on(t.projectId, t.jobType),
+    index("model_runs_month_ix").on(t.createdAt),
+  ],
+);

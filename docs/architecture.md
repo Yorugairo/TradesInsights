@@ -32,8 +32,8 @@ pnpm workspace; every package exports TypeScript source directly (`main: src/ind
 | `packages/source-sdk` | Adapter contract, fetch policy, object store, run orchestrator, health | M0: operational |
 | `packages/adapters` | Source adapters + registry | M1: 13 P0 adapters registered (Lacey ×2, Lewis ×3, King ×2, Seattle ×3, WA SEPA, Thurston, Tumwater ArcGIS) + `fake_source` |
 | `packages/documents` | PDF/Word/Excel/HTML extraction | M1: HTML (cheerio), PDF positioned text (pdfjs-dist, rotation-aware), XLSX (exceljs, normalized cells); Word deferred until a live source needs it (King reports turned out to be Excel-only) |
-| `packages/resolution` | Address/org/project matching | stub — M2 |
-| `packages/intelligence` | Routing, scoring, verification | stub — M3 |
+| `packages/resolution` | Address/org/project matching | M2: resolver passes 1–5 (official ID → explicit ref → parcel → address+name → proximity+org), review/undo workflow, development grouping, cluster velocity |
+| `packages/intelligence` | Routing, scoring, model extraction, verification | M3: account rules (versioned), §12 deterministic router/scorer, §13 model extraction (Anthropic SDK key-activated + mock, per-job/monthly budgets, `model_runs` ledger); verifier next (M3.4) |
 | `packages/delivery` | Digest/email rendering | stub — M3 |
 
 ## Key mechanisms (M0)

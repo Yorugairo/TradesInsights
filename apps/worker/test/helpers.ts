@@ -7,6 +7,7 @@ import {
   createDb,
   createPool,
   evidenceItems,
+  modelRuns,
   projectEvents,
   projectExternalIds,
   projectRoles,
@@ -88,6 +89,7 @@ export async function resetSource(db: Db, key: string): Promise<string> {
 /** Delete test-created projects and every row referencing them (tests only). */
 export async function deleteTestProjects(db: Db, projectIds: string[]): Promise<void> {
   if (projectIds.length === 0) return;
+  await db.delete(modelRuns).where(inArray(modelRuns.projectId, projectIds));
   await db.delete(projectEvents).where(inArray(projectEvents.projectId, projectIds));
   await db.delete(projectRoles).where(inArray(projectRoles.projectId, projectIds));
   await db.delete(projectExternalIds).where(inArray(projectExternalIds.projectId, projectIds));

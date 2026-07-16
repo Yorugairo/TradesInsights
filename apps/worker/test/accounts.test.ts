@@ -65,7 +65,6 @@ describe("M3.1 account profiles", () => {
     expect(after!.rule).toHaveProperty("test_marker");
     // The prior version is still there, untouched.
     const all = await db.execute(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (await import("drizzle-orm")).sql`
         SELECT version FROM account_rules ar
         JOIN account_profiles ap ON ap.id = ar.account_profile_id

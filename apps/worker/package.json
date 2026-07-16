@@ -10,7 +10,8 @@
     "source:backfill": "tsx src/cli/source-backfill.ts",
     "resolve:run": "tsx src/cli/resolve-run.ts",
     "review": "tsx src/cli/review.ts",
-    "score:run": "tsx src/cli/score-run.ts"
+    "score:run": "tsx src/cli/score-run.ts",
+    "extract:run": "tsx src/cli/extract-run.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",

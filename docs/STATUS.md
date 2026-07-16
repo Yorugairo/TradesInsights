@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M3.1 (account profiles + routing/scoring foundations) — awaiting go-ahead. Note: M3 model-extraction tasks need `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` (see Connections).
-**Last completed:** M2 (all of M2.1–M2.6) — exit gate green, 2026-07-16.
+**Current task:** M3.4 (evidence verifier + publication gate). Note: *executing* model extraction/verification needs `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD`; the pipeline is built and mock-tested, and stays in a visible blocked state until the keys are set.
+**Last completed:** M3.3 (model extraction pipeline with budgets) — 2026-07-16.
 
 ## Milestone ledger
 
@@ -28,6 +28,9 @@
 | M2.5 merge-review/split workflow | ✅ 2026-07-16 | decideReview merge/reject (rejected candidates excluded from re-resolution), undoResolution keeps records + history, review CLI |
 | M2.6 permit-cluster velocity | ✅ 2026-07-16 | one cluster_velocity signal per development (≥5 permits/90d) on the anchor project; idempotent until a newer permit; live corpus max cluster = 4/90d → correctly silent |
 | **M2 exit gate** | ✅ 2026-07-16 | 0 records lost (5,553 resolved + 2 canaries by design); 377 evidence-backed cross-source projects; 31 developments; 10,412 events; review/undo workflow proven; 121/121 tests + E2E |
+| M3.1 account profiles + versioned rules | ✅ 2026-07-16 | 3 seeded pilot accounts from account-profiles.yaml; append-only rule versioning (edit = version max+1); 3 integration tests |
+| M3.2 routing + deterministic scoring | ✅ 2026-07-16 | pure §12 scorer (components 0–1 × raw integer weights = 0–100), distinct per-account routing proven on live corpus (4,982 projects → 2,343 opportunities; At Home 247 King-excluded / Commercial 1,007 / Solis 1,089); sticky manual states; `pnpm score:run` |
+| M3.3 model extraction pipeline + budgets | ✅ 2026-07-16 | migration `0002_model_runs`; §13 Zod contract (unknown evidence IDs reject the run); Anthropic provider (official SDK, `claude-opus-4-8`, key-activated) + MockProvider; per-job + monthly budget blocks *before* spend; every attempt persisted with tokens/cost/latency/result hash; visible blocked state without keys; 17 tests (7 contract + 10 integration) |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
