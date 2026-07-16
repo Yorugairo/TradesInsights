@@ -562,6 +562,70 @@ export const bidDocuments = pgTable(
   (t) => [index("bid_documents_invitation_ix").on(t.bidInvitationId)],
 );
 
+// ── GC relationship intelligence (S4, strengthening addendum §7) ─────────────
+// Account-specific relationship state, contacts, and interactions. Kept strictly
+// distinct from the shared graph's public project_roles: a public role is what
+// the record says; relationship_state is what the customer tells us. Blocked /
+// do_not_pursue organizations suppress that account's alerts.
+
+export const accountOrganizationRelationships = pgTable(
+  "account_organization_relationships",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+    relationshipState: text("relationship_state").notNull().default("unknown"),
+    relationshipOwnerUserId: text("relationship_owner_user_id"),
+    firstContactAt: timestamp("first_contact_at", { withTimezone: true }),
+    lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
+    preferred: boolean("preferred").notNull().default(false),
+    blocked: boolean("blocked").notNull().default(false),
+    notes: text("notes"),
+    createdAt: now(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("account_org_relationship_ux").on(t.accountProfileId, t.organizationId),
+  ],
+);
+
+export const organizationContacts = pgTable(
+  "organization_contacts",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    name: text("name").notNull(),
+    role: text("role"),
+    email: text("email"),
+    phone: text("phone"),
+    // Provenance: 'public_business' (public source) vs 'customer_supplied' — kept
+    // distinct so a public listing is never presented as a verified relationship.
+    sourceType: text("source_type").notNull(),
+    sourceRecordId: uuid("source_record_id").references(() => sourceRecords.id),
+    customerVerified: boolean("customer_verified").notNull().default(false),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [index("organization_contacts_account_ix").on(t.accountProfileId, t.organizationId)],
+);
+
+export const relationshipInteractions = pgTable(
+  "relationship_interactions",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    relationshipId: uuid("relationship_id").notNull().references(() => accountOrganizationRelationships.id),
+    interactionType: text("interaction_type").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }),
+    projectId: uuid("project_id").references(() => projects.id),
+    pursuitId: uuid("pursuit_id").references(() => pursuits.id),
+    summary: text("summary"),
+    createdBy: text("created_by"),
+    createdAt: now(),
+  },
+  (t) => [index("relationship_interactions_rel_ix").on(t.relationshipId, t.occurredAt)],
+);
+
 // ── Delivery & coverage ──────────────────────────────────────────────────────
 
 export const deliveries = pgTable(

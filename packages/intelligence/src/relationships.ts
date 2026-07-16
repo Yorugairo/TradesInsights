@@ -1,0 +1,214 @@
+import { sql } from "drizzle-orm";
+import type { Db } from "@otn/db";
+
+/**
+ * S4 (strengthening addendum §7) — GC relationship intelligence. Account-scoped
+ * relationship state, contacts, and interactions, kept strictly distinct from
+ * the shared graph's public project roles (a public role is what the record
+ * says; relationship_state is what the customer tells us). Blocked /
+ * do_not_pursue / incumbent_blocked organizations suppress that account's alerts.
+ */
+
+export const RELATIONSHIP_STATES = [
+  "unknown", "research_needed", "target", "contacted",
+  "active_relationship", "preferred", "incumbent_blocked", "do_not_pursue",
+] as const;
+export type RelationshipState = (typeof RELATIONSHIP_STATES)[number];
+
+export async function setRelationship(
+  db: Db,
+  input: {
+    accountProfileId: string;
+    organizationId: string;
+    relationshipState: RelationshipState;
+    ownerUserId?: string | null;
+    preferred?: boolean;
+    blocked?: boolean;
+    notes?: string | null;
+  },
+): Promise<{ id: string }> {
+  const res = await db.execute(sql`
+    INSERT INTO account_organization_relationships
+      (account_profile_id, organization_id, relationship_state, relationship_owner_user_id, preferred, blocked, notes)
+    VALUES (${input.accountProfileId}, ${input.organizationId}, ${input.relationshipState},
+      ${input.ownerUserId ?? null}, ${input.preferred ?? false}, ${input.blocked ?? false}, ${input.notes ?? null})
+    ON CONFLICT (account_profile_id, organization_id) DO UPDATE SET
+      relationship_state = EXCLUDED.relationship_state,
+      relationship_owner_user_id = COALESCE(EXCLUDED.relationship_owner_user_id, account_organization_relationships.relationship_owner_user_id),
+      preferred = EXCLUDED.preferred,
+      blocked = EXCLUDED.blocked,
+      notes = COALESCE(EXCLUDED.notes, account_organization_relationships.notes),
+      updated_at = now()
+    RETURNING id`);
+  return { id: (res.rows[0] as { id: string }).id };
+}
+
+export async function addContact(
+  db: Db,
+  input: {
+    organizationId: string;
+    accountProfileId: string;
+    name: string;
+    role?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    sourceType: "public_business" | "customer_supplied";
+    customerVerified?: boolean;
+  },
+): Promise<{ id: string }> {
+  const res = await db.execute(sql`
+    INSERT INTO organization_contacts
+      (organization_id, account_profile_id, name, role, email, phone, source_type, customer_verified, last_verified_at)
+    VALUES (${input.organizationId}, ${input.accountProfileId}, ${input.name}, ${input.role ?? null},
+      ${input.email ?? null}, ${input.phone ?? null}, ${input.sourceType}, ${input.customerVerified ?? false},
+      ${input.customerVerified ? new Date().toISOString() : null})
+    RETURNING id`);
+  return { id: (res.rows[0] as { id: string }).id };
+}
+
+export async function addInteraction(
+  db: Db,
+  relationshipId: string,
+  input: { interactionType: string; occurredAt?: string; projectId?: string | null; pursuitId?: string | null; summary?: string; createdBy?: string },
+): Promise<{ id: string }> {
+  const res = await db.execute(sql`
+    INSERT INTO relationship_interactions
+      (relationship_id, interaction_type, occurred_at, project_id, pursuit_id, summary, created_by)
+    VALUES (${relationshipId}, ${input.interactionType}, ${input.occurredAt ?? null}, ${input.projectId ?? null},
+      ${input.pursuitId ?? null}, ${input.summary ?? null}, ${input.createdBy ?? null})
+    RETURNING id`);
+  return { id: (res.rows[0] as { id: string }).id };
+}
+
+/** True when this account's alerts for this org must be suppressed (spec §7/§9). */
+export async function isAlertSuppressed(db: Db, accountProfileId: string, organizationId: string): Promise<boolean> {
+  const res = await db.execute(sql`
+    SELECT relationship_state, blocked FROM account_organization_relationships
+    WHERE account_profile_id = ${accountProfileId} AND organization_id = ${organizationId}`);
+  const r = res.rows[0] as { relationship_state: string; blocked: boolean } | undefined;
+  if (!r) return false;
+  return r.blocked || r.relationship_state === "do_not_pursue" || r.relationship_state === "incumbent_blocked";
+}
+
+export interface OrganizationView {
+  organization: { id: string; name: string; ubi: string | null; status: string | null; verifiedAt: string | null };
+  /** From the shared graph — public, not account-specific. */
+  publicRoles: { projectId: string; projectName: string; role: string | null; confirmed: boolean }[];
+  /** Account-specific relationship state (what the customer told us). */
+  relationship: {
+    relationshipState: string;
+    preferred: boolean;
+    blocked: boolean;
+    ownerUserId: string | null;
+    alertSuppressed: boolean;
+  } | null;
+  contacts: { name: string; role: string | null; email: string | null; sourceType: string; customerVerified: boolean }[];
+  invitations: { id: string; projectName: string | null; invitationStatus: string; bidDueAt: string | null }[];
+}
+
+export interface AccountOrgSummary {
+  id: string;
+  name: string;
+  relationshipState: string | null;
+  preferred: boolean;
+  blocked: boolean;
+  projectCount: number;
+}
+
+/** Organizations relevant to an account: with a relationship set, or holding a
+ * role on a project the account has an opportunity for. */
+export async function listAccountOrganizations(db: Db, accountProfileId: string): Promise<AccountOrgSummary[]> {
+  const res = await db.execute(sql`
+    WITH rel AS (
+      SELECT organization_id, relationship_state, preferred, blocked
+      FROM account_organization_relationships WHERE account_profile_id = ${accountProfileId}
+    ), roled AS (
+      SELECT DISTINCT pr.organization_id
+      FROM project_roles pr
+      JOIN opportunities o ON o.project_id = pr.project_id AND o.account_profile_id = ${accountProfileId}
+    )
+    SELECT org.id, org.canonical_name AS name, rel.relationship_state, rel.preferred, rel.blocked,
+      (SELECT count(DISTINCT pr.project_id) FROM project_roles pr
+        JOIN opportunities o ON o.project_id = pr.project_id AND o.account_profile_id = ${accountProfileId}
+        WHERE pr.organization_id = org.id) AS project_count
+    FROM organizations org
+    LEFT JOIN rel ON rel.organization_id = org.id
+    WHERE org.id IN (SELECT organization_id FROM rel) OR org.id IN (SELECT organization_id FROM roled)
+    ORDER BY rel.preferred DESC NULLS LAST, org.canonical_name ASC
+    LIMIT 500`);
+  return (res.rows as Record<string, unknown>[]).map((r) => ({
+    id: r["id"] as string,
+    name: r["name"] as string,
+    relationshipState: (r["relationship_state"] as string | null) ?? null,
+    preferred: Boolean(r["preferred"]),
+    blocked: Boolean(r["blocked"]),
+    projectCount: Number(r["project_count"] ?? 0),
+  }));
+}
+
+/** Assemble the account-scoped GC view (public roles vs relationship kept distinct). */
+export async function getOrganizationView(db: Db, organizationId: string, accountProfileId: string): Promise<OrganizationView | null> {
+  const orgRes = await db.execute(sql`
+    SELECT id, canonical_name, ubi, status, verified_at FROM organizations WHERE id = ${organizationId}`);
+  const org = orgRes.rows[0] as
+    | { id: string; canonical_name: string; ubi: string | null; status: string | null; verified_at: string | null }
+    | undefined;
+  if (!org) return null;
+
+  const [roles, rel, contacts, invitations] = await Promise.all([
+    db.execute(sql`
+      SELECT pr.project_id, p.canonical_name AS project_name, pr.role, pr.confirmed
+      FROM project_roles pr JOIN projects p ON p.id = pr.project_id
+      WHERE pr.organization_id = ${organizationId} LIMIT 100`),
+    db.execute(sql`
+      SELECT relationship_state, preferred, blocked, relationship_owner_user_id
+      FROM account_organization_relationships
+      WHERE account_profile_id = ${accountProfileId} AND organization_id = ${organizationId}`),
+    db.execute(sql`
+      SELECT name, role, email, source_type, customer_verified FROM organization_contacts
+      WHERE account_profile_id = ${accountProfileId} AND organization_id = ${organizationId} ORDER BY created_at ASC`),
+    db.execute(sql`
+      SELECT bi.id, p.canonical_name AS project_name, bi.invitation_status, bi.bid_due_at
+      FROM bid_invitations bi LEFT JOIN projects p ON p.id = bi.project_id
+      WHERE bi.account_profile_id = ${accountProfileId} AND bi.gc_organization_id = ${organizationId}`),
+  ]);
+
+  const relRow = rel.rows[0] as
+    | { relationship_state: string; preferred: boolean; blocked: boolean; relationship_owner_user_id: string | null }
+    | undefined;
+
+  return {
+    organization: {
+      id: org.id, name: org.canonical_name, ubi: org.ubi, status: org.status, verifiedAt: org.verified_at,
+    },
+    publicRoles: (roles.rows as Record<string, unknown>[]).map((r) => ({
+      projectId: r["project_id"] as string,
+      projectName: r["project_name"] as string,
+      role: (r["role"] as string | null) ?? null,
+      confirmed: Boolean(r["confirmed"]),
+    })),
+    relationship: relRow
+      ? {
+          relationshipState: relRow.relationship_state,
+          preferred: relRow.preferred,
+          blocked: relRow.blocked,
+          ownerUserId: relRow.relationship_owner_user_id,
+          alertSuppressed:
+            relRow.blocked || relRow.relationship_state === "do_not_pursue" || relRow.relationship_state === "incumbent_blocked",
+        }
+      : null,
+    contacts: (contacts.rows as Record<string, unknown>[]).map((c) => ({
+      name: c["name"] as string,
+      role: (c["role"] as string | null) ?? null,
+      email: (c["email"] as string | null) ?? null,
+      sourceType: c["source_type"] as string,
+      customerVerified: Boolean(c["customer_verified"]),
+    })),
+    invitations: (invitations.rows as Record<string, unknown>[]).map((i) => ({
+      id: i["id"] as string,
+      projectName: (i["project_name"] as string | null) ?? null,
+      invitationStatus: i["invitation_status"] as string,
+      bidDueAt: (i["bid_due_at"] as string | null) ?? null,
+    })),
+  };
+}

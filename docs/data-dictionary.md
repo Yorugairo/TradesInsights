@@ -61,6 +61,16 @@ Not in the spec §7 table list; required by §10 ("record the resolver version, 
 
 **model_runs** (M3.3 — migration `0002_model_runs`) — one row per model invocation *or blocked/rejected attempt* (spec §13): `job_type` (extraction | verification | brief_draft), nullable `project_id`/`account_profile_id`, `provider`, `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`, `result_hash` (SHA-256 of raw model output), `result_json` (the Zod-validated facts/inferences/missingCriticalFacts payload — null for rejected runs), `status` (succeeded | rejected | blocked | error), `error`. The monthly budget check sums `cost_usd` over the current UTC month, so every spending call must persist a row. AI is never the system of record: `result_json` feeds the verifier/UI and never overwrites parsed facts.
 
+## GC relationship intelligence (S4 — migration `0011_relationships`)
+
+Account-specific, kept strictly distinct from the shared graph's public `project_roles`.
+
+**account_organization_relationships** — `(account_profile_id, organization_id)` unique. `relationship_state` (unknown / research_needed / target / contacted / active_relationship / preferred / incumbent_blocked / do_not_pursue), `preferred`, `blocked`, `relationship_owner_user_id`, `first/last_contact_at`, `notes`, `updated_at`. `blocked` or `do_not_pursue`/`incumbent_blocked` suppress that account's alerts (§9).
+
+**organization_contacts** — account-scoped contacts with provenance: `source_type` (`public_business` vs `customer_supplied`) and `customer_verified` keep a public listing distinct from a verified relationship contact. `name`, `role`, `email`, `phone`, `source_record_id`, `last_verified_at`.
+
+**relationship_interactions** — `relationship_id`, `interaction_type`, `occurred_at`, `project_id`, `pursuit_id`, `summary`, `created_by`. Ties relationship activity to projects/pursuits.
+
 ## Invitation ingestion (S3 — migration `0010_bid_invitations`)
 
 Extends M4.6. Provider-agnostic intake of customer-authorized bid invitations (.eml upload, inbound-email webhook, CSV) — never scrapes portals/credentials. All rows account-scoped private evidence.

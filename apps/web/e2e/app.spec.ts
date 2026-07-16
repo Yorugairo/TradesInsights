@@ -167,6 +167,28 @@ test.describe("customer surface", () => {
     await other.dispose();
   });
 
+  test("GC relationships: account-specific state, public roles stay distinct", async ({ request, playwright, baseURL }) => {
+    await login(request, "solis_interiors");
+    const orgs = (await (await request.get("/api/app/organizations")).json()).items as { id: string }[];
+    if (orgs.length === 0) return; // no org on seeded opportunities → nothing to exercise
+    const orgId = orgs[0]!.id;
+
+    const set = await request.post(`/api/app/organizations/${orgId}/relationship`, {
+      data: { relationshipState: "preferred", preferred: true },
+    });
+    expect(set.ok()).toBe(true);
+    const view = await set.json();
+    expect(view.relationship.relationshipState).toBe("preferred");
+    expect(Array.isArray(view.publicRoles)).toBe(true); // public roles present + distinct from state
+
+    // Another account sees the same public org but NOT this account's relationship.
+    const other = await playwright.request.newContext({ baseURL: baseURL! });
+    await login(other, "lacey_glass_at_home");
+    const otherView = await (await other.get(`/api/app/organizations/${orgId}/relationship`)).json();
+    expect(otherView.relationship?.relationshipState ?? null).not.toBe("preferred");
+    await other.dispose();
+  });
+
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
     await login(request, "solis_interiors");
     const list = await (await request.get("/api/app/opportunities?limit=1")).json();
