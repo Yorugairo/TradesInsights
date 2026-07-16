@@ -2,8 +2,8 @@
 
 > The living one-pager. Update at the end of every working session and every completed task ID. Sessions are ephemeral — this file plus git history is the durable memory.
 
-**Current task:** M2.6 (permit-cluster velocity events) — next up.
-**Last completed:** M2.5 (merge-review/split workflow) — decide/undo with provenance, review CLI, 2026-07-16.
+**Current task:** M2 exit gate + milestone report.
+**Last completed:** M2.6 (permit-cluster velocity events), 2026-07-16.
 
 ## Milestone ledger
 
@@ -26,6 +26,7 @@
 | M2.3 fuzzy/geospatial + review gates | ✅ 2026-07-16 | passes 4–5 (address+name, proximity+org, PostGIS ST_DistanceSphere ≤75m); §10 gates: same-address TI, generic names, fuzzy-without-support → review; resolver 0.3.0 |
 | M2.4 development/phase hierarchy | ✅ 2026-07-16 | name-base grouping w/ permit-vocab distinctiveness guard + org/parcel/proximity support; plat-parents phases; 26 developments / 60 projects live; derived layer rebuildable |
 | M2.5 merge-review/split workflow | ✅ 2026-07-16 | decideReview merge/reject (rejected candidates excluded from re-resolution), undoResolution keeps records + history, review CLI |
+| M2.6 permit-cluster velocity | ✅ 2026-07-16 | one cluster_velocity signal per development (≥5 permits/90d) on the anchor project; idempotent until a newer permit; live corpus max cluster = 4/90d → correctly silent |
 | M0.1 workspace/apps/packages/lint/type/test | ✅ 2026-07-15 | `pnpm lint` / `pnpm typecheck` clean |
 | M0.2 Docker Compose + .env.example | ✅ 2026-07-15 | `pnpm infra:up` — Postgres/PostGIS, MinIO, Mailpit |
 | M0.3 schema/migrations/seed | ✅ 2026-07-15 | migration `0000_init` (20 tables), idempotent seed (18 sources, 3 accounts) |
@@ -47,6 +48,8 @@
 - Lacey REST exposes only the *current* project listing — "≥90-day backfill" for Lacey means the full current listing is ingested and the window filter is verified, not that delisted historical projects are recoverable.
 - The runner's unchanged-artifact skip keys on content hash only: a parser upgrade does not reprocess already-stored artifacts until their content changes. Stored-artifact reprocessing (replay by parserVersion) is a future capability — not required by M1.
 - Fuzzy passes 4–5 apply to records resolved after M2.3 (resolver 0.3.0); the M2.2-era corpus was resolved with passes 1–3 only. Retroactive project-level duplicate candidates surface through the M2.5 merge-review workflow, not by re-running the resolver.
+- **Divergence of record:** `cluster_velocity` extends the spec §9 event list — §21 M2.6 requires velocity events but §9 doesn't enumerate a type for them. Documented in taxonomy.ts, data-dictionary, architecture.
+- M2.6 backfill: type-specific events (permit_issued/application_submitted/…) were backfilled for the M2.2-era corpus (4,859 events) — createProject originally emitted only project_first_seen; it now also emits the creating record's own event.
 
 ## Pending calibration (spec §22 — gather from customers, unblocks M3 rule finalization)
 

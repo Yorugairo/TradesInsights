@@ -264,6 +264,23 @@ async function createProject(db: Db, row: RecordRow, features: MatchFeatures): P
     confirmed: true,
     confidence: null,
   });
+  // The record that created the project also carries its own event (a permit
+  // that opens a project is still a permit_issued on the timeline).
+  const typeEvent = eventTypeFor(record);
+  if (typeEvent !== "project_first_seen") {
+    await db.insert(projectEvents).values({
+      projectId,
+      sourceRecordId: row.id,
+      eventType: typeEvent,
+      eventDate: eventDateFor(record),
+      observedAt: row.firstSeenAt,
+      priorStage: null,
+      resultingStage: null,
+      materialChange: false,
+      confirmed: true,
+      confidence: null,
+    });
+  }
   return projectId;
 }
 

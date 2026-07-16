@@ -157,7 +157,11 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
       .select()
       .from(projectEvents)
       .where(eq(projectEvents.projectId, projectId));
-    expect(events.map((e) => e.eventType)).toEqual(["project_first_seen"]);
+    // The creating record carries its own event alongside first-seen.
+    expect(events.map((e) => e.eventType).sort()).toEqual([
+      "application_submitted",
+      "project_first_seen",
+    ]);
   });
 
   it("merges a SEPA record via explicit file-number reference (pass 2)", async () => {
@@ -207,8 +211,13 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
       .where(eq(projectEvents.projectId, projectId))
       .orderBy(projectEvents.observedAt);
     const types = events.map((e) => e.eventType);
-    expect(types).toEqual(["project_first_seen", "sepa_determination", "permit_issued"]);
-    const permitEvent = events[2]!;
+    expect(types).toEqual([
+      "project_first_seen",
+      "application_submitted",
+      "sepa_determination",
+      "permit_issued",
+    ]);
+    const permitEvent = events[3]!;
     expect(permitEvent.priorStage).toBe("entitlement");
     expect(permitEvent.resultingStage).toBe("permit_issued");
     expect(permitEvent.materialChange).toBe(true);

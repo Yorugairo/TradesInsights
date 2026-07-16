@@ -39,6 +39,10 @@ export const EVENT_TYPES = [
   "stage_changed",
   "record_corrected",
   "record_withdrawn",
+  // Extension beyond the spec §9 list, required by spec §21 M2.6: a permit
+  // cluster on one development is one opportunity plus a velocity signal,
+  // not N leads. Divergence recorded in docs/STATUS.md + architecture.md.
+  "cluster_velocity",
 ] as const;
 
 export const EventTypeSchema = z.enum(EVENT_TYPES);

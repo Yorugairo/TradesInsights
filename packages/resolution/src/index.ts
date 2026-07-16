@@ -5,3 +5,4 @@ export * from "./resolver.js";
 export * from "./fuzzy.js";
 export * from "./developments.js";
 export * from "./review.js";
+export * from "./velocity.js";
