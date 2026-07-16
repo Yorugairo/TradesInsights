@@ -1,7 +1,7 @@
 import "../load-env.js";
 import { createDb, createPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
-import { resolveUnresolved } from "@otn/resolution";
+import { buildDevelopments, resolveUnresolved } from "@otn/resolution";
 
 // pnpm resolve:run [--limit N]
 async function main() {
@@ -16,7 +16,8 @@ async function main() {
       ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
       logger,
     });
-    logger.info({ summary }, "resolve run finished");
+    const developments = await buildDevelopments(db, { logger });
+    logger.info({ summary, developments }, "resolve run finished");
   } finally {
     await pool.end();
   }

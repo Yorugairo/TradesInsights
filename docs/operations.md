@@ -83,7 +83,9 @@ The app boots **without** model keys; the worker logs `modelJobs: "blocked"` unt
 pnpm resolve:run [--limit N]   # resolve every source record without an active resolution (oldest first)
 ```
 
-Deterministic passes (spec §10 order): official ID → explicit reference → parcel overlap (M2.2); fuzzy/geospatial candidates land in M2.3. Non-project records (source canaries) are skipped; test-priority sources excluded. Conflicts (cross-jurisdiction parcel matches, multiple parcel candidates) go to `resolution_reviews` instead of auto-merging. Inspect: `SELECT matched_rule, count(*) FROM record_resolutions GROUP BY 1;`
+Deterministic passes (spec §10 order): official ID → explicit reference → parcel overlap (M2.2) → normalized address + compatible name → proximity + organization (M2.3, PostGIS). Non-project records (source canaries) are skipped; test-priority sources excluded. Conflicts (cross-jurisdiction parcel matches, multiple candidates, generic names, same-address TIs, fuzzy-without-support) go to `resolution_reviews` instead of auto-merging. Inspect: `SELECT matched_rule, count(*) FROM record_resolutions GROUP BY 1;`
+
+`resolve:run` finishes with development grouping (M2.4): projects sharing a distinctive base name (phase/lot/div tokens stripped; permit-type vocabulary alone never groups) plus org/parcel/proximity support get a `development_id`; a single plat/base project parents its phases. **The development layer is derived and rebuildable**: `UPDATE projects SET development_id=NULL, parent_project_id=NULL; DELETE FROM developments;` then `pnpm resolve:run`.
 
 ## Running sources
 

@@ -288,3 +288,69 @@ export function extractFeatures(
     generic: isGenericName(record.title.replace(/^[A-Z0-9-]+ – /, "")),
   };
 }
+
+// ── Development grouping (M2.4, spec §10 pass 6) ─────────────────────────────
+
+const PHASE_TOKEN_RE =
+  /\b(?:PHASE|PH|DIVISION|DIV|LOT|LOTS|TRACT|BLDG|BUILDING|UNIT)\s*#?\s*([A-Z0-9-]+)\b/gi;
+const PLAT_PREFIX_RE = /^(?:PLAT OF|SHORT PLAT OF|SUBDIVISION OF)\s+/i;
+
+/**
+ * Permit-type vocabulary: a development base name made ONLY of these tokens
+ * is a work description, not a project identity — grouping on it would weld
+ * unrelated permits together (live example: 1,395 King "ADDITION ALTERATION"
+ * permits are not one development).
+ */
+const PERMIT_VOCAB = new Set([
+  "ADDITION", "ALTERATION", "IMPROVEMENT", "RESIDENTIAL", "COMMERCIAL",
+  "INDUSTRIAL", "MASTER", "USE", "PERMIT", "PERMITS", "SINGLE", "FAMILY",
+  "RESIDENCE", "HOME", "HOUSE", "DWELLING", "NEW", "CONSTRUCTION", "SFR",
+  "MOBILE", "PLACEMENT", "UTILITY", "STRUCTURE", "REROOF", "ROOF",
+  "DEMOLITION", "DEMO", "GARAGE", "CARPORT", "SHOP", "BARN", "DECK",
+  "REMODEL", "REPAIR", "REPLACEMENT", "INSTALL", "INSTALLATION", "TENANT",
+  "GRADING", "CLEARING", "PLAN", "REVIEW", "APPLICATION", "PROJECT", "SITE",
+  "WORK", "MISC", "OTHER", "DETACHED", "ATTACHED", "ACCESSORY", "ADU",
+  "AT", "THE", "OF", "AND", "FOR", "TO", "A", "AN", "ON", "IN", "WITH",
+]);
+
+export interface DevelopmentName {
+  /** Shared base name with phase/lot/division tokens stripped. */
+  base: string;
+  /** The phase-ish label found, e.g. "PHASE 2", "DIV 5", "LOT 23"; null for the base project. */
+  phaseLabel: string | null;
+  /** True when the title is the plat/subdivision record itself. */
+  isPlat: boolean;
+}
+
+/**
+ * Extract a development grouping key from a project title. Returns null when
+ * the remaining base name is generic or too short to group on safely.
+ */
+export function developmentName(title: string): DevelopmentName | null {
+  let s = title
+    .toUpperCase()
+    .replace(/^.{1,40}?\s[–—]\s/, "") // strip id prefix
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const isPlat = PLAT_PREFIX_RE.test(s);
+  s = s.replace(PLAT_PREFIX_RE, "");
+
+  const labels: string[] = [];
+  s = s
+    .replace(PHASE_TOKEN_RE, (m) => {
+      labels.push(m.replace(/\s+/g, " ").trim());
+      return " ";
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!s || s.split(" ").length < 2 || isGenericName(s)) return null;
+  // Require at least one distinctive (non-permit-vocabulary, non-numeric)
+  // token so work descriptions never become development identities.
+  const distinctive = s
+    .split(" ")
+    .filter((t) => !PERMIT_VOCAB.has(t) && !/^\d+$/.test(t));
+  if (distinctive.length === 0) return null;
+  return { base: s, phaseLabel: labels[0] ?? null, isPlat };
+}
