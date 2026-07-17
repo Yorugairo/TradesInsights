@@ -178,9 +178,16 @@ pg-boss (schema `pgboss` in the same Postgres). Queues:
 
 | Queue | Purpose | Retry | Dead letter |
 |---|---|---|---|
-| `source-run` | one source ingestion run | 3× exponential backoff | `source-run-dead-letter` (payload intact) |
+| `source-run` | one source ingestion run (manual/admin enqueue) | 3× exponential backoff | `source-run-dead-letter` (payload intact) |
+| `source-run.<key>` (#4) | scheduled ingestion for one source | 3× exponential backoff | `source-run-dead-letter` |
+| `pipeline-maintenance` (#4) | nightly resolve → developments → velocity/campus → geometry → geocode (500) → score → alerts | 1× after 10 min | — |
+| `digest-draft` (#4) | Monday digest DRAFTS for active accounts (never sends) | 1× after 10 min | — |
 
 Inspect jobs: `SELECT name, state, count(*) FROM pgboss.job GROUP BY 1,2;`
+
+### Cron schedules (#4 — self-driving cadence)
+
+`registerSchedules` (apps/worker/src/schedules.ts) runs at every worker boot and reconciles pg-boss cron schedules from `config/sources.yaml`: every **enabled** source with a cadence other than `on_demand` (private-class sources are never scheduled) gets a per-source cron derived from its cadence — daily at 02:xx–03:xx Pacific with a deterministic per-source minute stagger (no county-infrastructure stampede), weekly on Mondays, monthly on the 2nd (reports post after month end). `pipeline-maintenance` runs nightly at 04:45 PT (after the fetch window); `digest-draft` Mondays 05:15 PT. Config is the source of truth: disabling or removing a source unschedules it at the next boot. Schedules fire only while `pnpm worker` is running; the M4.7 alerts (red / stale > 2× cadence / unsent drafts) are the safety net and run inside the nightly chain. Inspect: `SELECT name, cron FROM pgboss.schedule;`
 
 ## Health & monitoring (spec §14)
 

@@ -25,7 +25,7 @@ pnpm workspace; every package exports TypeScript source directly (`main: src/ind
 | Package | Responsibility | Status |
 |---|---|---|
 | `apps/web` | Next.js App Router UI + authenticated APIs | M3.5: §16 pages (opportunities/detail, project, digests, account, feedback, admin sources/runs/review/coverage) + §17 APIs; HMAC-cookie pilot auth, account-scoped queries, admin role gate; #3 — `/app/map` (Leaflet, account-scoped markers by band, geocoded points labeled as inferences) + geometry-coverage panel on admin coverage |
-| `apps/worker` | pg-boss worker, source-run/backfill CLIs | M0: operational |
+| `apps/worker` | pg-boss worker, source-run/backfill CLIs | M0: operational; #4 — config-reconciled cron schedules (per-source cadence with deterministic stagger, nightly maintenance chain, Monday digest drafts — `src/schedules.ts`) |
 | `packages/db` | Drizzle schema (spec §7, 20 tables), migrations, seed | M0: operational |
 | `packages/domain` | Stage/event/county taxonomy, `NormalizedSourceRecord` | M0: operational |
 | `packages/config` | Zod-validated loaders for `config/*.yaml` | M0: operational |
