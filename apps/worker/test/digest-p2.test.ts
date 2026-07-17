@@ -21,6 +21,7 @@ import {
 import { MockProvider, buildDecisionMemo, createPursuit, extractProject, verifyProject } from "@otn/intelligence";
 import {
   buildDigest,
+  cleanupActionTokens,
   consumeActionToken,
   deliverDigest,
   issueActionTokens,
@@ -332,6 +333,45 @@ describe("P2 — one-tap action tokens", () => {
       UPDATE action_tokens SET expires_at = now() - interval '1 hour'
       WHERE token_hash = ${hash}`);
     expect(await consumeActionToken(db, raw)).toEqual({ ok: false, reason: "expired" });
+  });
+
+  it("cleanup deletes only tokens long past use/expiry, never live ones", async () => {
+    const del = (
+      (await db.execute(sql`SELECT id FROM deliveries WHERE account_profile_id = ${accountId} LIMIT 1`))
+        .rows[0] as { id: string }
+    ).id;
+    const links = await issueActionTokens(db, {
+      accountProfileId: accountId,
+      deliveryId: del,
+      opportunityIds: [easyOppId],
+      baseUrl: "https://app.otn.test",
+    });
+    const hashOf = (url: string) =>
+      createHash("sha256").update(/t=([A-Za-z0-9_-]+)/.exec(url)![1]!).digest("hex");
+    const oldUsed = hashOf(links.get(easyOppId)!.pursue);
+    const liveHash = hashOf(links.get(easyOppId)!.dismiss);
+    // Used 40 days ago (created_at moved too — CHECK used_at >= created_at).
+    await db.execute(sql`
+      UPDATE action_tokens SET created_at = now() - interval '41 days',
+        used_at = now() - interval '40 days' WHERE token_hash = ${oldUsed}`);
+    // A long-expired, never-used token.
+    const stale = await issueActionTokens(db, {
+      accountProfileId: accountId,
+      deliveryId: del,
+      opportunityIds: [easyOppId],
+      baseUrl: "https://app.otn.test",
+    });
+    const staleHash = hashOf(stale.get(easyOppId)!.pursue);
+    await db.execute(sql`
+      UPDATE action_tokens SET created_at = now() - interval '60 days',
+        expires_at = now() - interval '40 days' WHERE token_hash = ${staleHash}`);
+
+    const { deleted } = await cleanupActionTokens(db, { retentionDays: 30 });
+    expect(deleted).toBeGreaterThanOrEqual(2);
+    const left = await db.execute(sql`
+      SELECT token_hash FROM action_tokens
+      WHERE token_hash IN (${oldUsed}, ${liveHash}, ${staleHash})`);
+    expect((left.rows as { token_hash: string }[]).map((r) => r.token_hash)).toEqual([liveHash]);
   });
 
   it("a consumed pursue token creates exactly one audited pursuit", async () => {

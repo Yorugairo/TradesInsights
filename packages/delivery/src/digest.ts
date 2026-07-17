@@ -187,7 +187,12 @@ function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
 /** Early-stage radar (pre-app/entitlement/SEPA-era stages). */
 const RADAR_STAGES = new Set(["concept", "preapplication", "entitlement"]);
 
-/** Upcoming bid-invitation deadlines from the account's own private inbox. */
+/**
+ * Upcoming bid-invitation deadlines from the account's own private inbox.
+ * Deduped on (title, gc, due date, scope): a re-forwarded invitation carries a
+ * fresh Message-ID, and when the project name doesn't resolve it becomes a new
+ * bid_invitations row — the same deadline must still render once.
+ */
 async function upcomingDeadlines(db: Db, accountProfileId: string): Promise<DeadlineItem[]> {
   const res = await db.execute(sql`
     SELECT bi.bid_due_at, bi.scope_summary, o.canonical_name AS gc, im.subject AS title
@@ -196,6 +201,7 @@ async function upcomingDeadlines(db: Db, accountProfileId: string): Promise<Dead
     LEFT JOIN inbound_messages im ON im.id = bi.source_message_id
     WHERE bi.account_profile_id = ${accountProfileId}
       AND bi.bid_due_at IS NOT NULL AND bi.bid_due_at >= now()
+    GROUP BY bi.bid_due_at, bi.scope_summary, o.canonical_name, im.subject
     ORDER BY bi.bid_due_at ASC
     LIMIT 5`);
   return (res.rows as Record<string, unknown>[]).map((r) => ({
@@ -392,6 +398,7 @@ async function coverageCaveats(db: Db): Promise<CoverageCaveat[]> {
     SELECT s.key, s.name, ce.freshness_state
     FROM coverage_entries ce JOIN sources s ON s.id = ce.source_id
     WHERE ce.freshness_state != 'green' AND ce.status = 'enabled'
+      AND s.access_class != 'fixture'
     ORDER BY s.key`);
   return (res.rows as { key: string; name: string; freshness_state: string }[]).map((r) => ({
     sourceKey: r.key,

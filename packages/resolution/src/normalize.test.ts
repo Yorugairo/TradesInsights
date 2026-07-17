@@ -8,6 +8,8 @@ import {
   normalizeAddress,
   normalizeOrgName,
   normalizeParcel,
+  orgNameKey,
+  splitOrgNameAddress,
   stageOrder,
 } from "./normalize.js";
 import type { NormalizedSourceRecord } from "@otn/domain";
@@ -85,6 +87,43 @@ describe("normalizeOrgName / nameSimilarity", () => {
     expect(isGenericName("REROOF")).toBe(true);
     expect(isGenericName("New Single Family Residence")).toBe(true);
     expect(isGenericName("Fredrickson Townhomes")).toBe(false);
+  });
+});
+
+describe("splitOrgNameAddress / orgNameKey", () => {
+  it("splits a fused mailing address off the name", () => {
+    const p = splitOrgNameAddress("ANDRZEJ TATKOWSKI 500 UNION STREET SUITE 410 SEATTLE WA 98101");
+    expect(p.name).toBe("ANDRZEJ TATKOWSKI");
+    expect(p.addressTail).toBe("500 UNION STREET SUITE 410 SEATTLE WA 98101");
+  });
+
+  it("splits at PO BOX", () => {
+    const p = splitOrgNameAddress("COLE REMODELING LLC PO BOX 1234 OLYMPIA WA 98501");
+    expect(p.name).toBe("COLE REMODELING LLC");
+    expect(p.addressTail).toBe("PO BOX 1234 OLYMPIA WA 98501");
+  });
+
+  it("leaves orgs named after an address untouched (no leading name token)", () => {
+    const p = splitOrgNameAddress("500 UNION STREET LLC");
+    expect(p.addressTail).toBeNull();
+    expect(p.name).toBe("500 UNION STREET LLC");
+  });
+
+  it("leaves numbers without street keywords untouched", () => {
+    expect(splitOrgNameAddress("STUDIO 19 ARCHITECTS").addressTail).toBeNull();
+    expect(splitOrgNameAddress("7 HILLS CONSTRUCTION INC").addressTail).toBeNull();
+  });
+
+  it("keys legal-suffix variants together, address-fused or not", () => {
+    expect(orgNameKey("ABC Construction")).toBe(orgNameKey("ABC CONSTRUCTION, LLC"));
+    expect(orgNameKey("ABC CONSTRUCTION LLC 100 MAIN ST TACOMA WA")).toBe(
+      orgNameKey("abc construction"),
+    );
+    expect(orgNameKey("ABC Construction")).not.toBe(orgNameKey("XYZ Construction"));
+  });
+
+  it("falls back to the canonical form when stripping empties the name", () => {
+    expect(orgNameKey("LLC")).toBe("LLC");
   });
 });
 

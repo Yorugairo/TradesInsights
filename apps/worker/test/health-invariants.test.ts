@@ -114,18 +114,20 @@ describe("D2 required-field fill drop → health", () => {
 });
 
 describe("D2 per-source required fields (absolute floor)", () => {
-  let laceyId: string;
+  let requiredSourceId: string;
   beforeAll(async () => {
-    laceyId = await resetSource(db, "lacey_permit_reports"); // declares required_fields
+    // A test-only source that declares required_fields — never a real source,
+    // whose live run history these tests would otherwise wipe.
+    requiredSourceId = await resetSource(db, "fake_source_required");
   });
   afterAll(async () => {
-    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${laceyId}`);
+    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${requiredSourceId}`);
   });
 
   async function oneRun(fill: Record<string, number>) {
-    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${laceyId}`);
+    await db.delete(sourceRuns).where(sql`${sourceRuns.sourceId} = ${requiredSourceId}`);
     await db.insert(sourceRuns).values({
-      sourceId: laceyId,
+      sourceId: requiredSourceId,
       status: "succeeded",
       startedAt: new Date(),
       completedAt: new Date(),
@@ -138,21 +140,21 @@ describe("D2 per-source required fields (absolute floor)", () => {
 
   it("a declared required field near-absent in the FIRST run is red (starts broken)", async () => {
     await oneRun({ addressRaw: 1.0, issueDate: 1.0, valuationUsd: 0.1 });
-    const h = await evaluateSourceHealth(db, "lacey_permit_reports");
+    const h = await evaluateSourceHealth(db, "fake_source_required");
     expect(h.state).toBe("red");
     expect(h.reasons.some((r) => /valuationUsd.*floor/i.test(r))).toBe(true);
   });
 
   it("all declared required fields present → no floor violation", async () => {
     await oneRun({ addressRaw: 1.0, issueDate: 1.0, valuationUsd: 0.9 });
-    const h = await evaluateSourceHealth(db, "lacey_permit_reports");
+    const h = await evaluateSourceHealth(db, "fake_source_required");
     expect(h.reasons.some((r) => /floor/i.test(r))).toBe(false);
   });
 
   it("a NON-required field being sparse does not trip the floor", async () => {
     // units is not declared required for this source → sparse units is fine.
     await oneRun({ addressRaw: 1.0, issueDate: 1.0, valuationUsd: 0.9, units: 0.05 });
-    const h = await evaluateSourceHealth(db, "lacey_permit_reports");
+    const h = await evaluateSourceHealth(db, "fake_source_required");
     expect(h.reasons.some((r) => /units.*floor/i.test(r))).toBe(false);
   });
 });
@@ -193,6 +195,25 @@ describe("D3 schema-fingerprint drift → health", () => {
 
   it("a stable fingerprint stays green", async () => {
     await twoRuns("aaaa", "aaaa");
+    const health = await evaluateSourceHealth(db, "fake_source");
+    expect(health.state).toBe("green");
+  });
+
+  it("oscillating between known fingerprints stays green (sparse-JSON sources)", async () => {
+    await twoRuns("bbbb", "aaaa");
+    // Third run returns to a fingerprint already seen in the window: Socrata
+    // omits null-valued keys, so day-to-day field sets legitimately alternate.
+    await db.insert(sourceRuns).values({
+      sourceId,
+      status: "succeeded",
+      startedAt: new Date(Date.now() + 1000),
+      completedAt: new Date(Date.now() + 1000),
+      discoveredCount: 5,
+      fetchedCount: 5,
+      parsedCount: 5,
+      schemaFingerprint: "bbbb",
+      metricsJson: { deadLetters: [] },
+    });
     const health = await evaluateSourceHealth(db, "fake_source");
     expect(health.state).toBe("green");
   });

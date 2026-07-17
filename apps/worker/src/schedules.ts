@@ -13,7 +13,7 @@ import {
   resolveUnresolved,
 } from "@otn/resolution";
 import { computeStageLagStats, scoreAll } from "@otn/intelligence";
-import { buildDigest, deliverDigest, runAlerts } from "@otn/delivery";
+import { buildDigest, cleanupActionTokens, deliverDigest, runAlerts } from "@otn/delivery";
 import { SOURCE_RUN_DEAD_LETTER, executeSourceRun } from "./jobs.js";
 
 /**
@@ -94,6 +94,7 @@ async function runMaintenance(logger: Logger): Promise<void> {
     const geocoded = await geocodeProjects(db, { limit: NIGHTLY_GEOCODE_LIMIT, logger });
     const stageLag = await computeStageLagStats(db, { logger });
     const scored = await scoreAll(db, { logger });
+    const tokenCleanup = await cleanupActionTokens(db);
 
     const monthlyBudgetUsd = process.env.LLM_MONTHLY_BUDGET_USD
       ? Number(process.env.LLM_MONTHLY_BUDGET_USD)
@@ -122,6 +123,7 @@ async function runMaintenance(logger: Logger): Promise<void> {
         geocoded,
         stageLag,
         scored: scored.byAccount,
+        tokenCleanup,
         alerts: { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped },
       },
       "pipeline maintenance complete",

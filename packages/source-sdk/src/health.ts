@@ -166,15 +166,21 @@ export async function evaluateSourceHealth(
   }
 
   // D3 — schema-fingerprint drift. The fingerprint (a hash of the raw field
-  // names) is recorded per run but was never compared. A change means the
-  // source altered its field names — the parser may still work, but it warrants
-  // a human look, so raise amber (a review canary), never silently swallow it.
+  // names) is recorded per run. A fingerprint never seen in the recent-run
+  // window means the source altered its field names — the parser may still
+  // work, but it warrants a human look, so raise amber (a review canary),
+  // never silently swallow it. Sparse-JSON sources (Socrata omits null-valued
+  // keys) legitimately alternate between a few known fingerprints as the
+  // day's data varies — a latest-vs-previous comparison re-ambers forever on
+  // that benign oscillation, so the latest is compared against ALL recent
+  // prior fingerprints instead.
   const fingerprints = completed
     .map((r) => r.schemaFingerprint)
     .filter((f): f is string => !!f);
-  if (fingerprints.length >= 2 && fingerprints[0] !== fingerprints[1]) {
+  const priorFps = new Set(fingerprints.slice(1));
+  if (fingerprints.length >= 2 && !priorFps.has(fingerprints[0]!)) {
     if (state === "green") state = "amber";
-    reasons.push("raw schema fingerprint changed since previous run — source field names shifted, review the parser");
+    reasons.push("raw schema fingerprint changed vs recent runs — source field names shifted, review the parser");
   }
 
   // Volume-drop check (spec §14 "unexpected volume drop"). Two expected,

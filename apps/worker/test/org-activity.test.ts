@@ -148,6 +148,25 @@ beforeAll(async () => {
     INSERT INTO account_organization_relationships
       (account_profile_id, organization_id, relationship_state, blocked)
     VALUES (${accountId}, ${e}, 'do_not_pursue', true)`);
+  // F+G: legal-suffix variants of one GC → one league row, variants listed.
+  const f = await seedOrg("COLE DRYWALL");
+  await seedProjectWithRole(f, 12, { routed: true });
+  await seedProjectWithRole(f, 13);
+  const [gOrg] = await db
+    .insert(organizations)
+    .values({ canonicalName: `COLE DRYWALL ${RUN}, LLC` })
+    .returning({ id: organizations.id });
+  orgIds.push(gOrg!.id);
+  await seedProjectWithRole(gOrg!.id, 14, { routed: true });
+  await seedProjectWithRole(gOrg!.id, 15);
+  // H: individual with a fused mailing address → split, flagged, hidden.
+  const [hOrg] = await db
+    .insert(organizations)
+    .values({ canonicalName: `HULDA QUX ${RUN} 500 UNION STREET SUITE 410 SEATTLE WA 98101` })
+    .returning({ id: organizations.id });
+  orgIds.push(hOrg!.id);
+  await seedProjectWithRole(hOrg!.id, 16, { routed: true });
+  await seedProjectWithRole(hOrg!.id, 17, { routed: true });
 });
 
 afterAll(async () => {
@@ -189,6 +208,31 @@ describe("P1 org activity rollup", () => {
     expect(b.flags).toContain("placeholder");
     const c = rows.find((r) => r.name.startsWith("JANE DOE"))!;
     expect(c.flags).toContain("likely_individual");
+  });
+
+  it("groups legal-suffix variants into one league row with variants listed", async () => {
+    const rows = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2 });
+    const cole = rows.filter((r) => r.name.startsWith("COLE DRYWALL"));
+    expect(cole).toHaveLength(1); // one row, not one per spelling
+    expect(cole[0]!.variantNames.sort()).toEqual(
+      [`COLE DRYWALL ${RUN}`, `COLE DRYWALL ${RUN}, LLC`].sort(),
+    );
+    expect(cole[0]!.projects).toBe(4);
+    expect(cole[0]!.relevantProjects).toBe(2);
+  });
+
+  it("splits fused addresses, flags the individual, hides by default", async () => {
+    const byDefault = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2 });
+    expect(byDefault.some((r) => r.name.includes("HULDA QUX"))).toBe(false);
+    const included = await orgActivityRollup(db, {
+      accountProfileId: accountId,
+      minProjects: 2,
+      includeFlagged: true,
+    });
+    const h = included.find((r) => r.name === `HULDA QUX ${RUN}`)!;
+    expect(h).toBeDefined(); // display name is the split name, not the fused blob
+    expect(h.flags).toContain("address_in_name");
+    expect(h.flags).toContain("likely_individual");
   });
 
   it("targets = relevant + unworked; worked and blocked orgs never appear", async () => {

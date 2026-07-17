@@ -56,6 +56,26 @@ export async function issueActionTokens(
   return out;
 }
 
+/**
+ * Retention: token rows are needed only while a link could still be clicked
+ * (TTL) plus a short audit window; the *effects* (pursuits, dispositions) are
+ * the durable audit trail and live elsewhere. Delete rows that have been used
+ * or expired for longer than `retentionDays`. Unexpired, unused tokens are
+ * never touched.
+ */
+export async function cleanupActionTokens(
+  db: Db,
+  opts: { retentionDays?: number } = {},
+): Promise<{ deleted: number }> {
+  const retentionDays = opts.retentionDays ?? 30;
+  const res = await db.execute(sql`
+    DELETE FROM action_tokens
+    WHERE (used_at IS NOT NULL AND used_at < now() - make_interval(days => ${retentionDays}))
+       OR (used_at IS NULL AND expires_at < now() - make_interval(days => ${retentionDays}))
+    RETURNING id`);
+  return { deleted: res.rows.length };
+}
+
 export type ConsumeResult =
   | { ok: true; action: ActionKind; accountProfileId: string; opportunityId: string }
   | { ok: false; reason: "invalid" | "expired" | "already_used" };

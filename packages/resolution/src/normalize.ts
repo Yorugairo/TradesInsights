@@ -136,6 +136,60 @@ export function normalizeOrgName(raw: string): NormalizedOrgName {
   return { canonical, base: baseTokens.join(" "), hasLegalSuffix };
 }
 
+// ── Org name hygiene ─────────────────────────────────────────────────────────
+
+/** Street/address tokens that mark an embedded mailing address inside an org name. */
+const STREET_TOKENS = new Set([
+  "ST", "STREET", "AVE", "AVENUE", "AV", "BLVD", "BOULEVARD", "RD", "ROAD",
+  "DR", "DRIVE", "WAY", "LN", "LANE", "CT", "COURT", "PL", "PLACE",
+  "HWY", "HIGHWAY", "PKWY", "PARKWAY", "SUITE", "STE", "UNIT",
+]);
+
+export interface OrgNameParts {
+  /** The organization-name portion, canonicalized (upper, punctuation folded). */
+  name: string;
+  /** The embedded address tail when one was detected, else null. Raw canonical
+   * form is never lost — callers keep the original alongside. */
+  addressTail: string | null;
+}
+
+/**
+ * Some sources fuse a mailing address into the applicant name
+ * ("ANDRZEJ TATKOWSKI 500 UNION STREET SUITE 410 SEATTLE WA 98101").
+ * Deterministically split at the first house-number token that is followed
+ * within three tokens by a street keyword, or at "PO BOX". Conservative by
+ * construction: the split point must leave at least one leading name token,
+ * so orgs genuinely named after an address ("500 UNION STREET LLC") pass
+ * through untouched.
+ */
+export function splitOrgNameAddress(raw: string): OrgNameParts {
+  const canonical = raw.toUpperCase().replace(/[.,#]/g, " ").replace(/\s+/g, " ").trim();
+  const tokens = canonical.split(" ").filter(Boolean);
+  for (let i = 1; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    const isHouseNumber = /^\d+$/.test(t);
+    const isPoBox = t === "PO" && tokens[i + 1] === "BOX";
+    if (!isHouseNumber && !isPoBox) continue;
+    const lookahead = tokens.slice(i + 1, i + 4);
+    if (isPoBox || lookahead.some((x) => STREET_TOKENS.has(x))) {
+      return { name: tokens.slice(0, i).join(" "), addressTail: tokens.slice(i).join(" ") };
+    }
+  }
+  return { name: canonical, addressTail: null };
+}
+
+/**
+ * Grouping key for league-table display: address tail off, legal suffixes and
+ * noise words off. "ABC Construction" and "ABC CONSTRUCTION LLC" share a key.
+ * Display/grouping only — organization rows in the graph are never merged on
+ * this key (identity merges need evidence, spec §10).
+ */
+export function orgNameKey(raw: string): string {
+  const { name } = splitOrgNameAddress(raw);
+  const base = normalizeOrgName(name).base;
+  return base.length > 0 ? base : normalizeOrgName(raw).canonical;
+}
+
 // ── Name compatibility ───────────────────────────────────────────────────────
 
 /** Project names too generic to support a match on their own (spec §10). */

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
+import { orgNameKey, splitOrgNameAddress } from "@otn/resolution";
 
 /**
  * P1 — GC league table + relationship target list. A trade sub (Solis first)
@@ -9,6 +10,12 @@ import type { Db } from "@otn/db";
  * stored roles/projects/valuations; account relevance is the ROUTER's
  * judgment (an org's project counts as relevant when it has an opportunity
  * row for the account), never a fresh guess.
+ *
+ * Name hygiene (display/grouping only — organization rows in the graph are
+ * never merged here): variants that share an `orgNameKey` ("ABC Construction"
+ * / "ABC CONSTRUCTION LLC") roll up into one league row listing its variants,
+ * and names with a fused mailing address are split so the individual/entity
+ * heuristics run on the actual name.
  */
 
 /** Roles that indicate the org is running/owning work (agencies excluded). */
@@ -16,14 +23,25 @@ const ACTIVITY_ROLES = ["applicant", "owner", "primary_contractor", "contractor"
 
 /** Data-quality flags — flagged, never silently dropped. */
 const PLACEHOLDER_RE =
-  "^(NO |NOT |N/A|NA$|UNKNOWN|NONE|OWNER$|SAME AS|TBD|SEE |APPLICANT$|PER PLANS)";
-const ENTITY_TOKEN_RE = "(LLC|INC|CORP|COMPANY|CO\\.|LP|LLP|PLLC|LTD|GROUP|CONSTRUCTION|BUILDERS|HOMES|DEVELOPMENT|ELECTRIC|PLUMBING|MECHANICAL|ROOFING|SERVICES|ENTERPRISES|ASSOCIATES|PARTNERS|CITY OF|COUNTY|DISTRICT|AUTHORITY|CHURCH|SCHOOL)";
+  /^(NO |NOT |N\/A|NA$|UNKNOWN|NONE|OWNER$|SAME AS|TBD|SEE |APPLICANT$|PER PLANS)/i;
+const ENTITY_TOKEN_RE =
+  /(LLC|INC|CORP|COMPANY|CO\.|LP|LLP|PLLC|LTD|GROUP|CONSTRUCTION|BUILDERS|HOMES|DEVELOPMENT|ELECTRIC|PLUMBING|MECHANICAL|ROOFING|SERVICES|ENTERPRISES|ASSOCIATES|PARTNERS|CITY OF|COUNTY|DISTRICT|AUTHORITY|CHURCH|SCHOOL)/i;
+
+function looksLikeEntity(cleanedName: string): boolean {
+  return (
+    ENTITY_TOKEN_RE.test(cleanedName) || cleanedName.split(/\s+/).filter(Boolean).length >= 4
+  );
+}
 
 export interface OrgActivityRow {
+  /** Primary variant's organization id (most projects in the group). */
   organizationId: string;
+  /** Cleaned display name (address tail stripped, canonical casing). */
   name: string;
+  /** Raw canonical names covered by this row (≥1; >1 when variants grouped). */
+  variantNames: string[];
   registryRef: string | null;
-  /** Data-quality flags: 'placeholder' | 'likely_individual' (UI filters, never deletes). */
+  /** 'placeholder' | 'likely_individual' | 'address_in_name' (UI filters, never deletes). */
   flags: string[];
   projects: number;
   projects90d: number;
@@ -47,6 +65,20 @@ export interface OrgActivityOptions {
   limit?: number;
 }
 
+interface VariantRow {
+  organization_id: string;
+  canonical_name: string;
+  registry_ref: string | null;
+  relationship_state: string | null;
+  projects: number;
+  projects_90d: number;
+  counties: string[];
+  relevant_projects: number;
+  val_total: number | null;
+  val_max: number | null;
+  latest_at: string | null;
+}
+
 export async function orgActivityRollup(
   db: Db,
   opts: OrgActivityOptions,
@@ -54,11 +86,6 @@ export async function orgActivityRollup(
   const minProjects = opts.minProjects ?? 2;
   const limit = Math.min(opts.limit ?? 100, 500);
   const countyFilter = opts.county ? sql`AND p.county = ${opts.county}` : sql``;
-  const flaggedFilter = opts.includeFlagged
-    ? sql``
-    : sql`AND NOT (o.canonical_name ~* ${PLACEHOLDER_RE})
-          AND (o.canonical_name ~* ${ENTITY_TOKEN_RE}
-               OR array_length(regexp_split_to_array(trim(o.canonical_name), '\\s+'), 1) >= 4)`;
 
   const res = await db.execute(sql`
     WITH proj_val AS (
@@ -93,38 +120,79 @@ export async function orgActivityRollup(
       GROUP BY pr.organization_id
       HAVING count(DISTINCT pr.project_id) >= ${minProjects}
     )
-    SELECT a.*, o.canonical_name, o.registry_ref,
-      (o.canonical_name ~* ${PLACEHOLDER_RE}) AS is_placeholder,
-      NOT (o.canonical_name ~* ${ENTITY_TOKEN_RE}
-           OR array_length(regexp_split_to_array(trim(o.canonical_name), '\\s+'), 1) >= 4)
-        AS is_individual,
-      rel.relationship_state
+    SELECT a.*, o.canonical_name, o.registry_ref, rel.relationship_state
     FROM activity a
     JOIN organizations o ON o.id = a.organization_id
     LEFT JOIN account_organization_relationships rel
       ON rel.organization_id = a.organization_id
       AND rel.account_profile_id = ${opts.accountProfileId}
-    WHERE true ${flaggedFilter}
     ORDER BY a.relevant_projects DESC, a.val_total DESC NULLS LAST, a.projects DESC
-    LIMIT ${limit}`);
+    LIMIT 500`);
 
-  return (res.rows as Record<string, unknown>[]).map((r) => ({
-    organizationId: r["organization_id"] as string,
-    name: r["canonical_name"] as string,
-    registryRef: (r["registry_ref"] as string | null) ?? null,
-    flags: [
-      ...(r["is_placeholder"] ? ["placeholder"] : []),
-      ...(r["is_individual"] ? ["likely_individual"] : []),
-    ],
-    projects: Number(r["projects"]),
-    projects90d: Number(r["projects_90d"]),
-    counties: (r["counties"] as string[]) ?? [],
-    relevantProjects: Number(r["relevant_projects"] ?? 0),
-    statedValuationTotal: r["val_total"] === null ? null : Number(r["val_total"]),
-    statedValuationMax: r["val_max"] === null ? null : Number(r["val_max"]),
-    latestActivityAt: (r["latest_at"] as string | null) ?? null,
-    relationshipState: (r["relationship_state"] as string | null) ?? null,
-  }));
+  // Group variants by name key. Counts are summed across variants (a project
+  // shared by two variants of the same org counts once per variant — league
+  // display, not the system of record).
+  const groups = new Map<string, VariantRow[]>();
+  for (const raw of res.rows as unknown as VariantRow[]) {
+    const key = orgNameKey(raw.canonical_name);
+    const list = groups.get(key);
+    if (list) list.push(raw);
+    else groups.set(key, [raw]);
+  }
+
+  const rows: OrgActivityRow[] = [];
+  for (const variants of groups.values()) {
+    // Deterministic primary: most projects, name as tie-break.
+    variants.sort(
+      (a, b) =>
+        Number(b.projects) - Number(a.projects) ||
+        a.canonical_name.localeCompare(b.canonical_name),
+    );
+    const primary = variants[0]!;
+    const split = splitOrgNameAddress(primary.canonical_name);
+    const hadTail = variants.some((v) => splitOrgNameAddress(v.canonical_name).addressTail !== null);
+    // A legal suffix / entity token on ANY variant is evidence for the whole
+    // group — "COLE DRYWALL" grouped with "COLE DRYWALL LLC" is a company
+    // even when the suffix-less spelling is primary.
+    const anyEntity = variants.some((v) => looksLikeEntity(splitOrgNameAddress(v.canonical_name).name));
+    const flags: string[] = [];
+    if (PLACEHOLDER_RE.test(split.name)) flags.push("placeholder");
+    if (!anyEntity) flags.push("likely_individual");
+    if (hadTail) flags.push("address_in_name");
+    const valTotals = variants.map((v) => v.val_total).filter((v): v is number => v !== null);
+    const valMaxes = variants.map((v) => v.val_max).filter((v): v is number => v !== null);
+    const latest = variants.map((v) => v.latest_at).filter((v): v is string => v !== null).sort();
+    rows.push({
+      organizationId: primary.organization_id,
+      name: split.name,
+      variantNames: variants.map((v) => v.canonical_name),
+      registryRef: variants.find((v) => v.registry_ref !== null)?.registry_ref ?? null,
+      flags,
+      projects: variants.reduce((s, v) => s + Number(v.projects), 0),
+      projects90d: variants.reduce((s, v) => s + Number(v.projects_90d), 0),
+      counties: [...new Set(variants.flatMap((v) => v.counties ?? []))].sort(),
+      relevantProjects: variants.reduce((s, v) => s + Number(v.relevant_projects ?? 0), 0),
+      statedValuationTotal:
+        valTotals.length > 0 ? valTotals.reduce((s, v) => s + Number(v), 0) : null,
+      statedValuationMax: valMaxes.length > 0 ? Math.max(...valMaxes.map(Number)) : null,
+      latestActivityAt: latest.length > 0 ? latest[latest.length - 1]! : null,
+      relationshipState:
+        primary.relationship_state ??
+        variants.find((v) => v.relationship_state !== null)?.relationship_state ??
+        null,
+    });
+  }
+
+  const filtered = opts.includeFlagged
+    ? rows
+    : rows.filter((r) => !r.flags.includes("placeholder") && !r.flags.includes("likely_individual"));
+  filtered.sort(
+    (a, b) =>
+      b.relevantProjects - a.relevantProjects ||
+      (b.statedValuationTotal ?? -1) - (a.statedValuationTotal ?? -1) ||
+      b.projects - a.projects,
+  );
+  return filtered.slice(0, limit);
 }
 
 /**

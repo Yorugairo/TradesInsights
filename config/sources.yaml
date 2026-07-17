@@ -20,6 +20,26 @@ sources:
     robots_reviewed_at: "2026-07-15"
     notes: Fixture-backed adapter proving the M0 exit gate. Never fetches network.
 
+  - key: fake_source_required
+    name: Fake fixture source with required fields (health-test harness)
+    authority: test
+    priority: test
+    landing_url: https://example.invalid/fake-source-required
+    access_url: null
+    format: json
+    access_class: fixture
+    cadence: on_demand
+    county: Thurston
+    permitting_jurisdiction: Test Jurisdiction
+    enabled: false
+    required_fields: [addressRaw, issueDate, valuationUsd]
+    terms_reviewed_at: "2026-07-15"
+    robots_reviewed_at: "2026-07-15"
+    notes: >-
+      Test-only sibling of fake_source that DECLARES required_fields, so the D2
+      absolute-floor health tests exercise a source with requirements without
+      touching a real source's run history. Never enabled, never fetched.
+
   # ── Thurston County (P0) ──────────────────────────────────────────────────
   - key: lacey_projects_rest
     name: Lacey Projects REST
