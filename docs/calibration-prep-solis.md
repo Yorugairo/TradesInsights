@@ -76,13 +76,11 @@ What the data says (worth confirming against Solis's real capacity):
 - **No floor is now the default** (per customer directive): 73 qualifying, +8 over a
   $50k floor. If Solis later names a smallest-worthwhile package, a $100k floor would
   cut a third (73 → 46). Ask: is there a job size below which it isn't worth a bid?
-- **Small-job scope question (raised by the scorer change, v1.5.0):** removing the
-  size floor also removed it from `package_size_fit` in the scorer. That lifted Solis
-  recall to 100% but pulled 4 small **residential** remodels ($5k–$39k basement/ADU/
-  bedroom jobs) into priority in the eval. They were labeled "not a fit" under the old
-  minimum-size rule. **Decide at calibration:** does "small jobs" mean small *commercial/
-  TI* work, or also small *residential* remodels? If residential is out, that's a
-  residential-exclusion filter (a different knob), not a size floor.
+- **Small-job / residential scope — RESOLVED (2026-07-17):** residential is a valid
+  Solis trade, **particularly Thurston/Lewis/Pierce**. King (distant) jobs **under $10k**
+  are "valid but lower" (weekly-digest band, not priority); everything else keeps full
+  fit. Implemented in scorer v1.6.0 + eval v2. *Still open for the session:* confirm the
+  $10k King threshold feels right, and whether other counties want any price banding.
 - **No $2M–$5M projects are being excluded** (cap change: 65 → 65). Band cap can stay.
 - Age 30 → 60 days nearly doubles the pool. If Solis says GCs buy out interiors within
   ~6 weeks of permit issuance, 60 d is right; if sooner, tighten to 30 d.

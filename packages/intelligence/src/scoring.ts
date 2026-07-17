@@ -8,7 +8,9 @@ import { stageOrder } from "@otn/resolution";
  */
 // 1.5.0 — Solis package_size_fit: removed the $50k lower floor (Solis takes
 // small jobs; no minimum job size by default). Only oversize work scores down.
-export const SCORING_ALGORITHM_VERSION = "1.5.0";
+// 1.6.0 — Solis: King-county jobs under $10k are digest-band, not priority
+// (valid but lower — a distant secondary market; home counties unaffected).
+export const SCORING_ALGORITHM_VERSION = "1.6.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -402,12 +404,18 @@ export function routeSolis(
     // package is a full fit, not a penalty. Only OVERSIZE work (a different
     // sales motion / over capacity) scores down. A floor is added only if
     // Solis asks for one at calibration (§12.3).
+    // Exception (2026-07-17 calibration): in KING county — a distant secondary
+    // market — jobs under $10k are "valid but lower" (digest band, not
+    // priority). Home counties (Thurston/Lewis/Pierce) keep small jobs at full
+    // fit; this narrow rule only de-prioritizes tiny far-market work.
     package_size_fit:
       f.maxValuation === null
         ? 0.4 // unknown package size is never priority evidence
-        : f.maxValuation <= 2_000_000
-          ? 1
-          : 0.3,
+        : f.county === "King" && f.maxValuation < 10_000
+          ? 0.3
+          : f.maxValuation <= 2_000_000
+            ? 1
+            : 0.3,
     timing: timingInterior(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: 1,
     evidence_quality: evidenceQuality(f),

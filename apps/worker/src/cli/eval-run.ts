@@ -7,7 +7,7 @@ import { createLogger } from "@otn/source-sdk";
 import { getActiveAccounts, latestRules, parseEvalSet, runEval } from "@otn/intelligence";
 import type { AccountScoringInput } from "@otn/intelligence";
 
-// pnpm eval:run [--set fixtures/eval/eval-set.v1.jsonl] [--split dev|holdout|all]
+// pnpm eval:run [--set fixtures/eval/eval-set.v2.jsonl] [--split dev|holdout|all]
 // Deterministic replay of the labeled eval set through the CURRENT scoring
 // rules. Exits non-zero when a gate fails so it can sit in CI.
 async function main() {
@@ -19,7 +19,7 @@ async function main() {
     ? isAbsolute(setArg)
       ? setArg
       : join(process.cwd(), setArg)
-    : join(repoRoot, "fixtures", "eval", "eval-set.v1.jsonl");
+    : join(repoRoot, "fixtures", "eval", "eval-set.v2.jsonl");
   const split = (args.includes("--split") ? args[args.indexOf("--split") + 1] : "all") as
     | "dev"
     | "holdout"
