@@ -2,10 +2,10 @@ import "../load-env.js";
 import { createDb, createPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
 import {
-  AnthropicProvider,
   budgetFromEnv,
   extractProject,
   listExtractionCandidates,
+  providerFromEnv,
   type ModelProvider,
 } from "@otn/intelligence";
 import { modelAvailability } from "../env.js";
@@ -21,7 +21,7 @@ async function main() {
   const limitArg = args.includes("--limit") ? Number(args[args.indexOf("--limit") + 1]) : 5;
 
   const availability = modelAvailability();
-  const provider: ModelProvider | null = availability.available ? new AnthropicProvider() : null;
+  const provider: ModelProvider | null = availability.available ? providerFromEnv() : null;
   const budget = budgetFromEnv();
 
   const pool = createPool();

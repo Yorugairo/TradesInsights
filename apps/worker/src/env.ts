@@ -16,10 +16,20 @@ export interface ModelAvailability {
  * this and enter a visible blocked/skipped state instead of failing.
  */
 export function modelAvailability(): ModelAvailability {
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
+  if (
+    !process.env.ANTHROPIC_API_KEY &&
+    !process.env.OPENROUTER_API_KEY &&
+    !process.env.OPENAI_API_KEY
+  ) {
     return {
       available: false,
       reason: "no model API key configured — model-dependent jobs are blocked/skipped",
+    };
+  }
+  if (process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_MODEL) {
+    return {
+      available: false,
+      reason: "OPENROUTER_API_KEY is set but OPENROUTER_MODEL is not — set a model slug to run model jobs",
     };
   }
   if (!process.env.LLM_MONTHLY_BUDGET_USD) {

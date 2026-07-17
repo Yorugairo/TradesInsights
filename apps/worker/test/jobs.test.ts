@@ -56,14 +56,17 @@ describe("model availability gate", () => {
     const saved = {
       anthropic: process.env.ANTHROPIC_API_KEY,
       openai: process.env.OPENAI_API_KEY,
+      openrouter: process.env.OPENROUTER_API_KEY,
     };
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     const result = modelAvailability();
     expect(result.available).toBe(false);
     expect(result.reason).toContain("blocked");
     if (saved.anthropic) process.env.ANTHROPIC_API_KEY = saved.anthropic;
     if (saved.openai) process.env.OPENAI_API_KEY = saved.openai;
+    if (saved.openrouter) process.env.OPENROUTER_API_KEY = saved.openrouter;
   });
 
   it("requires a budget even when a key exists", () => {
@@ -73,5 +76,18 @@ describe("model availability gate", () => {
     expect(result.available).toBe(false);
     expect(result.reason).toContain("budget");
     delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it("blocks an OpenRouter key with no model slug", () => {
+    const saved = process.env.LLM_MONTHLY_BUDGET_USD;
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    delete process.env.OPENROUTER_MODEL;
+    process.env.LLM_MONTHLY_BUDGET_USD = "100";
+    const result = modelAvailability();
+    expect(result.available).toBe(false);
+    expect(result.reason).toContain("OPENROUTER_MODEL");
+    delete process.env.OPENROUTER_API_KEY;
+    if (saved) process.env.LLM_MONTHLY_BUDGET_USD = saved;
+    else delete process.env.LLM_MONTHLY_BUDGET_USD;
   });
 });

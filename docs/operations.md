@@ -75,7 +75,7 @@ pnpm dev                  # web on :3000
 pnpm worker               # pg-boss worker
 ```
 
-The app boots **without** model keys; the worker logs `modelJobs: "blocked"` until `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` **and** `LLM_MONTHLY_BUDGET_USD` are set.
+The app boots **without** model keys; the worker logs `modelJobs: "blocked"` until a provider key (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`) **and** `LLM_MONTHLY_BUDGET_USD` are set. With `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` (a slug like `anthropic/claude-opus-4.1`) is also required — no slug is guessed.
 
 ## Resolution (M2)
 
@@ -135,7 +135,14 @@ pnpm delivery:metrics                      # measured duplicate/expired rates ov
 
 Feedback (M3.7): relevant / new / timely / pursue booleans plus a **controlled disposition vocabulary** (`DISPOSITION_REASONS` in `packages/intelligence/src/feedback.ts` — pursuing, already_known, wrong_trade, out_of_territory, too_small/large, too_late/early, wrong_customer_type, duplicate, insufficient_evidence, other); free text goes in `notes`. `feedback:report` aggregates rates, disposition counts, and per-route relevance as the §22 calibration input. **Feedback never changes rules automatically** — the operator reads the rollup and appends a new rule version (`appendRuleVersion`); every past decision stays explainable under its own version.
 
-**Key activation:** without `ANTHROPIC_API_KEY` + `LLM_MONTHLY_BUDGET_USD` the pipeline stays in a *visible blocked state* — a batch `extract:run` logs `modelJobs: "blocked"` and exits cleanly; a targeted `--project` run records a `status='blocked'` `model_runs` row. Setting the two env vars activates the Anthropic provider (`claude-opus-4-8`, official SDK, proxy-aware) with no code changes. `LLM_JOB_BUDGET_USD` caps the worst-case cost per job (default $0.50); the monthly check sums `model_runs.cost_usd` for the current UTC month and blocks *before* spending.
+**Key activation:** without a provider key + `LLM_MONTHLY_BUDGET_USD` the pipeline stays in a *visible blocked state* — a batch `extract:run` logs `modelJobs: "blocked"` and exits cleanly; a targeted `--project` run records a `status='blocked'` `model_runs` row. Setting the env vars activates a provider with no code changes. `LLM_JOB_BUDGET_USD` caps the worst-case cost per job (default $0.50); the monthly check sums `model_runs.cost_usd` for the current UTC month and blocks *before* spending.
+
+**Provider selection** (`providerFromEnv`, first configured key wins):
+
+- **OpenRouter** (`OPENROUTER_API_KEY` + `OPENROUTER_MODEL`) — OpenAI-compatible; routes to many underlying models by slug (`anthropic/claude-opus-4.1`, `openai/gpt-4o`, `google/gemini-2.5-pro`, …). We call it with raw fetch (proxy-aware) and request `usage: { include: true }`, so `model_runs.cost_usd` is OpenRouter's **authoritative charged amount**, not a hardcoded estimate — the monthly budget ledger stays exact across any model. Optional `OPENROUTER_REFERER`/`OPENROUTER_TITLE` set the attribution headers OpenRouter uses for rankings. If a response ever omits the cost, we round up at Opus-tier pricing ($5/$25 per MTok) and log a fallback — the ledger never under-counts.
+- **Anthropic direct** (`ANTHROPIC_API_KEY`, used only when no OpenRouter key) — official SDK, `claude-opus-4-8`, proxy-aware; cost from published per-MTok pricing.
+
+The provider is chosen identically by `extract:run` and `verify:run` (both call `providerFromEnv`); the contract, budget, and persistence layers are provider-agnostic, so switching providers is purely an env change.
 
 ## Web application (M3.5)
 

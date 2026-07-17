@@ -3,8 +3,8 @@ import { sql } from "drizzle-orm";
 import { createDb, createPool, type Db } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
 import {
-  AnthropicProvider,
   budgetFromEnv,
+  providerFromEnv,
   verifyProject,
   type ModelProvider,
 } from "@otn/intelligence";
@@ -35,7 +35,7 @@ async function main() {
   const limitArg = args.includes("--limit") ? Number(args[args.indexOf("--limit") + 1]) : 5;
 
   const availability = modelAvailability();
-  const provider: ModelProvider | null = availability.available ? new AnthropicProvider() : null;
+  const provider: ModelProvider | null = availability.available ? providerFromEnv() : null;
   const budget = budgetFromEnv();
 
   const pool = createPool();

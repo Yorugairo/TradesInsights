@@ -13,6 +13,8 @@ export * from "./trust.js";
 export * from "./extraction/contract.js";
 export * from "./extraction/provider.js";
 export * from "./extraction/anthropic.js";
+export * from "./extraction/openrouter.js";
+export * from "./extraction/select-provider.js";
 export * from "./extraction/budget.js";
 export * from "./extraction/extract-run.js";
 export * from "./extraction/runs.js";
