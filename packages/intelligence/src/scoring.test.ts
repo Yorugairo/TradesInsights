@@ -393,3 +393,55 @@ describe("classify", () => {
     expect(c.isMultifamily).toBe(true);
   });
 });
+
+describe("v1.8.0 — Solis routes residential new construction (home counties)", () => {
+  const solisOf = (f: ProjectFeatures) =>
+    routeProject(f, ACCOUNTS).find((r) => r.accountKey === "solis_interiors");
+
+  it("a plain new SFR in Pierce routes: every new home needs drywall + paint", () => {
+    const r = solisOf(
+      features({
+        county: "Pierce",
+        stage: "permit_issued",
+        text: "new single family residence 2400 sf",
+        maxValuation: 450_000,
+      }),
+    )!;
+    expect(r).toBeTruthy();
+    expect(r.route).toBe("interior_trades");
+    expect(r.components.trade_fit).toBe(0.7);
+    expect(r.signals).toContain("new_home_construction");
+  });
+
+  it("clustered/subdivision new-builds are ONE relationship play, not per-house leads", () => {
+    const r = solisOf(
+      features({
+        county: "Thurston",
+        stage: "permit_issued",
+        text: "new single family residence — lot 14 of cedar plat",
+        clusterSize: 8,
+        maxValuation: 400_000,
+      }),
+    )!;
+    expect(r.route).toBe("gc_relationship_radar");
+    expect(r.components.trade_fit).toBe(0.45); // digest-band, relationship framing
+    expect(r.signals).toContain("production_builder_pipeline");
+  });
+
+  it("King new-builds stay out until calibration (distant secondary market)", () => {
+    const r = solisOf(
+      features({ county: "King", stage: "permit_issued", text: "new single family residence" }),
+    );
+    expect(r).toBeUndefined();
+  });
+
+  it("SFR demolition/field-work records never ride in on the SFR flag", () => {
+    expect(
+      solisOf(features({ county: "Pierce", text: "demolition of single family residence" })),
+    ).toBeUndefined();
+    // But an SFR remodel with interior scope still routes via the interior path.
+    expect(
+      solisOf(features({ county: "Pierce", text: "interior remodel of single family residence" })),
+    ).toBeTruthy();
+  });
+});

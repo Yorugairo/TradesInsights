@@ -343,6 +343,8 @@ const SIGNAL_PHRASES: Record<string, string> = {
   multifamily: "multifamily project",
   king_routes_commercial: "Seattle-area commercial",
   commercial_bid_window_likely_closed: "commercial buyout likely already done",
+  new_home_construction: "new home construction — every home needs drywall + paint",
+  production_builder_pipeline: "production builder pipeline — one relationship, many homes",
   subdivision: "part of a subdivision",
   clustered_sfr_townhome_permits: "part of a home-building cluster",
   low_rise_multifamily_joint_review: "low-rise multifamily",

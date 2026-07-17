@@ -14,7 +14,12 @@ import { bidTrackFor, type BidTrack } from "./bid-window.js";
 // 1.7.0 — Solis timing is bid-track-aware (docs/domain-bid-timing.md): an
 // issued commercial-track project (buyout likely done) scores timing 0.5, and
 // in-review commercial stages peak — the score now agrees with the 🔨 line.
-export const SCORING_ALGORITHM_VERSION = "1.7.0";
+// 1.8.0 — Solis routes residential NEW CONSTRUCTION in the home counties
+// (Pierce/Lewis/Thurston; King deferred to calibration): every new home needs
+// drywall + paint (trade_fit 0.7); clustered/subdivision new-builds route as
+// ONE production-builder relationship play (gc_relationship_radar, 0.45),
+// never per-house leads. Customer-approved 2026-07-17.
+export const SCORING_ALGORITHM_VERSION = "1.8.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -395,14 +400,26 @@ export function routeSolis(
   const excluded = acct.territory.counties_excluded ?? [];
   if (!inCounties(f, included, excluded)) return null;
   const c = classify(f);
-  const fits = c.isTi || c.isCommercial || c.isMultifamily || c.hasInterior;
+  // v1.8.0 — every new home needs drywall AND paint: residential new
+  // construction is an intrinsic trade fit (customer-approved 2026-07-17),
+  // routed in the HOME counties (Pierce/Lewis/Thurston). King new-builds stay
+  // out until calibration (distant secondary market); demolition, field work,
+  // and entitlement-only records never ride in on the SFR flag.
+  const sfrNewBuild =
+    c.isSfr && !c.isDemolition && !c.isFieldWork && !c.isEntitlementOnly && f.county !== "King";
+  const fits = c.isTi || c.isCommercial || c.isMultifamily || c.hasInterior || sfrNewBuild;
   if (!fits) return null;
 
+  // A clustered/subdivision new-build is a production BUILDER pipeline: one
+  // relationship play, never N house-leads (the §10 forty-permit rule).
+  const productionCluster = sfrNewBuild && (c.isCluster || c.isSubdivision);
   const overCapacity = (f.maxValuation ?? 0) > 2_000_000 && c.isMultifamily;
   const track = bidTrackFor(c);
   const signals: string[] = [];
   if (c.isTi) signals.push("tenant_improvement");
   if (c.hasInterior) signals.push("drywall_painting_keywords");
+  if (sfrNewBuild) signals.push("new_home_construction");
+  if (productionCluster) signals.push("production_builder_pipeline");
   // Signal-only while Solis's profile is provisional (§12.3) — visible in the
   // rationale/digest but score-neutral until customer calibration.
   if (f.campusBlock) signals.push("active_campus");
@@ -427,9 +444,13 @@ export function routeSolis(
         ? 1
         : c.isTi || c.hasInterior
           ? 0.8
-          : c.isCommercial
-            ? 0.6
-            : 0.5,
+          : productionCluster
+            ? 0.45 // digest-band relationship play, not a per-house lead
+            : sfrNewBuild
+              ? 0.7 // every new home needs drywall + paint
+              : c.isCommercial
+                ? 0.6
+                : 0.5,
     // No minimum job size by default — Solis takes small jobs, so a small
     // package is a full fit, not a penalty. Only OVERSIZE work (a different
     // sales motion / over capacity) scores down. A floor is added only if
@@ -453,7 +474,7 @@ export function routeSolis(
   const score = weighted(components, acct.weights);
   return {
     accountKey: acct.key,
-    route: overCapacity ? "gc_relationship_radar" : "interior_trades",
+    route: overCapacity || productionCluster ? "gc_relationship_radar" : "interior_trades",
     components,
     score,
     state: band(score, acct.delivery),
