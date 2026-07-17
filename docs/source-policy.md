@@ -230,6 +230,7 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Fixtures: layer-metadata.json + window-page-1.json (451 features, July 2026 window); manual comparison recorded in fixtures/pierce_permits_arcgis/metadata.json (counts + 2 verbatim spot checks). 5 parser tests incl. unmapped-status degradation and valuation-0→null.
 - Shadow run 2026-07-17: 6,001 records / 4 pages, 0 rejected, 0 errors; idempotent rerun 6,001 duplicates / 0 new; backfill 2026-02-01→03-18: 1,452 new + 410 overlap duplicates, 0 errors. Health green.
 - Enabled: yes — 2026-07-17. Mitigates: pierce_environmental_determinations (SEPA Review rows provide substitute coverage; wa_sepa remains primary).
+- Parser 1.1.0 (2026-07-17, commercial pre-permit track): pre-application screenings now pin to `preapplication` — the screening's own Accepted/Approved/Final lifecycle no longer walks the permit stages (the old mapping overstated 411 "approved" + mapped "Final" screenings to `complete`). D5 replay over 9 stored artifacts: 13,864 re-parsed, 436 corrected, 0 errors; 424 affected project stages recomputed (max over active records). Coverage note: this layer IS the county's pre-permit commercial feed — Pre-Application Screening ×1,802, SEPA Review ×7,888, Land Use Action ×3,801, Short plat ×2,755 all-time on the same FeatureServer; the 120-day window ingests them continuously.
 
 ### tacoma_permits_arcgis
 - Checklist run: 2026-07-17 (agent session, Batch3 #3 — Pierce PALS covers unincorporated county only; Tacoma is the pilot region's second-largest city with zero prior coverage).
@@ -239,6 +240,7 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Fixtures: layer-metadata.json + window-page-1.json (1,000 features); manual comparison in fixtures/tacoma_permits_arcgis/metadata.json (counts + verbatim spot check PLMBC26-0138). 3 parser tests.
 - Shadow run 2026-07-17: 4,206 records / 5 pages, 0 rejected, 0 errors; idempotent rerun: 5 pages unchanged-hash, 0 re-parsed; backfill 2026-01-01→03-18: +1,617 new, 379 overlap duplicates, 0 errors. Health green.
 - Enabled: yes — 2026-07-17.
+- Parser 1.1.0 (2026-07-17): same pre-application fix as Pierce — Pre-Application case workflow statuses pin to `preapplication`. D5 replay over 7 artifacts: 6,202 re-parsed, 180 corrected, 0 errors. Coverage note: the Accela extract carries Land Use (×130 in-window) and Pre-Application cases — Tacoma's pre-permit commercial feed is this same layer.
 
 ### tacoma_solicitations
 - Checklist run: 2026-07-17 (agent session, P5 — first public procurement source; the roadmap's "only public path to bidding_confirmed").

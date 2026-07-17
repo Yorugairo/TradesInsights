@@ -62,8 +62,15 @@ describe("tacoma_permits_arcgis (golden fixture — live window page of 2026-07-
     expect(byStatus.get("Awaiting Resubmittal")).toBe("permit_applied");
 
     // Planning types route to entitlement while under review.
-    expect(tacomaStage("Plan Review in Process", true)).toBe("entitlement");
-    expect(tacomaStage("Some Future Status", false)).toBe("unknown"); // never guessed
+    expect(tacomaStage("Plan Review in Process", "planning")).toBe("entitlement");
+    expect(tacomaStage("Some Future Status", "permit")).toBe("unknown"); // never guessed
+
+    // Pre-application cases pin to `preapplication` — their own workflow
+    // (meeting held, decision issued) never advances the PROJECT stage.
+    expect(tacomaStage("Decision Issued", "preapp")).toBe("preapplication");
+    expect(tacomaStage("Finaled", "preapp")).toBe("preapplication");
+    expect(tacomaStage("Plan Review in Process", "preapp")).toBe("preapplication");
+    expect(tacomaStage("Cancelled", "preapp")).toBe("withdrawn"); // dead is still dead
 
     // 0 valuation / 0 housing_units are unknowns, never real zeros.
     const zeroVal = parsed.filter((p) => p.record.valuationUsd === 0);

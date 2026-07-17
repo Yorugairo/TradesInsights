@@ -103,6 +103,38 @@ describe("pierce_permits_arcgis (golden fixture — live window page of 2026-07-
     expect(NormalizedSourceRecordSchema.safeParse(parsed[0]!.record).success).toBe(false);
   });
 
+  it("pre-application screenings pin to preapplication — the screening's own lifecycle never advances the project", async () => {
+    const adapter = new PiercePermitsArcgisAdapter();
+    const base = {
+      applicationNumber: 888801,
+      applicationType: "Pre-Application Screening",
+      parcelNumber: "0123456789",
+      workType: null, buildingValuation: null, projectValue: null,
+      dwellingUnits: null, applicationDate: 1780000000000, submittalDate: null,
+      issuedDate: null, finalDate: null, workDescription: "Proposed retail center pre-app", siteAddress: null,
+      projectName: "Retail Center", urlOnlinePermits: null, applicationDept: null,
+      lotsSubmitted: null, sqFtTotal: null,
+    };
+    const features = ["Accepted", "Approved", "Final"].map((applicationStatus, i) => ({
+      attributes: { ...base, applicationNumber: base.applicationNumber + i, applicationStatus },
+      geometry: { x: -122.4, y: 47.1 },
+    }));
+    features.push({
+      attributes: { ...base, applicationNumber: 888899, applicationStatus: "Cancelled" },
+      geometry: { x: -122.4, y: 47.1 },
+    });
+    const parsed = await adapter.parse(
+      rawArtifact(JSON.stringify({ features })),
+      testContext(adapter.key),
+    );
+    expect(parsed.map((p) => p.record.normalizedStage)).toEqual([
+      "preapplication",
+      "preapplication", // "Approved" screening ≠ approved project
+      "preapplication", // "Final" screening ≠ complete project
+      "withdrawn", // dead is still dead
+    ]);
+  });
+
   it("an unmapped future status degrades to unknown, never a guess", async () => {
     const adapter = new PiercePermitsArcgisAdapter();
     const feature = {

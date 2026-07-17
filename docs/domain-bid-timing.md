@@ -83,10 +83,25 @@ watch issued permits.
 4. **Routing weight (later, calibration):** a project inside its bid window is more
    valuable than one outside it — candidate `timing` component refinement, versioned.
 
-## Open sourcing dependency
+## Pre-permit sourcing status (resolved 2026-07-17)
 
-The commercial half only works if we can see projects **pre-permit**. That is the
-"pre-permit commercial data feed" question — see `docs/source-policy.md` candidates and
-the response notes: SEPA register (have it), Thurston/Pierce/King **land-use &
-pre-application** records, plan-review logs, design-review boards, and published bid
-solicitations. Each goes through the standard §14 activation checklist before enabling.
+The commercial half only works if we can see projects **pre-permit**. Coverage
+assessment (verified live): **all four counties already have a pre-permit feed
+flowing** — no new adapter was needed; the gap was stage interpretation, fixed in
+parser 1.1.0 (pre-application cases pin to `preapplication` instead of walking the
+permit lifecycle; 436 Pierce + 180 Tacoma records replayed, 424 project stages
+corrected).
+
+| County | Pre-permit feed (enabled) |
+|---|---|
+| Pierce (unincorp.) | `pierce_permits_arcgis` — the PALS extract carries Pre-Application Screening, SEPA Review, Land Use, Short plat, Site Dev Commercial |
+| Pierce (Tacoma) | `tacoma_permits_arcgis` — Accela extract carries Land Use + Pre-Application cases |
+| King | `seattle_land_use_permits` (Socrata) + `king_public_notices`; building applications flow pre-issuance via applieddate |
+| Thurston | `thurston_active_notices` (SEPA/land-use notices) + `tumwater_development_arcgis` |
+| Lewis | `lewis_current_planning` |
+| Statewide | `wa_sepa` (SEPA register) |
+
+Remaining **candidates** (verify-first before any build, standard checklist):
+city-level pre-application meeting logs (Olympia, Lacey), King County unincorporated
+pre-application queue, design-review board agendas (Seattle DRB), hearing-examiner
+calendars. Each is incremental breadth, not a coverage hole.

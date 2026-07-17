@@ -27,6 +27,12 @@ const WINDOW_DAYS = 120;
  */
 const PLANNING_TYPE_RE =
   /^(land use|land div|pre-application|sepa|shoreline|forest practice|environmental variance|deviation|appeals)/i;
+/** Pre-application screenings: the SCREENING's own lifecycle (accepted →
+ * approved → final) says nothing about project maturity — an "approved"
+ * pre-app screening is still a pre-application-stage project. Mapping those
+ * statuses through the permit lifecycle overstated 400+ projects (found
+ * 2026-07-17); the whole case class pins to `preapplication`. */
+const PREAPP_TYPE_RE = /^pre-application/i;
 
 /**
  * Official PALS applicationStatus values → spec §9 stages, enumerated live
@@ -36,16 +42,17 @@ const PLANNING_TYPE_RE =
  */
 function stageFor(
   status: string | null,
-  isPlanning: boolean,
+  kind: "permit" | "planning" | "preapp",
 ): NormalizedSourceRecord["normalizedStage"] {
   const s = (status ?? "").trim().toLowerCase();
+  if (s === "cancelled" || s === "denied" || s.startsWith("expired")) return "withdrawn";
+  if (kind === "preapp") return "preapplication"; // screening lifecycle ≠ project lifecycle
   if (s === "accepted" || s === "pending payment") {
-    return isPlanning ? "entitlement" : "permit_applied";
+    return kind === "planning" ? "entitlement" : "permit_applied";
   }
   if (s === "approved") return "approved";
   if (s === "issued" || s === "issued (nca)") return "permit_issued";
   if (s === "final") return "complete";
-  if (s === "cancelled" || s === "denied" || s.startsWith("expired")) return "withdrawn";
   return "unknown"; // Closed / Stopped / Suspended* / anything new
 }
 
@@ -109,7 +116,9 @@ function tsLiteral(d: Date): string {
  */
 export class PiercePermitsArcgisAdapter implements SourceAdapter {
   readonly key = "pierce_permits_arcgis";
-  readonly parserVersion = "1.0.0";
+  // 1.1.0 — pre-application screenings pin to `preapplication` (their own
+  // accepted/approved/final lifecycle no longer walks the permit stages).
+  readonly parserVersion = "1.1.0";
 
   private windowWhere(ctx: RunContext): string {
     if (ctx.backfill) {
@@ -170,8 +179,9 @@ export class PiercePermitsArcgisAdapter implements SourceAdapter {
         continue;
       }
       const a = parsed.data.attributes;
+      const isPreapp = PREAPP_TYPE_RE.test(a.applicationType ?? "");
       const isPlanning = PLANNING_TYPE_RE.test(a.applicationType ?? "");
-      const stage = stageFor(a.applicationStatus, isPlanning);
+      const stage = stageFor(a.applicationStatus, isPreapp ? "preapp" : isPlanning ? "planning" : "permit");
       if (stage === "unknown" && a.applicationStatus) {
         ctx.logger.warn(
           { status: a.applicationStatus },

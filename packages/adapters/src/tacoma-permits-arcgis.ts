@@ -18,6 +18,10 @@ const WINDOW_DAYS = 120;
 
 /** Planning/entitlement permit types (Accela permit_type, enumerated live). */
 const PLANNING_TYPE_RE = /^(land use|pre-application)/i;
+/** Pre-application cases: the case's own workflow statuses never advance the
+ * PROJECT past `preapplication` (a "Decision Issued" pre-app meeting is still
+ * a pre-application-stage project). Same defect class as Pierce, fixed 2026-07-17. */
+const PREAPP_TYPE_RE = /^pre-application/i;
 
 /**
  * Accela workflow current_status → §9 stage, mapped by deterministic pattern
@@ -27,11 +31,12 @@ const PLANNING_TYPE_RE = /^(land use|pre-application)/i;
  */
 export function tacomaStage(
   status: string | null,
-  isPlanning: boolean,
+  kind: "permit" | "planning" | "preapp",
 ): NormalizedSourceRecord["normalizedStage"] {
   const s = (status ?? "").trim().toLowerCase();
-  if (!s) return "unknown";
+  if (!s) return kind === "preapp" ? "preapplication" : "unknown";
   if (/^(cancelled|permit canceled|voided|denied|expired|withdrawn)/.test(s)) return "withdrawn";
+  if (kind === "preapp") return "preapplication"; // case lifecycle ≠ project lifecycle
   if (/^(finaled|closed|financial closeout|recording complete|c of o issued)/.test(s)) {
     return "complete";
   }
@@ -44,7 +49,7 @@ export function tacomaStage(
     )
   ) {
     // The whole pre-issuance review pipeline: an application being worked.
-    return isPlanning ? "entitlement" : "permit_applied";
+    return kind === "planning" ? "entitlement" : "permit_applied";
   }
   return "unknown";
 }
@@ -97,7 +102,9 @@ function tsLiteral(d: Date): string {
  */
 export class TacomaPermitsArcgisAdapter implements SourceAdapter {
   readonly key = "tacoma_permits_arcgis";
-  readonly parserVersion = "1.0.0";
+  // 1.1.0 — pre-application cases pin to `preapplication` (case workflow no
+  // longer walks the project stages).
+  readonly parserVersion = "1.1.0";
 
   private windowWhere(ctx: RunContext): string {
     if (ctx.backfill) {
@@ -156,8 +163,9 @@ export class TacomaPermitsArcgisAdapter implements SourceAdapter {
         continue;
       }
       const a = parsed.data.attributes;
+      const isPreapp = PREAPP_TYPE_RE.test(a.permit_type ?? "");
       const isPlanning = PLANNING_TYPE_RE.test(a.permit_type ?? "");
-      const stage = tacomaStage(a.current_status, isPlanning);
+      const stage = tacomaStage(a.current_status, isPreapp ? "preapp" : isPlanning ? "planning" : "permit");
       if (stage === "unknown" && a.current_status) {
         ctx.logger.warn(
           { status: a.current_status },
