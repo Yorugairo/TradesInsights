@@ -5,13 +5,18 @@ needs to make. Every figure below is a direct SQL count over stored opportunitie
 projects (script: `apps/worker/calibration-sensitivity.mts`, rerunnable). Nothing here
 is a model output.
 
+**Scope: Solis Interiors only** (drywall + painting; UBI 604837560). Solis is an
+independent company — **not** affiliated with Lacey Glass. The two Lacey Glass accounts
+(At Home = residential glass; Commercial = Division 08) are a separate client and a
+separate calibration conversation; nothing about them belongs in this session. (The At
+Home Pierce-volume question is tracked as its own Lacey Glass item in `docs/STATUS.md` §22.)
+
 Decisions to leave the session with:
 
 1. **Priority threshold** (currently 80)
 2. **Easy-win parameters** (`config/account-profiles.yaml` → `delivery.easy_win`, all provisional)
-3. **At Home Pierce/Tacoma volume** (recorded §22 item)
-4. **Capacity snapshot (S0)** — crew size, package band, concurrent-bid appetite
-5. **Disposition cadence** — who reviews, when, and how feedback flows back
+3. **Capacity snapshot (S0)** — crew size, package band, concurrent-bid appetite
+4. **Disposition cadence** — who reviews, when, and how feedback flows back
 
 ---
 
@@ -84,25 +89,7 @@ By stage (score ≥ 80): permit_issued 295, permit_applied 178, complete 6, near
 unknown 1 — the pool is concentrated exactly where an interior sub wants it
 (issued/applied), which supports the easy-win framing.
 
-## 4. At Home Pierce/Tacoma volume (§22 decision)
-
-At Home (residential glass) totals: **1,053 priority / 695 digest / 1,748 total**.
-Priority by jurisdiction: unincorporated Pierce **856**, City of Tacoma **191**, everything
-else ≤2 each — i.e. **99.5% of At Home's priority volume is Pierce**, which only appeared
-when the Pierce/Tacoma sources activated (the account was always configured for Pierce;
-it just had no data before).
-
-Options to put to the customer:
-
-- **A. Keep as-is** — genuine §12.1 matches (plats/townhomes/multifamily); big pool.
-- **B. Exclude Pierce for At Home until confirmed** (mirror of the existing King
-  exclusion) — one line in `config/account-profiles.yaml`, reversible.
-- **C. Keep Pierce but raise At Home's priority threshold** so only the strongest
-  residential matches page in.
-
-Nothing else depends on this; it's purely an appetite question for the At Home account.
-
-## 5. Also bring to the session
+## 4. Also bring to the session
 
 - **Capacity snapshot (S0)**: crews, max concurrent bids, package sweet spot — feeds
   the valuation band and any future capacity-aware scoring.

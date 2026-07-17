@@ -110,8 +110,9 @@ agency makes it urgent.
 - **Solis bid-inbox authorization** (customer) → S3 goes live → P2.2 deadlines section
   fills.
 - **Model keys** → extraction/verifier → prose memos + live delivery cycles.
-- **At Home Pierce/Tacoma volume** stays a recorded §22 item; nothing in P1–P4 depends
-  on it.
+- **At Home Pierce/Tacoma volume** stays a recorded §22 item for the **Lacey Glass At
+  Home** account — a *separate, unaffiliated company* from Solis, so it is NOT part of
+  the Solis calibration session; nothing in P1–P4 depends on it.
 
 ## Sequencing
 
