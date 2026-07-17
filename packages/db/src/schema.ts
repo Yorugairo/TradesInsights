@@ -241,6 +241,8 @@ export const organizations = pgTable(
     legalName: text("legal_name"),
     ubi: text("ubi"),
     contractorRegistration: text("contractor_registration"),
+    /** One Trade Network registry ID (P1.4) — set only by authorized import. */
+    registryRef: text("registry_ref"),
     organizationType: text("organization_type"),
     website: text("website"),
     status: text("status"),

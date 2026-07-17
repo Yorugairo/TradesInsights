@@ -26,3 +26,4 @@ export * from "./gate/automation.js";
 export * from "./feedback.js";
 // M4.1/M4.2: labeled eval harness for the routing/scoring layer.
 export * from "./eval/harness.js";
+export * from "./org-activity.js";

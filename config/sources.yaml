@@ -50,8 +50,16 @@ sources:
     cadence: on_demand
     county: null
     permitting_jurisdiction: null
-    enabled: false
+    # Customer authorization received 2026-07-17 (owner confirmation in session;
+    # calibration session scheduled). Private to solis_interiors — reads
+    # customer-provided exports only, access-audited (§20).
+    enabled: true
     account_key: solis_interiors
+    # For a private customer source, "terms review" = the customer's written
+    # authorization (received 2026-07-17); robots is N/A (local exports only)
+    # and the date records that determination.
+    terms_reviewed_at: "2026-07-17"
+    robots_reviewed_at: "2026-07-17"
     notes: >-
       M4.6 scaffolding (2026-07-16). Reads customer-provided JSON exports from
       a local inbox directory (CUSTOMER_BID_INBOX_DIR) — never scraped, never

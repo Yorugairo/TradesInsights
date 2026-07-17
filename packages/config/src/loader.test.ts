@@ -22,6 +22,7 @@ describe("sources.yaml", () => {
     expect(enabled).toEqual([
       "fake_source",
       "lacey_projects_rest",
+      "customer_bid_inbox_solis", // customer authorization received 2026-07-17
       "lacey_permit_reports",
       "lacey_project_pages",
       "thurston_active_notices",
