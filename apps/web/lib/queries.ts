@@ -550,6 +550,43 @@ export async function listCoverage(db: Db): Promise<Record<string, unknown>[]> {
   return res.rows as Record<string, unknown>[];
 }
 
+/** #3 — geometry coverage: per-county project geometry fill with provenance
+ * split (record-derived vs Census-geocoded inference) + the geocodable and
+ * attempted-but-unlocated backlogs. */
+export interface GeometryCoverageRow {
+  county: string;
+  projects: number;
+  withGeometry: number;
+  fromRecords: number;
+  fromGeocoder: number;
+  geocodableBacklog: number;
+  attemptedNoLocation: number;
+}
+
+export async function geometryCoverage(db: Db): Promise<GeometryCoverageRow[]> {
+  const res = await db.execute(sql`
+    SELECT county,
+      count(*) AS projects,
+      count(geometry) AS with_geometry,
+      count(*) FILTER (WHERE geometry_source = 'source_record') AS from_records,
+      count(*) FILTER (WHERE geometry_source = 'census_geocoder') AS from_geocoder,
+      count(*) FILTER (WHERE geometry IS NULL AND address_normalized IS NOT NULL
+        AND geocode_meta_json IS NULL) AS geocodable_backlog,
+      count(*) FILTER (WHERE geometry IS NULL AND geocode_meta_json IS NOT NULL) AS attempted_no_location
+    FROM projects
+    WHERE permitting_jurisdiction != 'Test Jurisdiction'
+    GROUP BY county ORDER BY county`);
+  return (res.rows as Record<string, unknown>[]).map((r) => ({
+    county: r["county"] as string,
+    projects: Number(r["projects"]),
+    withGeometry: Number(r["with_geometry"]),
+    fromRecords: Number(r["from_records"]),
+    fromGeocoder: Number(r["from_geocoder"]),
+    geocodableBacklog: Number(r["geocodable_backlog"]),
+    attemptedNoLocation: Number(r["attempted_no_location"]),
+  }));
+}
+
 // ── Private bid invitations (M4.6 — account-scoped, access-audited) ──────────
 
 export interface InvitationView {

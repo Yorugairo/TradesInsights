@@ -176,6 +176,11 @@ export const projects = pgTable(
     addressNormalized: text("address_normalized"),
     parcelIds: jsonb("parcel_ids").notNull().default(sql`'[]'::jsonb`),
     geometry: geometry("geometry"),
+    /** 'source_record' (a record's own geometry) or 'census_geocoder' (an
+     * inference from the address — never overwrites record geometry). */
+    geometrySource: text("geometry_source"),
+    /** Full geocode-attempt record incl. no-match outcomes (rerun skip). */
+    geocodeMetaJson: jsonb("geocode_meta_json"),
     currentStage: text("current_stage").notNull().default("unknown"),
     stageConfidence: doublePrecision("stage_confidence"),
     /** Derived active-campus membership ('<county>:<block>'), stamped/cleared

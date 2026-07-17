@@ -24,6 +24,7 @@
     "map:verify": "sigmap verify",
     "map:evidence": "sigmap evidence",
     "resolve:run": "pnpm --filter @otn/worker resolve:run",
+    "geocode:run": "pnpm --filter @otn/worker geocode:run",
     "review": "pnpm --filter @otn/worker review",
     "score:run": "pnpm --filter @otn/worker score:run",
     "extract:run": "pnpm --filter @otn/worker extract:run",

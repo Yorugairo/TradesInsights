@@ -6,3 +6,4 @@ export * from "./fuzzy.js";
 export * from "./developments.js";
 export * from "./review.js";
 export * from "./velocity.js";
+export * from "./geocode.js";

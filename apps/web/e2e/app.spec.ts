@@ -221,6 +221,28 @@ test.describe("customer surface", () => {
     expect(corr.status()).toBe(201);
   });
 
+  test("#3: map page renders account-scoped markers with provenance summary", async ({ page, request }) => {
+    await login(request, "lacey_glass_commercial");
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/map");
+    await expect(page.getByTestId("map-summary")).toContainText("opportunities with a known location");
+    await expect(page.getByTestId("opportunity-map")).toBeVisible();
+    // Leaflet mounts markers as SVG paths inside the map container (tiles may
+    // not load offline — markers must render regardless).
+    await expect(page.getByTestId("opportunity-map").locator("path").first()).toBeVisible();
+  });
+
+  test("#2: ROI page includes the lead-time backtest and detection lag", async ({ page, request }) => {
+    await login(request, "lacey_glass_commercial");
+    const roi = await (await request.get("/api/app/roi")).json();
+    expect(typeof roi.leadTime.measured).toBe("number");
+    expect(Array.isArray(roi.detectionLag)).toBe(true);
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/roi");
+    await expect(page.getByTestId("leadtime-table")).toBeVisible();
+    await expect(page.getByTestId("detection-lag-table")).toBeVisible();
+  });
+
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
     await login(request, "solis_interiors");
     const list = await (await request.get("/api/app/opportunities?limit=1")).json();
@@ -254,5 +276,10 @@ test.describe("admin surface", () => {
 
     const coverage = await (await request.get("/api/admin/coverage")).json();
     expect(coverage.items.length).toBeGreaterThan(10);
+
+    // #3 — geometry coverage by provenance on the coverage page.
+    await page.goto("/app/admin/coverage");
+    await expect(page.getByTestId("geometry-coverage-table")).toBeVisible();
+    await expect(page.getByTestId("geometry-coverage-table")).toContainText("King");
   });
 });

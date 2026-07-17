@@ -95,6 +95,14 @@ pnpm review undo <source-record-id> --reason <text>     # split: undo a merge, k
 
 Merge decisions create a `record_resolutions` row with `decision=review_approved`; reject re-resolves the record with the rejected candidate excluded; undo flips the resolution to `undone`, deletes only rows *derived from that record* (events, roles), and never touches the source record.
 
+### Project geometry (#3)
+
+```bash
+pnpm geocode:run [--limit N] [--county King] [--delay-ms 150]
+```
+
+Two passes. **Materialize** (also runs at the end of `resolve:run`, no network): fills `projects.geometry` from an active resolved record's own geometry (`geometry_source = 'source_record'`). **Geocode**: for projects with an address but no geometry, queries the **US Census Bureau geocoder** (`geocoding.geo.census.gov`, official, free, no key; verified 2026-07-17; honors `HTTPS_PROXY`). Normalized addresses are street-only, so a match is accepted ONLY when it is unique AND the returned county equals the project's stored county — a geocoded point is a labeled inference (`geometry_source = 'census_geocoder'` + `geocode_meta_json`), never overwrites record geometry, and is replaced when record geometry later arrives. Every attempt outcome (matched / no_match / ambiguous / county_mismatch) is stored in `geocode_meta_json` so reruns skip attempted projects; transient HTTP errors are NOT stored (next run retries). Default 500 addresses/run at 150 ms pacing. Coverage by provenance: `/app/admin/coverage`.
+
 `resolve:run` finishes with development grouping (M2.4): projects sharing a distinctive base name (phase/lot/div tokens stripped; permit-type vocabulary alone never groups) plus org/parcel/proximity support get a `development_id`; a single plat/base project parents its phases. **The development layer is derived and rebuildable**: `UPDATE projects SET development_id=NULL, parent_project_id=NULL; DELETE FROM developments;` then `pnpm resolve:run`.
 
 ## Intelligence (M3)

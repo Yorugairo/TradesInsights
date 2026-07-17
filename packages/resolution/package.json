@@ -11,7 +11,8 @@
   "dependencies": {
     "@otn/db": "workspace:*",
     "@otn/domain": "workspace:*",
-    "drizzle-orm": "^0.44.7"
+    "drizzle-orm": "^0.44.7",
+    "undici": "^8.7.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
