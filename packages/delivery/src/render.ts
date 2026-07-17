@@ -1,12 +1,25 @@
+import type { ActionLinks } from "./actions.js";
 import type { DigestItem, DigestModel } from "./digest.js";
 
-/** Deterministic digest rendering — same model in, same bytes out. */
+/** Deterministic digest rendering — same model in, same bytes out (action
+ * links, when provided, are part of the input model for that delivery). */
+
+export interface RenderOptions {
+  /** P2.3 — one-tap links per opportunityId (issued by deliverDigest). */
+  actionLinks?: Map<string, ActionLinks>;
+}
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function itemHtml(item: DigestItem): string {
+function actionButtons(id: string, opts: RenderOptions): string {
+  const links = opts.actionLinks?.get(id);
+  if (!links) return "";
+  return `<p><a href="${esc(links.pursue)}" style="font-weight:bold">✓ Pursue this</a> &nbsp;·&nbsp; <a href="${esc(links.dismiss)}">✗ Not relevant</a></p>`;
+}
+
+function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
   const facts = item.confirmedFacts.length
     ? `<p><strong>Confirmed facts:</strong> ${item.confirmedFacts.map(esc).join(" · ")}</p>`
     : "";
@@ -42,20 +55,60 @@ function itemHtml(item: DigestItem): string {
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
     ${campus}${facts}${inferences}${missing}${unitConflict}
     <p><strong>Next action:</strong> ${esc(item.nextAction)}</p>
+    ${actionButtons(item.opportunityId, opts)}
     <p>Sources: ${links || "—"}</p>
   </li>`;
 }
 
-function section(title: string, items: DigestItem[]): string {
+function section(title: string, items: DigestItem[], opts: RenderOptions = {}): string {
   return `<h2>${esc(title)}</h2>
-${items.length === 0 ? "<p>Nothing this week.</p>" : `<ol>${items.map(itemHtml).join("\n")}</ol>`}`;
+${items.length === 0 ? "<p>Nothing this week.</p>" : `<ol>${items.map((i) => itemHtml(i, opts)).join("\n")}</ol>`}`;
+}
+
+/** P2.2 — the 10-minute top block: winnable now, GCs worth meeting, deadlines,
+ * radar. Renders ONLY the parts with content; the full §18 sections follow. */
+function topBlock(model: DigestModel, opts: RenderOptions): string {
+  const parts: string[] = [];
+  if (model.easyWins.length > 0) {
+    parts.push(`<h2>⚡ Winnable now (${model.easyWins.length})</h2>
+<p>Right stage, right size, a named contact, inside your service area.</p>
+<ol>${model.easyWins.map((i) => itemHtml(i, opts)).join("\n")}</ol>`);
+  }
+  if (model.relationshipPlays.length > 0) {
+    parts.push(`<h2>🤝 GCs worth meeting</h2>
+<ul>${model.relationshipPlays
+      .map(
+        (p) =>
+          `<li><strong>${esc(p.name)}</strong> — ${p.relevantProjects} projects routed to you (${esc(p.counties.join(", "))}). No relationship on record yet.</li>`,
+      )
+      .join("\n")}</ul>`);
+  }
+  if (model.deadlines.length > 0) {
+    parts.push(`<h2>⏰ Deadlines from your inbox</h2>
+<ul>${model.deadlines
+      .map(
+        (d) =>
+          `<li><strong>${d.bidDueAt.slice(0, 10)}</strong> — ${esc(d.title ?? d.scope ?? "bid invitation")}${d.generalContractor ? ` (${esc(d.generalContractor)})` : ""}</li>`,
+      )
+      .join("\n")}</ul>`);
+  }
+  if (model.radar.length > 0) {
+    parts.push(`<h2>📡 Radar (early stage)</h2>
+<ul>${model.radar
+      .map(
+        (i) =>
+          `<li><strong>${esc(i.projectName)}</strong> — ${esc(i.stage)} · ${esc(i.county)} · ${esc(i.whatChanged)}</li>`,
+      )
+      .join("\n")}</ul>`);
+  }
+  return parts.length > 0 ? `${parts.join("\n")}\n<hr/>\n` : "";
 }
 
 export function digestSubject(model: DigestModel): string {
   return `OTN weekly digest — ${model.accountName} — week ending ${model.periodEnd.toISOString().slice(0, 10)}`;
 }
 
-export function renderDigestHtml(model: DigestModel): string {
+export function renderDigestHtml(model: DigestModel, opts: RenderOptions = {}): string {
   const coverage =
     model.sections.coverage.length === 0 &&
     model.suppressed.gateFailed === 0 &&
@@ -91,10 +144,10 @@ ${
 
   return `<h1>${esc(digestSubject(model))}</h1>
 <p>Period ${model.periodStart.toISOString().slice(0, 10)} → ${model.periodEnd.toISOString().slice(0, 10)}. Every fact below is sourced; inferences are labeled.</p>
-${section("1. Priority new opportunities", model.sections.priorityNew)}
-${section("2. Material stage changes", model.sections.stageChanges)}
-${section("3. Missing-fact verification queue", model.sections.missingFacts)}
-${section("4. Monitoring", model.sections.monitoring)}
+${topBlock(model, opts)}${section("1. Priority new opportunities", model.sections.priorityNew, opts)}
+${section("2. Material stage changes", model.sections.stageChanges, opts)}
+${section("3. Missing-fact verification queue", model.sections.missingFacts, opts)}
+${section("4. Monitoring", model.sections.monitoring, opts)}
 <h2>5. Coverage &amp; source health</h2>
 ${coverage}`;
 }

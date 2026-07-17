@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import nodemailer from "nodemailer";
 import type { Db } from "@otn/db";
+import { issueActionTokens } from "./actions.js";
 import type { DigestModel } from "./digest.js";
 import { digestSubject, renderDigestHtml } from "./render.js";
 
@@ -39,6 +40,9 @@ export interface DeliverOptions {
   recipient?: string;
   smtp?: { host: string; port: number };
   from?: string;
+  /** P2.3 — base URL for one-tap action links (default env ACTION_BASE_URL);
+   * unset disables action links entirely. */
+  actionBaseUrl?: string;
 }
 
 export async function deliverDigest(
@@ -115,6 +119,24 @@ export async function deliverDigest(
         await db.execute(sql`
           INSERT INTO delivery_items (delivery_id, opportunity_id, project_event_id, position)
           VALUES (${deliveryId}, ${item.opportunityId}, ${item.eventIds[0] ?? null}, ${position++})`);
+      }
+
+      // P2.3 — one-tap actions for the "winnable now" items: tokens exist
+      // only for opportunities actually rendered in the top block, are
+      // single-use, expire with the digest's shelf life, and are stored
+      // hashed. Re-renders of this delivery reuse the stored content, so
+      // tokens are issued exactly once per (account, week).
+      const actionBase = opts.actionBaseUrl ?? process.env.ACTION_BASE_URL ?? null;
+      if (actionBase && model.easyWins.length > 0) {
+        const links = await issueActionTokens(db, {
+          accountProfileId: model.accountProfileId,
+          deliveryId,
+          opportunityIds: model.easyWins.map((i) => i.opportunityId),
+          baseUrl: actionBase,
+        });
+        const linked = renderDigestHtml(model, { actionLinks: links });
+        await db.execute(sql`
+          UPDATE deliveries SET rendered_content = ${linked} WHERE id = ${deliveryId}`);
       }
     }
   }

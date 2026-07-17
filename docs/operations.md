@@ -218,3 +218,11 @@ MinIO bucket `otn-artifacts` (auto-created on first run). Keys: `raw/<source_key
 - **Source went red** — check latest `source_runs.metrics_json` dead letters; re-run with `pnpm source:run <key>`; if the landing page or schema changed, capture new fixtures, bump `parserVersion`, and update the activation ledger in `docs/source-policy.md`.
 - **Migration** — add schema change to `packages/db/src/schema.ts`, `pnpm --filter @otn/db generate`, review SQL in `packages/db/migrations/`, `pnpm db:migrate`, update `docs/data-dictionary.md`.
 - **Disk pressure (local)** — `docker system prune`; artifact bucket and Postgres volumes (`pgdata`, `miniodata`) are the only durable state.
+
+## One-tap email actions (P2.3)
+
+Digest "Winnable now" items carry pursue / not-relevant links when `ACTION_BASE_URL` is set. Flow (hardened per 2026-07-17 security review): the emailed link is a **GET that only renders a confirmation page** — mail-security gateways prefetch every emailed URL, so GET never consumes the token or mutates anything; the confirm button POSTs, which atomically consumes the single-use token (SHA-256 stored, 14-day expiry) and applies the effect through the audited UI paths (pursuit creation / sticky dismiss + feedback). Per-IP rate limit (30/min) on `/api/action`; responses are `no-store` + `no-referrer`. **Infra requirement:** scrub the `t=` query param from access logs on this path. Tokens are inert after use; add retention cleanup if volume warrants.
+
+## Stage-lag stats & radar (P3)
+
+`computeStageLagStats` runs in the nightly maintenance chain (DELETE+INSERT recompute of `stage_lag_stats` from same-record applied→issued date pairs). Decision memos append "typically issues in ~N weeks" for pre-issuance opportunities when the (county, permit_class) sample has n≥20 — always labeled a historical inference. `/app/radar` lists each account's early-stage pipeline (concept/pre-application/entitlement).

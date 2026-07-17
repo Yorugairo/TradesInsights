@@ -12,7 +12,7 @@ import {
   materializeProjectGeometry,
   resolveUnresolved,
 } from "@otn/resolution";
-import { scoreAll } from "@otn/intelligence";
+import { computeStageLagStats, scoreAll } from "@otn/intelligence";
 import { buildDigest, deliverDigest, runAlerts } from "@otn/delivery";
 import { SOURCE_RUN_DEAD_LETTER, executeSourceRun } from "./jobs.js";
 
@@ -92,6 +92,7 @@ async function runMaintenance(logger: Logger): Promise<void> {
     const campus = await computeCampusVelocity(db, { logger });
     const materialized = await materializeProjectGeometry(db, { logger });
     const geocoded = await geocodeProjects(db, { limit: NIGHTLY_GEOCODE_LIMIT, logger });
+    const stageLag = await computeStageLagStats(db, { logger });
     const scored = await scoreAll(db, { logger });
 
     const monthlyBudgetUsd = process.env.LLM_MONTHLY_BUDGET_USD
@@ -119,6 +120,7 @@ async function runMaintenance(logger: Logger): Promise<void> {
         campus,
         materialized,
         geocoded,
+        stageLag,
         scored: scored.byAccount,
         alerts: { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped },
       },

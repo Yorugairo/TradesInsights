@@ -4,6 +4,7 @@ import { stageOrder } from "@otn/resolution";
 import type { Db } from "@otn/db";
 import { latestRules } from "./accounts.js";
 import { evaluateGate } from "./gate/gate.js";
+import { permitClassOf, stageLagEstimate } from "./stage-lag.js";
 import { latestExtraction, latestVerification } from "./gate/verify.js";
 
 /**
@@ -57,6 +58,10 @@ export interface DecisionMemo {
   procurementState: ProcurementState;
   capacityAssessment: string;
   capacityExplanation: string | null;
+  /** P2.4 — evidence-only outreach prep: bullets the owner copies into their
+   * OWN call/text. Deterministic (roles/dates/valuations from stored rows);
+   * never model prose, never sent anywhere by the system. */
+  talkingPoints: string[];
 
   verifierStatus: "pending" | "passed" | "failed";
   verifierIssues: string[];
@@ -137,6 +142,44 @@ async function loadOpp(db: Db, opportunityId: string): Promise<OppRow | null> {
   return (res.rows[0] as OppRow | undefined) ?? null;
 }
 
+/** P2.4 — deterministic outreach-prep bullets from stored roles/facts. */
+async function talkingPointsFor(
+  db: Db,
+  projectId: string,
+  o: { canonical_name: string; current_stage: string; last_material_at: string | null },
+): Promise<string[]> {
+  const roles = await db.execute(sql`
+    SELECT org.canonical_name AS name, pr.role
+    FROM project_roles pr JOIN organizations org ON org.id = pr.organization_id
+    WHERE pr.project_id = ${projectId} AND pr.confirmed = true
+    ORDER BY CASE pr.role WHEN 'primary_contractor' THEN 0 WHEN 'applicant' THEN 1
+      WHEN 'owner' THEN 2 ELSE 3 END
+    LIMIT 3`);
+  const val = await db.execute(sql`
+    SELECT max((sr.normalized_json->>'valuationUsd')::numeric) AS v,
+      max(sr.normalized_json->>'issueDate') AS issued
+    FROM record_resolutions rr JOIN source_records sr ON sr.id = rr.source_record_id
+    WHERE rr.project_id = ${projectId} AND rr.status = 'active'`);
+  const campus = await db.execute(
+    sql`SELECT campus_block FROM projects WHERE id = ${projectId}`,
+  );
+  const v = (val.rows[0] as { v: string | null; issued: string | null } | undefined) ?? {
+    v: null,
+    issued: null,
+  };
+  const points: string[] = [];
+  for (const r of roles.rows as { name: string; role: string }[]) {
+    points.push(`${r.name} is on record as ${r.role.replaceAll("_", " ")}.`);
+  }
+  points.push(`Project stage: ${o.current_stage.replaceAll("_", " ")}${v.issued ? `, permit issued ${v.issued}` : ""}${o.last_material_at ? `, last movement ${o.last_material_at.slice(0, 10)}` : ""}.`);
+  if (v.v !== null) points.push(`Stated valuation on record: $${Number(v.v).toLocaleString("en-US")}.`);
+  const cb = (campus.rows[0] as { campus_block: string | null } | undefined)?.campus_block;
+  if (cb) {
+    points.push(`Part of an active campus (parcel block ${cb.split(":")[1] ?? cb}) — repeat work at one site.`);
+  }
+  return points;
+}
+
 async function whatChangedFor(db: Db, projectId: string): Promise<string> {
   const res = await db.execute(sql`
     SELECT event_type, resulting_stage, COALESCE(event_date, observed_at) AS at
@@ -192,6 +235,25 @@ export async function buildDecisionMemo(db: Db, opportunityId: string): Promise<
   const procurementState = procurementStateFor(o.current_stage, o.route);
   const capacity = o.rationale_json?.capacity;
   const signals = o.rationale_json?.signals ?? [];
+  const talkingPoints = await talkingPointsFor(db, o.project_id, o);
+
+  // P3.1 — pre-issuance timing gets the historical lag estimate (labeled
+  // inference; only when the sample floor is met).
+  let lagNote = "";
+  if (["permit_applied", "approved", "entitlement", "preapplication"].includes(o.current_stage)) {
+    const cls = await db.execute(sql`
+      SELECT sr.normalized_json->>'applicationType' AS a, sr.normalized_json->>'permitType' AS pt
+      FROM record_resolutions rr JOIN source_records sr ON sr.id = rr.source_record_id
+      WHERE rr.project_id = ${o.project_id} AND rr.status = 'active'
+      ORDER BY sr.last_seen_at DESC LIMIT 1`);
+    const row = cls.rows[0] as { a: string | null; pt: string | null } | undefined;
+    if (row) {
+      const est = await stageLagEstimate(db, o.county, permitClassOf(row.a, row.pt));
+      if (est) {
+        lagNote = ` Historically, ${permitClassOf(row.a, row.pt)} permits in ${o.county} issue ~${Math.round(est.medianDays / 7)} weeks after application (p25–p75 ${Math.round(est.p25Days)}–${Math.round(est.p75Days)} days, n=${est.n}) — an inference from past lags, not a promise.`;
+      }
+    }
+  }
 
   return {
     opportunityId: o.id,
@@ -204,7 +266,7 @@ export async function buildDecisionMemo(db: Db, opportunityId: string): Promise<
     whyItFits: [o.route ? `route: ${o.route}` : null, signals.length ? `signals: ${signals.join(", ")}` : null]
       .filter(Boolean)
       .join(" · ") || "matched account routing rules",
-    timingAssessment: timingAssessment(o.current_stage, o.last_material_at),
+    timingAssessment: timingAssessment(o.current_stage, o.last_material_at) + lagNote,
     recommendedAction: recommendedAction({
       state: o.state,
       missing: missing.length,
@@ -226,6 +288,7 @@ export async function buildDecisionMemo(db: Db, opportunityId: string): Promise<
     procurementState,
     capacityAssessment: capacity?.assessment ?? "unknown",
     capacityExplanation: capacity?.explanation ?? null,
+    talkingPoints,
     verifierStatus,
     verifierIssues,
   };

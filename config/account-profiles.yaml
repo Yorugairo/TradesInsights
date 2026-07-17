@@ -129,6 +129,16 @@ accounts:
     delivery:
       priority_review_min: 80
       weekly_digest_min: 65
+      # PROVISIONAL until the 2026-07 calibration session (P2.1): home point =
+      # Lacey WA; 60 km radius; interior packages priced 0-60d post-issuance;
+      # valuation band mirrors §12.3 package_size_fit.
+      easy_win:
+        home_lon: -122.823
+        home_lat: 47.046
+        radius_km: 60
+        max_age_days: 60
+        min_valuation_usd: 50000
+        max_valuation_usd: 2000000
     rules:
       - rule_type: routing
         version: 1

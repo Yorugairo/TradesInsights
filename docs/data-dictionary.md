@@ -116,3 +116,13 @@ Extends M4.6. Provider-agnostic intake of customer-authorized bid invitations (.
 **alerts** (M4.7 — migration `0004_alerts`) — operational alerts (spend_budget | source_red | source_stale | delivery_unsent) with `severity`, `message`, `details_json`, unique `idempotency_key` (type:subject:period — scheduled re-evaluation never duplicates), `resolved_at` closes without deleting history.
 
 **coverage_entries** — one per source: `freshness_state` (green/amber/red, updated by the health evaluator), `last_success_at`, `record_types`, `status`.
+
+## Product phase P2/P3 (migrations `0017_action_tokens`, `0018_stage_lag_stats`, `0019_action_token_check`)
+
+**action_tokens** (P2.3) — single-use one-tap email actions. `token_hash` (SHA-256 only — the raw token never lands in the DB), `account_profile_id` + `opportunity_id` + `action` (pursue | dismiss; DB CHECK), `delivery_id`, `expires_at`, `used_at` (atomic single-claim UPDATE). Security posture (review 2026-07-17): GET renders a confirmation page WITHOUT consuming (mail-scanner prefetch is harmless); only the confirm POST consumes and applies the effect through the audited UI paths; responses are no-store/no-referrer; per-IP rate limit on the endpoint. Rows are inert after use; retention cleanup is a noted follow-up.
+
+**stage_lag_stats** (P3.1) — historical applied→issued lags per (county, permit_class): `n`, `p25/median/p75_days`, `computed_at`. Recomputed nightly (DELETE+INSERT — a pure function of stored records; samples are records stating BOTH dates on the same row). Surfaced in decision memos only when `n ≥ 20` and always labeled an inference from past lags, never a promise.
+
+**account_profiles.delivery_config_json.easy_win** (P2.1) — per-account "winnable now" cut: `home_lon/lat`, `radius_km`, `max_age_days`, `min/max_valuation_usd`. Solis values are PROVISIONAL until the calibration session; absent home disables the geo check honestly.
+
+**organizations.registry_ref** (P1.4, migration `0016`) — One Trade Network registry join point; set only by authorized import.

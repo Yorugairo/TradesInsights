@@ -269,6 +269,51 @@ test.describe("customer surface", () => {
     await expect(page.getByTestId("detection-lag-table")).toBeVisible();
   });
 
+  test("P1: organizations page shows league table and targets", async ({ page, request }) => {
+    await login(request, "solis_interiors");
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/organizations");
+    await expect(page.getByTestId("league-table")).toBeVisible();
+    await expect(page.getByTestId("targets-table")).toBeVisible();
+    const league = await (await request.get("/api/app/organizations?view=league&min=2")).json();
+    expect(Array.isArray(league.items)).toBe(true);
+    expect(league.items.length).toBeGreaterThan(0);
+  });
+
+  test("P2: action endpoint — GET never mutates; garbage token rejected", async ({ request }) => {
+    const res = await request.get("/api/action?t=garbage", { failOnStatusCode: false });
+    expect(res.status()).toBe(400);
+    expect(await res.text()).toContain("not valid");
+    expect(res.headers()["cache-control"]).toContain("no-store");
+    expect(res.headers()["referrer-policy"]).toBe("no-referrer");
+  });
+
+  test("P3: radar page lists the early-stage pipeline", async ({ page, request }) => {
+    await login(request, "solis_interiors");
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/radar");
+    await expect(page.getByTestId("radar-summary")).toContainText("early-stage");
+    await expect(page.getByTestId("radar-table")).toBeVisible();
+  });
+
+  test("P4: phone viewport — key screens render without page-level overflow", async ({ playwright, browser, request, baseURL }) => {
+    await login(request, "solis_interiors");
+    const ctx = await browser.newContext({
+      baseURL: baseURL!,
+      viewport: { width: 390, height: 844 },
+    });
+    await ctx.addCookies(await request.storageState().then((s) => s.cookies));
+    const page = await ctx.newPage();
+    for (const path of ["/app/opportunities", "/app/pursuits", "/app/map"]) {
+      await page.goto(path);
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, `${path} horizontal overflow`).toBeLessThanOrEqual(2);
+    }
+    await ctx.close();
+  });
+
   test("account isolation: one account cannot read another's opportunity", async ({ request, playwright, baseURL }) => {
     await login(request, "solis_interiors");
     const list = await (await request.get("/api/app/opportunities?limit=1")).json();

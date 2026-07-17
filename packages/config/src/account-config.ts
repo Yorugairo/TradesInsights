@@ -42,6 +42,20 @@ export const AccountProfileSchema = z
       .object({
         priority_review_min: z.number().int().default(80),
         weekly_digest_min: z.number().int().default(65),
+        /** P2.1 — the "easy win" digest cut (all fields provisional until the
+         * account's calibration session; absent home/radius disables the
+         * geo check honestly rather than guessing). */
+        easy_win: z
+          .object({
+            home_lon: z.number().nullable().default(null),
+            home_lat: z.number().nullable().default(null),
+            radius_km: z.number().positive().default(60),
+            max_age_days: z.number().int().positive().default(60),
+            min_valuation_usd: z.number().nullable().default(null),
+            max_valuation_usd: z.number().nullable().default(null),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     rules: z.array(AccountRuleSchema).default([]),

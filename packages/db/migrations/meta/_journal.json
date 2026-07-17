@@ -120,6 +120,27 @@
       "when": 1784326000000,
       "tag": "0016_org_registry_ref",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784327000000,
+      "tag": "0017_action_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784328000000,
+      "tag": "0018_stage_lag_stats",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784329000000,
+      "tag": "0019_action_token_check",
+      "breakpoints": true
     }
   ]
 }

@@ -196,6 +196,25 @@ export const projects = pgTable(
   ],
 );
 
+/** P2.3 — single-use, hashed, expiring one-tap email action tokens. */
+export const actionTokens = pgTable(
+  "action_tokens",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** SHA-256 of the raw token — the raw value never lands in the DB. */
+    tokenHash: text("token_hash").notNull(),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    opportunityId: uuid("opportunity_id").notNull(),
+    deliveryId: uuid("delivery_id"),
+    /** pursue | dismiss (DB CHECK enforced, migration 0019). */
+    action: text("action").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("action_tokens_hash_ux").on(t.tokenHash)],
+);
+
 export const projectExternalIds = pgTable(
   "project_external_ids",
   {

@@ -86,6 +86,16 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           <p>
             <strong>Timing:</strong> {memo.timingAssessment}
           </p>
+          {memo.talkingPoints.length > 0 && (
+            <div data-testid="talking-points">
+              <strong>Outreach prep (evidence-only — for your own call/text):</strong>
+              <ul style={{ marginTop: "0.25rem" }}>
+                {memo.talkingPoints.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
@@ -126,7 +136,7 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
 
       <h2>Confirmed facts vs. inferences</h2>
       {o.extraction ? (
-        <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "1fr 1fr" }}>
+        <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
           <div>
             <h3>Facts (confirmed, evidence-cited)</h3>
             <ul>

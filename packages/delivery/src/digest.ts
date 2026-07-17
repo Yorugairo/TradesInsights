@@ -5,6 +5,7 @@ import {
   evaluateGate,
   latestExtraction,
   latestVerification,
+  relationshipTargets,
   suppressedProjectIds,
   type GateResult,
   type InclusionDecision,
@@ -47,7 +48,26 @@ export interface DigestItem {
   /** #1 — active-campus context: this project is one of `projectCount` on one
    * parcel block (derived campus_block). Null when not in an active campus. */
   campus: { block: string; projectCount: number } | null;
+  /** P2.1 — deterministic "winnable now" cut (stage/age/valuation/GC/radius). */
+  easyWin: boolean;
   eventIds: string[];
+}
+
+/** P2.2 — "GC worth meeting" digest entry (from the P1 target generator). */
+export interface RelationshipPlay {
+  organizationId: string;
+  name: string;
+  relevantProjects: number;
+  counties: string[];
+  statedValuationTotal: number | null;
+}
+
+/** P2.2 — upcoming bid-invitation deadline (the account's own private inbox). */
+export interface DeadlineItem {
+  title: string | null;
+  generalContractor: string | null;
+  bidDueAt: string;
+  scope: string | null;
 }
 
 export interface CoverageCaveat {
@@ -69,6 +89,11 @@ export interface DigestModel {
     monitoring: DigestItem[];
     coverage: CoverageCaveat[];
   };
+  /** P2.2 — the 10-minute top block (caps enforced at assembly): */
+  easyWins: DigestItem[]; // ≤3 — gate-passing auto items meeting the easy-win cut
+  relationshipPlays: RelationshipPlay[]; // ≤2 — active relevant orgs, no relationship yet
+  deadlines: DeadlineItem[]; // upcoming bid-invitation dues (private inbox)
+  radar: DigestItem[]; // ≤2 — gate-passing early-stage (pre-app/entitlement)
   /** Gate-passing items withheld from automation for a human decision. */
   reviewQueue: DigestItem[];
   suppressed: { gateFailed: number; blockedOnVerifier: number; customerSuppressed: number };
@@ -90,13 +115,39 @@ interface CandidateRow {
   text: string;
   max_valuation: number | null;
   campus_block: string | null;
+  last_material_change_at: string | null;
+  has_org: boolean;
+  dist_m: number | null;
 }
 
-async function loadCandidates(db: Db, accountProfileId: string): Promise<CandidateRow[]> {
+/** P2.1 easy-win config (delivery_config_json.easy_win; provisional pre-calibration). */
+interface EasyWinConfig {
+  home_lon: number | null;
+  home_lat: number | null;
+  radius_km: number;
+  max_age_days: number;
+  min_valuation_usd: number | null;
+  max_valuation_usd: number | null;
+}
+
+async function loadCandidates(
+  db: Db,
+  accountProfileId: string,
+  easyWin: EasyWinConfig | null,
+): Promise<CandidateRow[]> {
+  const home =
+    easyWin && easyWin.home_lon !== null && easyWin.home_lat !== null
+      ? sql`ST_DistanceSphere(ST_Centroid(p.geometry),
+          ST_SetSRID(ST_MakePoint(${easyWin.home_lon}, ${easyWin.home_lat}), 4326))`
+      : sql`NULL::float`;
   const res = await db.execute(sql`
     SELECT o.id, o.project_id, p.canonical_name, p.county, p.permitting_jurisdiction,
       p.current_stage, o.current_score, o.route, o.state, o.rationale_json, p.campus_block,
-      COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation
+      o.last_material_change_at,
+      COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation,
+      EXISTS (SELECT 1 FROM project_roles pr WHERE pr.project_id = p.id
+        AND pr.role IN ('applicant', 'owner', 'primary_contractor', 'contractor')) AS has_org,
+      ${home} AS dist_m
     FROM opportunities o JOIN projects p ON p.id = o.project_id
     LEFT JOIN LATERAL (
       SELECT lower(string_agg(concat_ws(' ',
@@ -110,6 +161,49 @@ async function loadCandidates(db: Db, accountProfileId: string): Promise<Candida
     ORDER BY o.current_score DESC NULLS LAST
     LIMIT 500`);
   return res.rows as unknown as CandidateRow[];
+}
+
+/**
+ * P2.1 — "winnable now": right stage recently, a named org to call, package
+ * size inside the band, and (when home is configured) inside the service
+ * radius. Missing geometry or an unconfigured home fails the geo check
+ * honestly — an easy win you can't locate isn't easy.
+ */
+function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
+  if (!cfg) return false;
+  if (!["permit_issued", "approved"].includes(c.current_stage)) return false;
+  const lastAt = c.last_material_change_at ? new Date(c.last_material_change_at).getTime() : null;
+  if (lastAt === null || Date.now() - lastAt > cfg.max_age_days * 86_400_000) return false;
+  if (!c.has_org) return false;
+  const v = c.max_valuation === null ? null : Number(c.max_valuation);
+  if (cfg.min_valuation_usd !== null && (v === null || v < cfg.min_valuation_usd)) return false;
+  if (cfg.max_valuation_usd !== null && v !== null && v > cfg.max_valuation_usd) return false;
+  if (cfg.home_lon !== null && cfg.home_lat !== null) {
+    if (c.dist_m === null || Number(c.dist_m) > cfg.radius_km * 1000) return false;
+  }
+  return true;
+}
+
+/** Early-stage radar (pre-app/entitlement/SEPA-era stages). */
+const RADAR_STAGES = new Set(["concept", "preapplication", "entitlement"]);
+
+/** Upcoming bid-invitation deadlines from the account's own private inbox. */
+async function upcomingDeadlines(db: Db, accountProfileId: string): Promise<DeadlineItem[]> {
+  const res = await db.execute(sql`
+    SELECT bi.bid_due_at, bi.scope_summary, o.canonical_name AS gc, im.subject AS title
+    FROM bid_invitations bi
+    LEFT JOIN organizations o ON o.id = bi.gc_organization_id
+    LEFT JOIN inbound_messages im ON im.id = bi.source_message_id
+    WHERE bi.account_profile_id = ${accountProfileId}
+      AND bi.bid_due_at IS NOT NULL AND bi.bid_due_at >= now()
+    ORDER BY bi.bid_due_at ASC
+    LIMIT 5`);
+  return (res.rows as Record<string, unknown>[]).map((r) => ({
+    title: (r["title"] as string | null) ?? null,
+    generalContractor: (r["gc"] as string | null) ?? null,
+    bidDueAt: r["bid_due_at"] as string,
+    scope: (r["scope_summary"] as string | null) ?? null,
+  }));
 }
 
 /** Opportunity IDs this account has ever been sent (any prior delivery). */
@@ -207,7 +301,13 @@ function nextAction(item: { isNew: boolean; missing: string[]; state: string }):
 async function buildItem(
   db: Db,
   c: CandidateRow,
-  opts: { isNew: boolean; periodStart: Date; periodEnd: Date; gate: GateResult },
+  opts: {
+    isNew: boolean;
+    periodStart: Date;
+    periodEnd: Date;
+    gate: GateResult;
+    easyWinConfig: EasyWinConfig | null;
+  },
 ): Promise<DigestItem> {
   const [events, links, extraction, verification, unitDisagreement, campus] = await Promise.all([
     materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
@@ -267,6 +367,7 @@ async function buildItem(
     sourceLinks: links,
     unitCountDisagreement: unitDisagreement,
     campus,
+    easyWin: isEasyWin(c, opts.easyWinConfig),
     eventIds: events.map((e) => e.id),
   };
 }
@@ -302,12 +403,20 @@ async function coverageCaveats(db: Db): Promise<CoverageCaveat[]> {
 async function accountInfo(
   db: Db,
   accountProfileId: string,
-): Promise<{ key: string; name: string; ruleVersions: Record<string, number> }> {
+): Promise<{
+  key: string;
+  name: string;
+  ruleVersions: Record<string, number>;
+  easyWin: EasyWinConfig | null;
+}> {
   const res = await db.execute(
-    sql`SELECT key, name FROM account_profiles WHERE id = ${accountProfileId}`,
+    sql`SELECT key, name, delivery_config_json FROM account_profiles WHERE id = ${accountProfileId}`,
   );
-  const row = res.rows[0] as { key: string; name: string } | undefined;
+  const row = res.rows[0] as
+    | { key: string; name: string; delivery_config_json: { easy_win?: EasyWinConfig } | null }
+    | undefined;
   if (!row) throw new Error(`account ${accountProfileId} not found`);
+  const easyWin = row.delivery_config_json?.easy_win ?? null;
   const rules = await db.execute(sql`
     SELECT rule_type, max(version) AS version FROM account_rules
     WHERE account_profile_id = ${accountProfileId} GROUP BY rule_type`);
@@ -315,7 +424,7 @@ async function accountInfo(
   for (const r of rules.rows as { rule_type: string; version: number }[]) {
     ruleVersions[r.rule_type] = Number(r.version);
   }
-  return { key: row.key, name: row.name, ruleVersions };
+  return { key: row.key, name: row.name, ruleVersions, easyWin };
 }
 
 export async function buildDigest(
@@ -324,12 +433,15 @@ export async function buildDigest(
   period: { start: Date; end: Date },
 ): Promise<DigestModel> {
   const account = await accountInfo(db, accountProfileId);
-  const [candidates, delivered, coverage, suppressedProjects] = await Promise.all([
-    loadCandidates(db, accountProfileId),
-    previouslyDelivered(db, accountProfileId),
-    coverageCaveats(db),
-    suppressedProjectIds(db, accountProfileId),
-  ]);
+  const [candidates, delivered, coverage, suppressedProjects, deadlines, plays] =
+    await Promise.all([
+      loadCandidates(db, accountProfileId, account.easyWin),
+      previouslyDelivered(db, accountProfileId),
+      coverageCaveats(db),
+      suppressedProjectIds(db, accountProfileId),
+      upcomingDeadlines(db, accountProfileId),
+      relationshipTargets(db, accountProfileId, { minRelevantProjects: 2, limit: 2 }),
+    ]);
 
   const sections: DigestModel["sections"] = {
     priorityNew: [],
@@ -339,6 +451,8 @@ export async function buildDigest(
     coverage,
   };
   const reviewQueue: DigestItem[] = [];
+  const easyWins: DigestItem[] = [];
+  const radar: DigestItem[] = [];
   const suppressed = { gateFailed: 0, blockedOnVerifier: 0, customerSuppressed: 0 };
 
   for (const c of candidates) {
@@ -360,6 +474,7 @@ export async function buildDigest(
       periodStart: period.start,
       periodEnd: period.end,
       gate,
+      easyWinConfig: account.easyWin,
     });
 
     // M4.3/M4.4 — controlled automation: only independently verified,
@@ -369,6 +484,12 @@ export async function buildDigest(
       reviewQueue.push(item);
       continue;
     }
+
+    // P2.2 — the 10-minute top block (auto items only; candidates come
+    // score-ordered so caps keep the best). Items also keep their §18
+    // section below — the audit trail and spec sections are unchanged.
+    if (item.easyWin && easyWins.length < 3) easyWins.push(item);
+    else if (RADAR_STAGES.has(c.current_stage) && radar.length < 2) radar.push(item);
 
     // Exclusive section order (spec §18): priority-new > stage change >
     // missing-fact queue > monitoring.
@@ -390,6 +511,16 @@ export async function buildDigest(
     periodStart: period.start,
     periodEnd: period.end,
     sections,
+    easyWins,
+    relationshipPlays: plays.map((p) => ({
+      organizationId: p.organizationId,
+      name: p.name,
+      relevantProjects: p.relevantProjects,
+      counties: p.counties,
+      statedValuationTotal: p.statedValuationTotal,
+    })),
+    deadlines,
+    radar,
     reviewQueue,
     suppressed,
     ruleVersions: account.ruleVersions,
