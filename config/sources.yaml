@@ -180,6 +180,34 @@ sources:
       Pierce; SEPA Review rows add substitute coverage for the blocked
       pierce_environmental_determinations.
 
+  - key: tacoma_permits_arcgis
+    name: City of Tacoma Permits & Applications (Accela extract, ArcGIS)
+    authority: City of Tacoma
+    priority: P1
+    landing_url: https://tacomaopendata-tacoma.hub.arcgis.com/
+    access_url: https://services3.arcgis.com/SCwJH1pD8WSn5T5y/arcgis/rest/services/accela_permit_data/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+    format: arcgis_json
+    access_class: arcgis
+    cadence: daily
+    county: Pierce
+    permitting_jurisdiction: City of Tacoma
+    enabled: true
+    terms_reviewed_at: "2026-07-17"
+    robots_reviewed_at: "2026-07-17"
+    required_fields: [addressRaw, applicationDate]
+    notes: >-
+      Verified 2026-07-17: Tacoma Open Data (tacomaopendata-tacoma.hub.arcgis.com,
+      org SCwJH1pD8WSn5T5y) publishes the Accela permit extract as a public
+      FeatureServer, refreshed daily (pull_date field). 109,728 rows; ~4,150 in
+      a trailing 120 days across Building, Land Use, Pre-Application, Site,
+      Right-of-Way, Utility. Fields incl. application/issued dates, 52-value
+      Accela workflow status (pattern-bucket stage map), applicant, address,
+      parcel, valuation, housing units, WGS84 point, per-record Accela portal
+      deep link (aca-prod.accela.com — citation URL only, never crawled).
+      Trailing 120-day window on application_date OR issued_date at
+      maxRecordCount 1000. Covers the pilot region's second-largest city —
+      Pierce PALS is unincorporated-county only.
+
   - key: tumwater_development_review
     name: Tumwater Development Review
     authority: City of Tumwater

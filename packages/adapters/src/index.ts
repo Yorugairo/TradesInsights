@@ -17,6 +17,7 @@ import {
 } from "./seattle-socrata.js";
 import { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
+import { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 import { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
 import { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 import { WaSepaAdapter } from "./wa-sepa.js";
@@ -61,8 +62,10 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   thurston_active_notices: () => new ThurstonActiveNoticesAdapter(),
   tumwater_development_arcgis: () => new TumwaterDevelopmentArcgisAdapter(),
   pierce_permits_arcgis: () => new PiercePermitsArcgisAdapter(),
+  tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
 };
 export { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
+export { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 
 export function getAdapter(key: string): SourceAdapter {
   const factory = REGISTRY[key];

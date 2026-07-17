@@ -221,6 +221,32 @@ test.describe("customer surface", () => {
     expect(corr.status()).toBe(201);
   });
 
+  test("Batch3 #2: opportunity list filters, search, and pagination", async ({ page, request }) => {
+    await login(request, "lacey_glass_commercial");
+    // API carries total + honors filters.
+    const all = await (await request.get("/api/app/opportunities?limit=5")).json();
+    expect(typeof all.total).toBe("number");
+    expect(all.total).toBeGreaterThan(all.items.length);
+    const pierce = await (
+      await request.get("/api/app/opportunities?county=Pierce&limit=500")
+    ).json();
+    expect(pierce.items.length).toBeGreaterThan(0);
+    for (const i of pierce.items) expect(i.county).toBe("Pierce");
+    const searched = await (
+      await request.get(`/api/app/opportunities?q=${encodeURIComponent("tenant improvement")}&limit=50`)
+    ).json();
+    for (const i of searched.items) {
+      expect(`${i.projectName} ${i.permittingJurisdiction}`.toLowerCase()).toContain("tenant");
+    }
+
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/opportunities?county=Pierce");
+    await expect(page.getByTestId("opportunity-filters")).toBeVisible();
+    await expect(page.getByTestId("opportunity-count")).toContainText("matching");
+    const rows = page.getByTestId("opportunities-table").locator("tbody tr");
+    expect(await rows.count()).toBeGreaterThan(0);
+  });
+
   test("#3: map page renders account-scoped markers with provenance summary", async ({ page, request }) => {
     await login(request, "lacey_glass_commercial");
     await page.context().addCookies(await request.storageState().then((s) => s.cookies));
@@ -281,5 +307,16 @@ test.describe("admin surface", () => {
     await page.goto("/app/admin/coverage");
     await expect(page.getByTestId("geometry-coverage-table")).toBeVisible();
     await expect(page.getByTestId("geometry-coverage-table")).toContainText("King");
+  });
+
+  test("Batch3 #1: review queue shows triage clusters with bulk controls", async ({ page, request }) => {
+    await login(request, null, "admin");
+    await page.context().addCookies(await request.storageState().then((s) => s.cookies));
+    await page.goto("/app/admin/review");
+    await expect(page.getByTestId("triage-table")).toBeVisible();
+    // The live queue carries real pending clusters; every row exposes a
+    // bulk-reject control (merge only when a candidate exists).
+    const rejects = page.getByTestId("cluster-reject");
+    expect(await rejects.count()).toBeGreaterThan(0);
   });
 });

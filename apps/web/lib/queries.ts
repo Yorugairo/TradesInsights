@@ -79,38 +79,76 @@ export interface OpportunityListItem {
   score: number | null;
   route: string | null;
   state: string;
+  campusBlock: string | null;
   lastMaterialChangeAt: string | null;
+}
+
+/** Batch3 #2 — filterable/sortable/paginated list for 1,000+-item accounts. */
+export interface OpportunityListFilter {
+  /** Band/state; "all" includes archive; omitted = everything except archive. */
+  state?: string;
+  county?: string;
+  stage?: string;
+  /** Case-insensitive match on project name, jurisdiction, or address. */
+  q?: string;
+  campusOnly?: boolean;
+  sort?: "score" | "recent";
+  limit?: number;
+  offset?: number;
 }
 
 export async function listOpportunities(
   db: Db,
   accountProfileId: string,
-  opts: { state?: string; limit?: number } = {},
-): Promise<OpportunityListItem[]> {
+  opts: OpportunityListFilter = {},
+): Promise<{ items: OpportunityListItem[]; total: number }> {
   const limit = Math.min(opts.limit ?? 100, 500);
-  const stateFilter = opts.state
-    ? sql`AND o.state = ${opts.state}`
-    : sql`AND o.state != 'archive'`;
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const stateFilter =
+    opts.state === "all"
+      ? sql``
+      : opts.state
+        ? sql`AND o.state = ${opts.state}`
+        : sql`AND o.state != 'archive'`;
+  const countyFilter = opts.county ? sql`AND p.county = ${opts.county}` : sql``;
+  const stageFilter = opts.stage ? sql`AND p.current_stage = ${opts.stage}` : sql``;
+  const campusFilter = opts.campusOnly ? sql`AND p.campus_block IS NOT NULL` : sql``;
+  const qFilter = opts.q
+    ? sql`AND (p.canonical_name ILIKE ${"%" + opts.q + "%"}
+          OR p.permitting_jurisdiction ILIKE ${"%" + opts.q + "%"}
+          OR p.address_normalized ILIKE ${"%" + opts.q + "%"})`
+    : sql``;
+  const order =
+    opts.sort === "recent"
+      ? sql`o.last_material_change_at DESC NULLS LAST`
+      : sql`o.current_score DESC NULLS LAST`;
   const res = await db.execute(sql`
     SELECT o.id, o.project_id, p.canonical_name, p.county, p.permitting_jurisdiction,
-      p.current_stage, o.current_score, o.route, o.state, o.last_material_change_at
+      p.current_stage, o.current_score, o.route, o.state, p.campus_block,
+      o.last_material_change_at, count(*) OVER () AS total
     FROM opportunities o
     JOIN projects p ON p.id = o.project_id
-    WHERE o.account_profile_id = ${accountProfileId} ${stateFilter}
-    ORDER BY o.current_score DESC NULLS LAST
-    LIMIT ${limit}`);
-  return (res.rows as Record<string, unknown>[]).map((r) => ({
-    id: r["id"] as string,
-    projectId: r["project_id"] as string,
-    projectName: r["canonical_name"] as string,
-    county: r["county"] as string,
-    permittingJurisdiction: r["permitting_jurisdiction"] as string,
-    stage: r["current_stage"] as string,
-    score: r["current_score"] as number | null,
-    route: r["route"] as string | null,
-    state: r["state"] as string,
-    lastMaterialChangeAt: (r["last_material_change_at"] as string | null) ?? null,
-  }));
+    WHERE o.account_profile_id = ${accountProfileId}
+      ${stateFilter} ${countyFilter} ${stageFilter} ${campusFilter} ${qFilter}
+    ORDER BY ${order}
+    LIMIT ${limit} OFFSET ${offset}`);
+  const rows = res.rows as Record<string, unknown>[];
+  return {
+    total: rows.length > 0 ? Number(rows[0]!["total"]) : 0,
+    items: rows.map((r) => ({
+      id: r["id"] as string,
+      projectId: r["project_id"] as string,
+      projectName: r["canonical_name"] as string,
+      county: r["county"] as string,
+      permittingJurisdiction: r["permitting_jurisdiction"] as string,
+      stage: r["current_stage"] as string,
+      score: r["current_score"] as number | null,
+      route: r["route"] as string | null,
+      state: r["state"] as string,
+      campusBlock: (r["campus_block"] as string | null) ?? null,
+      lastMaterialChangeAt: (r["last_material_change_at"] as string | null) ?? null,
+    })),
+  };
 }
 
 export interface EvidenceView {

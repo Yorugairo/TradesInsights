@@ -1,0 +1,27 @@
+{
+  "source": "Accela Permit Data FeatureServer layer 0 (City of Tacoma, Tacoma Open Data)",
+  "capturedAt": "2026-07-17",
+  "capturedBy": "agent session (Batch3 #3 activation)",
+  "files": {
+    "layer-metadata.json": "GET .../FeatureServer/0?f=json — schema, editingInfo (dataLastEdit 2026-07-16), maxRecordCount 1000",
+    "window-page-1.json": "GET .../query where=application_date>=TIMESTAMP '2026-06-15' OR issued_date>=TIMESTAMP '2026-06-15', outSR=4326, orderByFields=objectid ASC, page 1 (exceededTransferLimit=true — window spans >1 page by design)"
+  },
+  "manualComparison": {
+    "method": "fixture rows compared field-by-field against the live layer's own query responses and schema; Accela portal deep links (link field) recorded as canonical citations after &amp; unescape (aca-prod.accela.com not crawled — citation only)",
+    "counts": {
+      "fixtureFeatures": 1000,
+      "topStatuses": { "Permit Issued": 589, "Finaled": 109, "Plan Review in Process": 93, "Cancelled": 39, "Ready to Issue": 27 },
+      "topTypes": { "Building": 528, "Right-of-Way": 140, "Utility Connection": 102, "ePermit": 93, "Site": 70 },
+      "withGeometry": 1000,
+      "zeroValuationTreatedAsNull": 278
+    },
+    "spotChecks": [
+      {
+        "permitNumber": "PLMBC26-0138",
+        "expected": "Building/Commercial/Plumbing — Permit Issued — VICTORY OUTREACH TACOMA CHURCH — 711 S 25TH ST — parcel 2023140100 — valuation 10000 — applied 2026-06-19, issued 2026-07-15",
+        "result": "matches live layer response verbatim"
+      }
+    ]
+  },
+  "notes": "Total layer 109,728 rows. 52-value Accela workflow status vocabulary enumerated at capture (drives the pattern-bucket stage map in the adapter). Fixture facts prove parsing only — live status must be rechecked."
+}

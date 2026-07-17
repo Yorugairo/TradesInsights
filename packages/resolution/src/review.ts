@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   projectEvents,
   projectRoles,
@@ -185,4 +185,128 @@ export async function undoResolution(
     .update(recordResolutions)
     .set({ status: "undone", undoneAt: new Date(), undoneReason: opts.reason })
     .where(eq(recordResolutions.id, active.id));
+}
+
+/**
+ * Triage (Batch3 #1): the queue arrives in pattern-shaped waves — e.g. a new
+ * county source lands and 1,400+ fuzzy-without-support reviews point at a few
+ * hundred candidate projects. Clustering by (rule, primary reason, candidate
+ * project) turns per-row review into per-pattern review: a human looks at the
+ * candidate once and decides all of its pending records together.
+ */
+export interface ReviewCluster {
+  matchedRule: string;
+  reasonKey: string;
+  candidateProjectId: string | null;
+  candidateName: string | null;
+  candidateCounty: string | null;
+  count: number;
+  minScore: number;
+  maxScore: number;
+  /** Up to 3 record titles so the pattern is recognizable at a glance. */
+  sampleTitles: string[];
+}
+
+export async function triageReviewQueue(db: Db): Promise<ReviewCluster[]> {
+  const res = await db.execute(sql`
+    SELECT rv.matched_rule,
+      COALESCE(rv.reasons_json->>0, '') AS reason_key,
+      rv.candidate_project_id,
+      p.canonical_name AS candidate_name,
+      p.county AS candidate_county,
+      count(*) AS n,
+      min(rv.score) AS min_score,
+      max(rv.score) AS max_score,
+      (array_agg(sr.normalized_json->>'title' ORDER BY rv.created_at))[1:3] AS samples
+    FROM resolution_reviews rv
+    JOIN source_records sr ON sr.id = rv.source_record_id
+    LEFT JOIN projects p ON p.id = rv.candidate_project_id
+    WHERE rv.status = 'pending'
+    GROUP BY 1, 2, 3, 4, 5
+    ORDER BY n DESC, 1, 2`);
+  return (res.rows as Record<string, unknown>[]).map((r) => ({
+    matchedRule: r["matched_rule"] as string,
+    reasonKey: r["reason_key"] as string,
+    candidateProjectId: (r["candidate_project_id"] as string | null) ?? null,
+    candidateName: (r["candidate_name"] as string | null) ?? null,
+    candidateCounty: (r["candidate_county"] as string | null) ?? null,
+    count: Number(r["n"]),
+    minScore: Number(r["min_score"]),
+    maxScore: Number(r["max_score"]),
+    sampleTitles: ((r["samples"] as (string | null)[]) ?? []).filter((s): s is string =>
+      Boolean(s),
+    ),
+  }));
+}
+
+export interface BulkDecisionSummary {
+  matched: number;
+  decided: number;
+  merged: number;
+  created: number;
+  reviewAgain: number;
+  skipped: number;
+  errors: { reviewId: string; error: string }[];
+}
+
+/**
+ * Decide every pending review in one triage cluster. Each row goes through
+ * decideReview — identical per-row provenance (decidedBy/note/status audit,
+ * reject-then-re-resolve semantics) as a one-at-a-time decision; bulk is a
+ * loop, not a shortcut. Errors are collected per row and never abort the
+ * batch (the queue must drain even if one record is malformed).
+ */
+export async function decideReviewCluster(
+  db: Db,
+  cluster: {
+    matchedRule: string;
+    reasonKey: string;
+    candidateProjectId: string | null;
+    decision: "merge" | "reject";
+    decidedBy: string;
+    note?: string;
+    /** Safety cap per invocation; rerun to continue. */
+    limit?: number;
+  },
+): Promise<BulkDecisionSummary> {
+  const limit = cluster.limit ?? 2000;
+  const candidateFilter =
+    cluster.candidateProjectId === null
+      ? sql`rv.candidate_project_id IS NULL`
+      : sql`rv.candidate_project_id = ${cluster.candidateProjectId}`;
+  const res = await db.execute(sql`
+    SELECT rv.id FROM resolution_reviews rv
+    WHERE rv.status = 'pending'
+      AND rv.matched_rule = ${cluster.matchedRule}
+      AND COALESCE(rv.reasons_json->>0, '') = ${cluster.reasonKey}
+      AND ${candidateFilter}
+    ORDER BY rv.created_at
+    LIMIT ${limit}`);
+  const ids = (res.rows as { id: string }[]).map((r) => r.id);
+
+  const summary: BulkDecisionSummary = {
+    matched: ids.length,
+    decided: 0,
+    merged: 0,
+    created: 0,
+    reviewAgain: 0,
+    skipped: 0,
+    errors: [],
+  };
+  for (const id of ids) {
+    try {
+      const outcome = await decideReview(db, id, cluster.decision, {
+        decidedBy: cluster.decidedBy,
+        ...(cluster.note ? { note: cluster.note } : {}),
+      });
+      summary.decided++;
+      if (outcome.outcome === "merged") summary.merged++;
+      else if (outcome.outcome === "created") summary.created++;
+      else if (outcome.outcome === "review") summary.reviewAgain++;
+      else summary.skipped++;
+    } catch (err) {
+      summary.errors.push({ reviewId: id, error: String(err) });
+    }
+  }
+  return summary;
 }

@@ -13,6 +13,7 @@
   "dependencies": {
     "@otn/db": "workspace:*",
     "@otn/delivery": "workspace:*",
+    "@otn/domain": "workspace:*",
     "@otn/intelligence": "workspace:*",
     "@otn/resolution": "workspace:*",
     "dotenv": "^16.6.1",

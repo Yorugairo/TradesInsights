@@ -89,9 +89,13 @@ Review workflow (M2.5):
 
 ```bash
 pnpm review list                                        # pending ambiguous matches
+pnpm review triage                                      # clusters: (rule, reason, candidate) with counts + samples
+pnpm review bulk merge|reject --rule <rule> --reason <key> [--candidate <project-id>|none] [--by][--note][--limit]
 pnpm review decide <review-id> merge|reject [--by <who>] [--note <text>]
 pnpm review undo <source-record-id> --reason <text>     # split: undo a merge, keep the record + history
 ```
+
+**Triage (Batch3 #1):** the queue arrives in pattern waves (a new source lands → hundreds of same-shaped reviews). `triage` groups pending reviews by (rule, primary reason, candidate project); `bulk` decides a whole cluster through the same per-row `decideReview` path — identical provenance (decided_by/note/status) as deciding rows one at a time, errors collected per row, rerun-safe. Bulk *reject* is the safe mass action (each record re-resolves with the candidate excluded); bulk *merge* joins every record to the candidate — use only when the samples clearly belong. Also on `/app/admin/review` (clusters table + bulk buttons).
 
 Merge decisions create a `record_resolutions` row with `decision=review_approved`; reject re-resolves the record with the rejected candidate excluded; undo flips the resolution to `undone`, deletes only rows *derived from that record* (events, roles), and never touches the source record.
 
