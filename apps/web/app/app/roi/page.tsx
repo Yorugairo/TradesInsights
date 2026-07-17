@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { roiScorecard } from "@otn/delivery";
+import { detectionLagBySource, evidenceLeadTime, roiScorecard } from "@otn/delivery";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
 import { accountByKey } from "../../../lib/queries.js";
@@ -19,6 +19,11 @@ export default async function RoiPage() {
   const end = new Date();
   const start = new Date(end.getTime() - 90 * 86_400_000);
   const s = await roiScorecard(db(), account.id, { start, end });
+  const [lead, lag] = await Promise.all([
+    evidenceLeadTime(db(), account.id),
+    detectionLagBySource(db()),
+  ]);
+  const d = (v: number | null): string => (v === null ? "—" : `${v} d`);
 
   const rows: [string, string][] = [
     ["Opportunities delivered", String(s.opportunitiesDelivered)],
@@ -53,6 +58,71 @@ export default async function RoiPage() {
             <tr key={k}>
               <td style={cell}>{k}</td>
               <td style={{ ...cell, fontWeight: 600 }}>{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Lead time (backtest over stored events)</h2>
+      <p style={{ color: "#666" }}>
+        For your opportunities whose project reached a dated permit-issued milestone: how many
+        days earlier the evidence graph first knew about the project (SEPA, entitlement,
+        application…). Computed from stated event dates — what the sources could have told you,
+        not when we happened to fetch them.
+      </p>
+      <table style={table} data-testid="leadtime-table">
+        <tbody>
+          <tr>
+            <td style={cell}>Opportunities measured</td>
+            <td style={{ ...cell, fontWeight: 600 }}>{lead.measured}</td>
+          </tr>
+          <tr>
+            <td style={cell}>Median advance notice</td>
+            <td style={{ ...cell, fontWeight: 600 }}>{d(lead.medianDays)}</td>
+          </tr>
+          <tr>
+            <td style={cell}>P25 / P75</td>
+            <td style={{ ...cell, fontWeight: 600 }}>
+              {d(lead.p25Days)} / {d(lead.p75Days)}
+            </td>
+          </tr>
+          <tr>
+            <td style={cell}>≥30 / ≥60 / ≥90 days of notice</td>
+            <td style={{ ...cell, fontWeight: 600 }}>
+              {pct(lead.shareGte30d)} / {pct(lead.shareGte60d)} / {pct(lead.shareGte90d)}
+            </td>
+          </tr>
+          <tr>
+            <td style={cell}>No early warning (first sighting was the permit)</td>
+            <td style={{ ...cell, fontWeight: 600 }}>{lead.noEarlyWarning}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Source detection lag</h2>
+      <p style={{ color: "#666" }}>
+        Days between a record&apos;s stated event date and when OTN first ingested it. The
+        all-time median includes historical backfill (ingested long after the fact by design);
+        the trailing-30-day column is live freshness.
+      </p>
+      <table style={table} data-testid="detection-lag-table">
+        <thead>
+          <tr>
+            <th style={cell}>Source</th>
+            <th style={cell}>Events</th>
+            <th style={cell}>Median lag (all time, incl. backfill)</th>
+            <th style={cell}>Median lag (last 30d)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lag.map((row) => (
+            <tr key={row.sourceKey}>
+              <td style={cell}>{row.sourceKey}</td>
+              <td style={cell}>{row.events}</td>
+              <td style={cell}>{d(row.medianDaysAllTime)}</td>
+              <td style={cell}>
+                {row.recentEvents > 0 ? d(row.medianDaysRecent) : "— (no recent records)"}
+              </td>
             </tr>
           ))}
         </tbody>

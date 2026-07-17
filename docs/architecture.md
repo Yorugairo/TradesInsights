@@ -34,7 +34,7 @@ pnpm workspace; every package exports TypeScript source directly (`main: src/ind
 | `packages/documents` | PDF/Word/Excel/HTML extraction | M1: HTML (cheerio), PDF positioned text (pdfjs-dist, rotation-aware), XLSX (exceljs, normalized cells); Word deferred until a live source needs it (King reports turned out to be Excel-only) |
 | `packages/resolution` | Address/org/project matching | M2: resolver passes 1–5 (official ID → explicit ref → parcel → address+name → proximity+org), review/undo workflow, development grouping, cluster velocity, campus velocity (#3 — parcel-block clustering of non-development-grouped projects; #1/#5 — per-county calibrated block prefixes and a derived `projects.campus_block` membership column stamped/cleared each run, read by scoring/UI/digest) |
 | `packages/intelligence` | Routing, scoring, model extraction, verification | M3: account rules (versioned), §12 deterministic router/scorer, §13 model extraction (Anthropic SDK key-activated + mock, per-job/monthly budgets, `model_runs` ledger); §15 independent verifier + publication gate (deterministic checks + stored verdicts; `blocked_on_verifier` without keys) |
-| `packages/delivery` | Digest/email rendering | M3.6: §18 weekly digest (gate-passing items only, suppression disclosed), deterministic HTML render, idempotent delivery + SMTP send |
+| `packages/delivery` | Digest/email rendering | M3.6: §18 weekly digest (gate-passing items only, suppression disclosed), deterministic HTML render, idempotent delivery + SMTP send; #2 lead-time backtest (`leadtime.ts`: per-account evidence lead time to the permit-issued milestone + per-source detection lag, all from stored events) |
 
 ## Key mechanisms (M0)
 
