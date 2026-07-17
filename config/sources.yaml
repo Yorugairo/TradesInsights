@@ -216,6 +216,31 @@ sources:
       maxRecordCount 1000. Covers the pilot region's second-largest city —
       Pierce PALS is unincorporated-county only.
 
+  - key: tacoma_solicitations
+    name: City of Tacoma Open Solicitations (RFB/RFP tables)
+    authority: City of Tacoma
+    priority: P1
+    landing_url: https://tacoma.gov/government/departments/finance/procurement-and-payables-division/purchasing/contracting-opportunities/
+    access_url: https://tacoma.gov/government/departments/finance/procurement-and-payables-division/purchasing/contracting-opportunities/public-works-and-improvements-solicitations/
+    format: html
+    access_class: html
+    cadence: daily
+    county: Pierce
+    permitting_jurisdiction: City of Tacoma
+    enabled: true
+    terms_reviewed_at: "2026-07-17"
+    robots_reviewed_at: "2026-07-17"
+    notes: >-
+      Verified 2026-07-17: tacoma.gov robots.txt allows all; the procurement
+      pages publish open solicitations as static HTML tables (spec number,
+      RFB/RFP type, due date/time, title + document links, date issued) across
+      three category pages (public works, services, supplies). A published
+      public solicitation is the spec's "explicit solicitation" class — the
+      only PUBLIC signal permitted to set bidding_confirmed; controlled
+      automation still holds every bidding_confirmed item for human review.
+      Snapshot fetch daily; addenda arrive as row-content changes →
+      applyRecordUpdates.
+
   - key: tumwater_development_review
     name: Tumwater Development Review
     authority: City of Tumwater

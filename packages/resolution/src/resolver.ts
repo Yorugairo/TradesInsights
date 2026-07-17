@@ -65,6 +65,8 @@ export function eventTypeFor(record: NormalizedSourceRecord): string {
       return record.issueDate ? "permit_issued" : "permit_applied";
     case "inspection":
       return "inspection_activity";
+    case "solicitation":
+      return "solicitation_published";
     default:
       return "project_first_seen";
   }

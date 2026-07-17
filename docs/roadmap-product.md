@@ -6,6 +6,8 @@
 > enrichment is **deferred** — the customer's One Trade Network registry database will
 > supply contractor identity (see P1.4 join point).
 >
+> **STATUS 2026-07-17: P1–P5 executed** (see STATUS.md ledger). Remaining: Sunday calibration replaces provisional P2.1 values; OTN-registry import fills `registry_ref` (P1.4).
+>
 > Companion docs: `docs/BUILD_SPEC.md` (invariants still govern), `docs/STATUS.md`
 > (ledger), `docs/roadmap-strengthening.md` (completed hardening track).
 

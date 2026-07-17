@@ -239,3 +239,15 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Fixtures: layer-metadata.json + window-page-1.json (1,000 features); manual comparison in fixtures/tacoma_permits_arcgis/metadata.json (counts + verbatim spot check PLMBC26-0138). 3 parser tests.
 - Shadow run 2026-07-17: 4,206 records / 5 pages, 0 rejected, 0 errors; idempotent rerun: 5 pages unchanged-hash, 0 re-parsed; backfill 2026-01-01→03-18: +1,617 new, 379 overlap duplicates, 0 errors. Health green.
 - Enabled: yes — 2026-07-17.
+
+### tacoma_solicitations
+- Checklist run: 2026-07-17 (agent session, P5 — first public procurement source; the roadmap's "only public path to bidding_confirmed").
+- Verified: tacoma.gov robots.txt allows all; the city's procurement pages publish open solicitations as static HTML tables across three category pages (public works / services / supplies): spec number, RFB/RFP type, due date/time, title + document links, date issued. Documented static-HTML access class.
+- Policy note: a published public solicitation is the spec §9 "explicit solicitation" evidence class, so these records carry `normalizedStage: bidding_confirmed` — the only public source permitted to do so ("a permit is not a bid" holds everywhere else). Controlled automation (M4.3/M4.4) independently classifies every bidding_confirmed item as an externally-actionable bid state → ALWAYS human review; nothing auto-publishes.
+- Adapter: snapshot fetch of the three category pages daily (stable idempotency keys → unchanged-hash dedupe); rows parsed by spec-number pattern; a zero-row parse warns and yields nothing (layout change → red via the zero-usable-records health rule, never fabricated rows). Addenda arrive as row-content changes → fingerprint diff → applyRecordUpdates.
+- Fixtures: 3 live pages + metadata.json (2 verbatim spot checks incl. PW26-0068F "2026 Sidewalk Replacement, North End"). 3 parser tests.
+- Shadow run 2026-07-17: 3 pages → 17 solicitations, 0 rejected/errors; idempotent rerun fully unchanged-hash; resolution created 17 projects, 0 errors. Health green.
+- Enabled: yes — 2026-07-17.
+
+### customer_bid_inbox_solis — ACTIVATED
+- 2026-07-17: written customer authorization received (session confirmation from the owner; calibration session scheduled). `enabled: true`, `account_profile_id` bound to solis_interiors at seed. For a private customer source the terms review IS the authorization; robots N/A (local exports only). All prior scaffold constraints hold: never scraped, never credentialed, access-audited (§20), records excluded from the shared graph (private-class guard).

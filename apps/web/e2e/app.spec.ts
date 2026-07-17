@@ -296,7 +296,7 @@ test.describe("customer surface", () => {
     await expect(page.getByTestId("radar-table")).toBeVisible();
   });
 
-  test("P4: phone viewport — key screens render without page-level overflow", async ({ playwright, browser, request, baseURL }) => {
+  test("P4: phone viewport — key screens render without page-level overflow", async ({ browser, request, baseURL }) => {
     await login(request, "solis_interiors");
     const ctx = await browser.newContext({
       baseURL: baseURL!,

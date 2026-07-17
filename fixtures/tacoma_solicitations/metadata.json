@@ -1,0 +1,26 @@
+{
+  "source": "City of Tacoma procurement — contracting opportunities category pages",
+  "capturedAt": "2026-07-17",
+  "capturedBy": "agent session (P5 activation)",
+  "files": {
+    "public-works-and-improvements-solicitations.html": "live page; 1 table, spec numbers PF26-0013N, PW26-0140F, PW26-0068F, PW26-0104F, PT26-0001F visible at capture",
+    "services-solicitations.html": "live page; 1 table",
+    "supplies-solicitations.html": "live page; 1 table"
+  },
+  "manualComparison": {
+    "method": "parsed rows compared verbatim against the rendered tables at capture",
+    "spotChecks": [
+      {
+        "spec": "PW26-0068F",
+        "expected": "RFB — 2026 Sidewalk Replacement, North End — due 07/21/2026 11 AM — issued 07/02/2026",
+        "result": "matches"
+      },
+      {
+        "spec": "PW26-0140F",
+        "expected": "RFB — FCC Tower Improvements (Re-Bid) — due 07/28/2026 — issued 07/07/2026",
+        "result": "matches"
+      }
+    ]
+  },
+  "notes": "Snapshot pages — rows leave the table when awarded/closed; the parser warns (never fabricates) on zero rows so a redesign turns the source red via the zero-usable-records health rule. Fixture facts prove parsing only — live status must be rechecked."
+}
