@@ -50,11 +50,39 @@ export function bidTrackFor(cls: {
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-/** Residential window: opens 4 wks after issuance, typically closes ~8; we keep
- * "open" through wk 10 because GCs lock crews 3–4 wks before hanging (~wk 12–14). */
-const RES_OPEN_WK = 4;
-const RES_TYPICAL_CLOSE_WK = 8;
-const RES_LATE_WK = 10;
+
+export type InteriorTrade = "drywall" | "paint";
+
+/**
+ * Residential bid windows per trade, in weeks after permit issuance.
+ * - drywall: opens ~4 (framing/dried-in), typically closes ~8; "open" is kept
+ *   through wk 10 because GCs lock crews 3–4 wks before hanging (~wk 12–14).
+ * - paint (a FINISH trade): GCs take bids during framing/drywall, ~6–12; open
+ *   kept through wk 14 (application starts ~wk 12–16+ once mud is cured).
+ */
+const RES_WINDOWS: Record<InteriorTrade, { open: number; close: number; late: number }> = {
+  drywall: { open: 4, close: 8, late: 10 },
+  paint: { open: 6, close: 12, late: 14 },
+};
+
+/** Residential paint execution runs ~12–16 wks post-issuance; midpoint used
+ * for the PNW exterior-season check. */
+const RES_PAINT_EXEC_MID_WK = 14;
+
+/**
+ * PNW exterior constraint: exterior paint needs >50°F and dry surfaces, so an
+ * exterior phase landing in Nov–Apr likely stalls (tent-and-heat or wait for
+ * spring; interior-only in the meantime). Returns a caveat when the estimated
+ * residential paint-execution midpoint falls in that season. Inference only.
+ */
+function pnwExteriorSeasonCaveat(issuedAt: Date): string | null {
+  const execMid = new Date(issuedAt.getTime() + RES_PAINT_EXEC_MID_WK * WEEK_MS);
+  const month = execMid.getUTCMonth(); // 0=Jan … 11=Dec
+  const wetSeason = month >= 10 || month <= 3; // Nov(10)–Apr(3)
+  return wetSeason
+    ? " Heads-up: the paint phase likely lands in the Nov–Apr wet season — exterior coats typically stall until warm, dry weather (interior work continues)."
+    : null;
+}
 
 /** Pre-issuance stages where a commercial GC is running the CD-phase buyout. */
 const COMMERCIAL_BUYOUT_STAGES = new Set([
@@ -65,7 +93,8 @@ const COMMERCIAL_BUYOUT_STAGES = new Set([
   "permit_applied",
 ]);
 
-export function drywallBidWindow(input: {
+export function tradeBidWindow(input: {
+  trade: InteriorTrade;
   stage: string;
   track: BidTrack;
   /** Latest permit issue date on record, when stated (null otherwise). */
@@ -73,7 +102,9 @@ export function drywallBidWindow(input: {
   now?: Date;
 }): BidWindow {
   const now = input.now ?? new Date();
-  const { stage, track, issuedAt } = input;
+  const { trade, stage, track, issuedAt } = input;
+  const win = RES_WINDOWS[trade];
+  const range = `${win.open}–${win.close}`;
 
   // Confirmed facts beat the timing model in both tracks.
   if (stage === "bidding_confirmed") {
@@ -94,11 +125,12 @@ export function drywallBidWindow(input: {
   }
 
   if (track === "commercial") {
+    // Both trades ride the same GMP buyout: bid off the CDs, pre-permit.
     if (COMMERCIAL_BUYOUT_STAGES.has(stage)) {
       return {
         status: "open",
         note:
-          "Commercial drywall is typically bought out during plan review, 2–6 months " +
+          `Commercial ${trade} is typically bought out during plan review, 2–6 months ` +
           "before the permit issues — biddable now while this sits in review.",
         opensAt: null,
         closesAt: null,
@@ -107,7 +139,7 @@ export function drywallBidWindow(input: {
     if (stage === "concept" || stage === "unknown") {
       return {
         status: "watch",
-        note: "Early stage — commercial drywall buyout typically starts once construction documents reach plan review.",
+        note: `Early stage — commercial ${trade} buyout typically starts once construction documents reach plan review.`,
         opensAt: null,
         closesAt: null,
       };
@@ -116,8 +148,11 @@ export function drywallBidWindow(input: {
     return {
       status: "likely_closed",
       note:
-        "Commercial drywall is typically bought out before the permit issues — likely already " +
-        "let. Addendum pricing is possible if plan-check revisions change the scope.",
+        `Commercial ${trade} is typically bought out before the permit issues — likely already ` +
+        "let. Addendum pricing is possible if plan-check revisions change the scope." +
+        (trade === "paint"
+          ? " Paint mobilizes very late (4–12+ months after permit), so a late-package opening is worth watching."
+          : ""),
       opensAt: null,
       closesAt: null,
     };
@@ -128,34 +163,40 @@ export function drywallBidWindow(input: {
     if (issuedAt === null) {
       return {
         status: "watch",
-        note: "Issue date not stated — residential drywall bids typically run 4–8 weeks after permit issuance.",
+        note: `Issue date not stated — residential ${trade} bids typically run ${range} weeks after permit issuance.`,
         opensAt: null,
         closesAt: null,
       };
     }
     const weeks = Math.floor((now.getTime() - issuedAt.getTime()) / WEEK_MS);
-    const opensAt = new Date(issuedAt.getTime() + RES_OPEN_WK * WEEK_MS);
-    const closesAt = new Date(issuedAt.getTime() + RES_TYPICAL_CLOSE_WK * WEEK_MS);
-    if (weeks < RES_OPEN_WK) {
-      const inWeeks = Math.max(1, RES_OPEN_WK - weeks);
+    const opensAt = new Date(issuedAt.getTime() + win.open * WEEK_MS);
+    const closesAt = new Date(issuedAt.getTime() + win.close * WEEK_MS);
+    const seasonCaveat = trade === "paint" ? (pnwExteriorSeasonCaveat(issuedAt) ?? "") : "";
+    if (weeks < win.open) {
+      const inWeeks = Math.max(1, win.open - weeks);
+      const phase = trade === "drywall" ? "Foundation/framing phase" : "Early build phase";
       return {
         status: "opens_soon",
-        note: `Foundation/framing phase — residential drywall bids typically open ~${inWeeks} week${inWeeks === 1 ? "" : "s"} from now (4–8 weeks after issuance).`,
+        note: `${phase} — residential ${trade} bids typically open ~${inWeeks} week${inWeeks === 1 ? "" : "s"} from now (${range} weeks after issuance).${seasonCaveat}`,
         opensAt,
         closesAt,
       };
     }
-    if (weeks <= RES_LATE_WK) {
+    if (weeks <= win.late) {
+      const context =
+        trade === "drywall"
+          ? "homes are usually framed and dried-in by now"
+          : "GCs take paint bids during the framing/drywall phase; painters walk the site before pricing";
       return {
         status: "open",
-        note: `Typical bid window is open — homes are usually framed and dried-in by now (permit issued ~${weeks} weeks ago; GCs take drywall bids on site 4–8 weeks after issuance).`,
+        note: `Typical bid window is open — ${context} (permit issued ~${weeks} weeks ago; ${range} weeks after issuance is the usual window).${seasonCaveat}`,
         opensAt,
         closesAt,
       };
     }
     return {
       status: "likely_closed",
-      note: `Permit issued ~${weeks} weeks ago — the typical 4–8 week drywall bid window has likely passed.`,
+      note: `Permit issued ~${weeks} weeks ago — the typical ${range} week ${trade} bid window has likely passed.`,
       opensAt,
       closesAt,
     };
@@ -163,7 +204,10 @@ export function drywallBidWindow(input: {
   if (stage === "near_final" || stage === "complete") {
     return {
       status: "likely_closed",
-      note: "Late-stage construction — drywall was typically let long ago.",
+      note:
+        trade === "paint" && stage === "near_final"
+          ? "Late-stage construction — paint is the last finish trade, but the bid was typically let weeks ago."
+          : `Late-stage construction — ${trade} was typically let long ago.`,
       opensAt: null,
       closesAt: null,
     };
@@ -171,8 +215,31 @@ export function drywallBidWindow(input: {
   // Pre-issuance residential stages (concept … permit_applied, unknown).
   return {
     status: "watch",
-    note: "Residential drywall bids typically start 4–8 weeks AFTER permit issuance — not biddable yet; watch for issuance.",
+    note: `Residential ${trade} bids typically start ${range} weeks AFTER permit issuance — not biddable yet; watch for issuance.`,
     opensAt: null,
     closesAt: null,
   };
+}
+
+/** Both Solis trades at once, drywall first (structural before finish). */
+export function tradeBidWindows(input: {
+  stage: string;
+  track: BidTrack;
+  issuedAt: Date | null;
+  now?: Date;
+}): ({ trade: InteriorTrade } & BidWindow)[] {
+  return (["drywall", "paint"] as const).map((trade) => ({
+    trade,
+    ...tradeBidWindow({ ...input, trade }),
+  }));
+}
+
+/** Back-compat name used by earlier tests/callers — the drywall window. */
+export function drywallBidWindow(input: {
+  stage: string;
+  track: BidTrack;
+  issuedAt: Date | null;
+  now?: Date;
+}): BidWindow {
+  return tradeBidWindow({ ...input, trade: "drywall" });
 }

@@ -4,15 +4,16 @@ import {
   bidTrackFor,
   classify,
   decideInclusion,
-  drywallBidWindow,
   evaluateGate,
   latestExtraction,
   latestVerification,
   relationshipTargets,
   suppressedProjectIds,
+  tradeBidWindows,
   type BidWindowStatus,
   type GateResult,
   type InclusionDecision,
+  type InteriorTrade,
   type ProjectFeatures,
 } from "@otn/intelligence";
 
@@ -45,9 +46,10 @@ export interface DigestItem {
   confirmedFacts: { path: string; value: unknown }[];
   inferences: string[];
   missingCriticalFacts: string[];
-  /** Drywall bid-window inference (docs/domain-bid-timing.md) — only attached
-   * on interior-trades routes; display-only, never sets bidding_confirmed. */
-  bidWindow: { status: BidWindowStatus; note: string } | null;
+  /** Per-trade bid-window inferences (docs/domain-bid-timing.md; drywall then
+   * paint) — only attached on interior-trades routes; display-only, never
+   * sets bidding_confirmed. Empty for other routes. */
+  bidWindows: { trade: InteriorTrade; status: BidWindowStatus; note: string }[];
   nextAction: string;
   sourceLinks: { url: string; label: string }[];
   /** M3.8 — when a project's sources report different unit counts, every
@@ -403,10 +405,10 @@ async function buildItem(
   const signals = c.rationale_json?.signals ?? [];
   const whyItFits = humanWhyItFits(c.route, signals);
 
-  // Drywall bid-window inference — interior-trades routes only (the timing
-  // model is drywall-specific; glass sequencing differs). classify() runs on
-  // the stored record text with honest nulls for unavailable aggregates.
-  let bidWindow: DigestItem["bidWindow"] = null;
+  // Per-trade bid-window inferences (drywall + paint) — interior-trades
+  // routes only (glass sequencing differs). classify() runs on the stored
+  // record text with honest nulls for unavailable aggregates.
+  let bidWindows: DigestItem["bidWindows"] = [];
   if (c.route === "interior_trades" || c.route === "gc_relationship_radar") {
     const cls = classify({
       projectId: c.project_id,
@@ -423,12 +425,11 @@ async function buildItem(
       aGradeEvidence: 0,
       lastMaterialChangeAt: null,
     } satisfies ProjectFeatures);
-    const w = drywallBidWindow({
+    bidWindows = tradeBidWindows({
       stage: c.current_stage,
       track: bidTrackFor(cls),
       issuedAt: c.latest_issue_date ? new Date(c.latest_issue_date) : null,
-    });
-    bidWindow = { status: w.status, note: w.note };
+    }).map((w) => ({ trade: w.trade, status: w.status, note: w.note }));
   }
 
   return {
@@ -447,14 +448,17 @@ async function buildItem(
     confirmedFacts: facts.map((f) => ({ path: f.path, value: f.value })),
     inferences: inferences.map((i) => `[inference] ${i.type} = ${JSON.stringify(i.value)} (${i.reason})`),
     missingCriticalFacts: missing,
-    bidWindow,
+    bidWindows,
     nextAction: nextAction({ isNew: opts.isNew, missing, state: c.state }),
     sourceLinks: links,
     unitCountDisagreement: unitDisagreement,
     campus,
-    // v1.7.0 consistency: a "⚡ Winnable now" item cannot carry a "Likely
-    // passed" drywall line — a closed bid window disqualifies the easy-win cut.
-    easyWin: isEasyWin(c, opts.easyWinConfig) && bidWindow?.status !== "likely_closed",
+    // v1.7.0 consistency: a "⚡ Winnable now" item needs at least one trade
+    // window that isn't likely-closed (empty windows = non-interior route,
+    // where the cut applies unchanged).
+    easyWin:
+      isEasyWin(c, opts.easyWinConfig) &&
+      (bidWindows.length === 0 || !bidWindows.every((w) => w.status === "likely_closed")),
     eventIds: events.map((e) => e.id),
   };
 }

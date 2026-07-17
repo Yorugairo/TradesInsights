@@ -61,12 +61,43 @@ watch issued permits.
   assemblies or structural. So the same opportunity can re-open for addendum pricing —
   worth flagging a revision as a "re-bid / addendum" event, not a duplicate.
 
+## Paint (the second Solis trade) — a finish-trade clock (added 2026-07-17)
+
+Paint is a **finish trade**: unlike drywall (tied to the structural phase), it lands
+late in the sequence, so both bidding and execution run later relative to the permit.
+
+| Construction type | Bidding window | Execution (application) |
+|---|---|---|
+| **Residential** | **6–12 weeks after** permit | 12–16+ weeks after permit |
+| **Commercial** | 2–6 months **before** permit (same GMP buyout as drywall) | 4–12+ months after permit |
+
+- **Residential sequencing:** GCs solicit paint bids during framing/drywall (~wk 6–12);
+  painters walk the site to see ceiling heights, lighting angles, and drywall finish
+  quality before pricing labor. Application starts only after drywall mud is cured and
+  sanded (~wk 12–16+): primer + first coats → millwork/doors/trim → final coats.
+- **Commercial sequencing:** painters bid off digital blueprints months pre-permit
+  (square footage, specialty coatings like intumescent fireproofing, lift rentals) —
+  locked into the GMP with the other trades. Execution is very late: after HVAC
+  rough-ins, drywall, and ceiling grids; a big warehouse can be a year-plus post-permit
+  before a painter mobilizes.
+
+### The Pacific Northwest exterior constraint
+
+In Thurston County / Western WA, **exterior** paint needs sustained temps (typically
+>50°F) and dry surfaces. A schedule that puts the exterior phase inside **November–
+April** will likely stall: GCs either tent-and-heat (very expensive) or pause exterior
+finish until spring and complete interior paint only. OTN signal: for residential
+projects whose estimated paint-execution period (issued + ~12–16 wks) lands in Nov–Apr,
+append a season caveat to the paint line — always labeled an inference.
+
 ## Where this plugs into the codebase (implementation plan)
 
-> **STATUS 2026-07-17: steps 1 and 3 IMPLEMENTED** — `drywallBidWindow` +
-> `bidTrackFor` in `packages/intelligence/src/bid-window.ts` (14 unit tests), surfaced
-> as the 🔨 line on interior-trades digest items (`packages/delivery`). Steps 2
-> (stage-lag overlay) and 4 (timing-component refinement) remain, plus the memo.
+> **STATUS 2026-07-17: steps 1, 3, and 4 IMPLEMENTED** — `tradeBidWindow` /
+> `tradeBidWindows` (drywall 🔨 + paint 🎨, per-trade clocks) + `bidTrackFor` in
+> `packages/intelligence/src/bid-window.ts` (21 unit tests), surfaced as per-trade
+> lines on interior-trades digest items; residential paint carries the PNW
+> exterior-season caveat. Scorer v1.7.0 folds the track into the Solis timing
+> component. Step 2 (stage-lag overlay) and the memo remain.
 
 1. **`drywallBidWindow({stage, track, issuedAt, now})`** in
    `packages/intelligence` — returns `{ status: 'confirmed_open'|'open'|'opens_soon'|'likely_closed'|'watch',

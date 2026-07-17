@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bidTrackFor, drywallBidWindow } from "./bid-window.js";
+import { bidTrackFor, drywallBidWindow, tradeBidWindow, tradeBidWindows } from "./bid-window.js";
 
 const NOW = new Date("2026-07-17T00:00:00Z");
 const weeksAgo = (w: number) => new Date(NOW.getTime() - w * 7 * 86_400_000);
@@ -104,6 +104,81 @@ describe("drywallBidWindow — commercial (2–6 months BEFORE permit)", () => {
 
   it("concept → watch (CDs not in review yet)", () => {
     expect(drywallBidWindow({ ...base, stage: "concept" }).status).toBe("watch");
+  });
+});
+
+describe("paint — a finish trade on a later clock (6–12 wks after issuance)", () => {
+  const base = { trade: "paint" as const, track: "residential" as const, now: NOW };
+
+  it("issued 5 weeks ago → drywall is OPEN but paint still opens_soon", () => {
+    const issuedAt = weeksAgo(5);
+    expect(drywallBidWindow({ stage: "permit_issued", track: "residential", issuedAt, now: NOW }).status).toBe("open");
+    const paint = tradeBidWindow({ ...base, stage: "permit_issued", issuedAt });
+    expect(paint.status).toBe("opens_soon");
+    expect(paint.note).toMatch(/~1 week/);
+  });
+
+  it("issued 8 weeks ago → open (framing/drywall phase, painters walk the site)", () => {
+    const w = tradeBidWindow({ ...base, stage: "permit_issued", issuedAt: weeksAgo(8) });
+    expect(w.status).toBe("open");
+    expect(w.note).toMatch(/walk the site/);
+  });
+
+  it("stays open through week 14, likely_closed after", () => {
+    expect(tradeBidWindow({ ...base, stage: "permit_issued", issuedAt: weeksAgo(14) }).status).toBe("open");
+    expect(tradeBidWindow({ ...base, stage: "permit_issued", issuedAt: weeksAgo(15) }).status).toBe("likely_closed");
+  });
+
+  it("commercial paint rides the same pre-permit GMP buyout, with the late-mobilization caveat once issued", () => {
+    const open = tradeBidWindow({ trade: "paint", track: "commercial", stage: "permit_applied", issuedAt: null, now: NOW });
+    expect(open.status).toBe("open");
+    expect(open.note).toMatch(/Commercial paint/);
+    const closed = tradeBidWindow({ trade: "paint", track: "commercial", stage: "permit_issued", issuedAt: null, now: NOW });
+    expect(closed.status).toBe("likely_closed");
+    expect(closed.note).toMatch(/late-package/);
+  });
+
+  it("PNW season caveat: paint execution landing in Nov–Apr gets the wet-season heads-up", () => {
+    // Issued mid-August → execution midpoint ≈ late November → caveat.
+    const winter = tradeBidWindow({
+      ...base,
+      stage: "permit_issued",
+      issuedAt: new Date("2026-08-15T00:00:00Z"),
+      now: new Date("2026-09-15T00:00:00Z"),
+    });
+    expect(winter.note).toMatch(/Nov–Apr wet season/);
+    // Issued March → execution midpoint ≈ June → no caveat.
+    const summer = tradeBidWindow({
+      ...base,
+      stage: "permit_issued",
+      issuedAt: new Date("2026-03-01T00:00:00Z"),
+      now: new Date("2026-04-01T00:00:00Z"),
+    });
+    expect(summer.note).not.toMatch(/wet season/);
+  });
+
+  it("the season caveat never touches drywall (interior/structural trade)", () => {
+    const w = drywallBidWindow({
+      stage: "permit_issued",
+      track: "residential",
+      issuedAt: new Date("2026-08-15T00:00:00Z"),
+      now: new Date("2026-09-15T00:00:00Z"),
+    });
+    expect(w.note).not.toMatch(/wet season/);
+  });
+});
+
+describe("tradeBidWindows — both Solis trades at once", () => {
+  it("returns drywall first (structural before finish), each with its own clock", () => {
+    const both = tradeBidWindows({
+      stage: "permit_issued",
+      track: "residential",
+      issuedAt: weeksAgo(5),
+      now: NOW,
+    });
+    expect(both.map((w) => w.trade)).toEqual(["drywall", "paint"]);
+    expect(both[0]!.status).toBe("open");
+    expect(both[1]!.status).toBe("opens_soon");
   });
 });
 

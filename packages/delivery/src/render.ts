@@ -130,11 +130,16 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
   const missing = item.missingCriticalFacts.length
     ? `<p><strong>Still unknown:</strong> ${item.missingCriticalFacts.map((k) => esc(humanMissing(k))).join(" · ")}</p>`
     : "";
-  // Drywall bid-window inference (docs/domain-bid-timing.md) — the one line a
+  // Per-trade bid-window inferences (docs/domain-bid-timing.md) — the lines a
   // busy owner acts on. Always typical-sequencing language, never a promise.
-  const bidWindow = item.bidWindow
-    ? `<p>🔨 <strong>Drywall bids — ${BID_PREFIX[item.bidWindow.status] ?? "Watching"}:</strong> ${esc(item.bidWindow.note)}</p>`
-    : "";
+  const TRADE_ICON: Record<string, string> = { drywall: "🔨", paint: "🎨" };
+  const TRADE_LABEL: Record<string, string> = { drywall: "Drywall bids", paint: "Paint bids" };
+  const bidWindow = item.bidWindows
+    .map(
+      (w) =>
+        `<p>${TRADE_ICON[w.trade] ?? "•"} <strong>${TRADE_LABEL[w.trade] ?? w.trade} — ${BID_PREFIX[w.status] ?? "Watching"}:</strong> ${esc(w.note)}</p>`,
+    )
+    .join("");
   // M3.8 — sources disagree on unit count: show every value with its citation,
   // never a single silently-chosen number.
   const unitConflict = item.unitCountDisagreement

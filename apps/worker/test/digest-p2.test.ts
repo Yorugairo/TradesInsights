@@ -438,17 +438,20 @@ describe("B — drywall bid-window line on interior-trades items", () => {
       ...model.reviewQueue,
     ];
     const item = all.find((i) => i.opportunityId === easyOppId)!;
-    expect(item.bidWindow).not.toBeNull();
     // "interior buildout of 12 suites" has no commercial/SFR keyword →
-    // residential track; issued 5 wks ago → the typical window is open.
-    expect(item.bidWindow!.status).toBe("open");
-    expect(item.bidWindow!.note).toMatch(/framed and dried-in/);
+    // residential track; issued 5 wks ago → drywall open, paint (finish
+    // trade, 6–12 wk clock) still opens_soon.
+    expect(item.bidWindows.map((w) => w.trade)).toEqual(["drywall", "paint"]);
+    expect(item.bidWindows[0]!.status).toBe("open");
+    expect(item.bidWindows[0]!.note).toMatch(/framed and dried-in/);
+    expect(item.bidWindows[1]!.status).toBe("opens_soon");
 
     const html = renderDigestHtml(model);
     expect(html).toContain("Drywall bids — OPEN NOW");
+    expect(html).toContain("Paint bids — Opens soon");
 
-    // Route-less items (the other fixtures) carry no drywall line.
+    // Route-less items (the other fixtures) carry no trade lines.
     const other = all.find((i) => i.opportunityId !== easyOppId);
-    if (other) expect(other.bidWindow).toBeNull();
+    if (other) expect(other.bidWindows).toEqual([]);
   });
 });
