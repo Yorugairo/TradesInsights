@@ -148,6 +148,38 @@ sources:
       Bounded paging at maxRecordCount 2000. ArcGIS Online public REST — no
       robots restriction on services6.arcgis.com query endpoints.
 
+  - key: pierce_permits_arcgis
+    name: Pierce County Permits & Applications (PALS extract, ArcGIS)
+    authority: Pierce County
+    priority: P1
+    landing_url: https://gisdata-piercecowa.opendata.arcgis.com/
+    access_url: https://services2.arcgis.com/1UvBaQ5y1ubjUPmd/arcgis/rest/services/Permits_Pierce_County/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+    format: arcgis_json
+    access_class: arcgis
+    cadence: daily
+    county: Pierce
+    permitting_jurisdiction: Pierce County
+    enabled: true
+    terms_reviewed_at: "2026-07-17"
+    robots_reviewed_at: "2026-07-17"
+    required_fields: [addressRaw, applicationDate]
+    mitigates: [pierce_environmental_determinations]
+    notes: >-
+      Verified 2026-07-17: the county's official open-data portal
+      (gisdata-piercecowa.opendata.arcgis.com, org 1UvBaQ5y1ubjUPmd) publishes
+      the PALS permit/application extract as a public FeatureServer — NOT
+      behind the piercecountywa.gov Cloudflare challenge that blocks M1.4.
+      679,941 rows back decades; ~3,500 in a trailing 90 days across building,
+      land use, environmental (incl. SEPA Review), fire, sewer. Fields incl.
+      application/submittal/issued/final dates, status, parcel, valuation,
+      dwelling units, WGS84 point, per-record PALS deep link
+      (pals.piercecountywa.gov — citation URL only, never crawled). Trailing
+      120-day window on applicationDate OR issuedDate at maxRecordCount 2000;
+      status changes on known records flow through fingerprint diff →
+      applyRecordUpdates. First permit-stage AND entitlement coverage for
+      Pierce; SEPA Review rows add substitute coverage for the blocked
+      pierce_environmental_determinations.
+
   - key: tumwater_development_review
     name: Tumwater Development Review
     authority: City of Tumwater

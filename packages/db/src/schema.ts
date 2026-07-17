@@ -784,6 +784,10 @@ export const recordResolutions = pgTable(
     decision: text("decision").notNull(),
     /** active | undone — undo never deletes source records or this history row. */
     status: text("status").notNull().default("active"),
+    /** The record content version last applied to the graph — when it drifts
+     * from source_records.normalized_fingerprint, applyRecordUpdates
+     * re-processes the record (stage change, roles, geometry). */
+    processedFingerprint: text("processed_fingerprint"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     undoneAt: timestamp("undone_at", { withTimezone: true }),
     undoneReason: text("undone_reason"),

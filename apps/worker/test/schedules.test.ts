@@ -11,6 +11,7 @@ import {
   DIGEST_DRAFT_QUEUE,
   MAINTENANCE_QUEUE,
   cadenceCron,
+  catchUpMaintenance,
   registerSchedules,
   schedulableSources,
   scheduledQueueName,
@@ -82,6 +83,24 @@ describe("registerSchedules reconciliation", () => {
     const second = await registerSchedules(boss, logger);
     expect(second.scheduled.length).toBe(expected);
     expect(second.unscheduled).toEqual([]);
+  });
+
+  it("boot catch-up enqueues maintenance when none ran, then dedupes while pending", async () => {
+    // A dummy queue with NO worker attached: the catch-up logic is exercised
+    // without triggering a real maintenance chain in the test DB.
+    const queue = `test-catchup-${Math.floor(performance.now())}`;
+    await boss.createQueue(queue);
+    try {
+      const first = await catchUpMaintenance(boss, logger, queue);
+      expect(first.enqueued).toBe(true); // no completed run ever → catch up now
+
+      const second = await catchUpMaintenance(boss, logger, queue);
+      expect(second.enqueued).toBe(false); // job is pending → never double-enqueue
+      expect(second.reason).toContain("queued");
+    } finally {
+      await boss.purgeQueue(queue); // drop the enqueued job before the queue (FK)
+      await boss.deleteQueue(queue);
+    }
   });
 
   it("drops a stale schedule for a source that left the config", async () => {

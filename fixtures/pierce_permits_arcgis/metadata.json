@@ -1,0 +1,32 @@
+{
+  "source": "Permits Pierce County FeatureServer layer 0 (PALS extract)",
+  "capturedAt": "2026-07-17",
+  "capturedBy": "agent session (Batch2 #1 activation)",
+  "files": {
+    "layer-metadata.json": "GET .../FeatureServer/0?f=json — schema, editingInfo (dataLastEditDate 2026-07-10), maxRecordCount 2000",
+    "window-page-1.json": "GET .../query where=applicationDate>=TIMESTAMP '2026-07-01' OR issuedDate>=TIMESTAMP '2026-07-01', outSR=4326, orderByFields=applicationNumber ASC, page 1"
+  },
+  "manualComparison": {
+    "method": "fixture row values compared field-by-field against the live layer's own query responses and the layer schema; per-record PALS deep links (urlOnlinePermits) recorded as canonical citations (pals.piercecountywa.gov not crawled — citation only)",
+    "counts": {
+      "fixtureFeatures": 451,
+      "liveCountQuerySameWindowAtCapture": 451,
+      "statuses": { "Issued": 252, "Accepted": 184, "Approved": 10, "Final": 4, "Cancelled": 1 },
+      "withGeometry": 451,
+      "preIssuance(nullIssuedDate)": 194
+    },
+    "spotChecks": [
+      {
+        "applicationNumber": 1068418,
+        "expected": "Construction Commercial / Accepted / parcel 0319024061 / 10601 WALLER RD E / valuation 3363034.73 / issuedDate null",
+        "result": "matches live layer response verbatim"
+      },
+      {
+        "applicationNumber": 1068027,
+        "expected": "Construction Commercial / Issued / T-Mobile / issuedDate 2026-07-06 (epoch 1783349088000)",
+        "result": "matches live layer response verbatim"
+      }
+    ]
+  },
+  "notes": "Total layer 679,941 rows (history back decades). Fixture is the bounded July 2026 window used as golden parse input. Parser totals must equal fixture feature count (451). Fixture facts prove parsing only — live status must be rechecked."
+}

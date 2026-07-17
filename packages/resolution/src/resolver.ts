@@ -361,6 +361,9 @@ async function persistResolution(
     featuresJson: features,
     score,
     decision: "auto",
+    // The content version being applied right now — applyRecordUpdates
+    // re-processes this record when the stored fingerprint drifts.
+    processedFingerprint: sql`(SELECT normalized_fingerprint FROM source_records WHERE id = ${row.id})`,
   });
 }
 
@@ -538,5 +541,133 @@ export async function resolveUnresolved(
     }
   }
   opts.logger?.info(summary, "resolution run complete");
+  return summary;
+}
+
+export interface RecordUpdateSummary {
+  checked: number;
+  stageAdvanced: number;
+  refreshed: number;
+  errors: number;
+}
+
+/**
+ * Stage-change follow-through: re-process actively-resolved records whose
+ * CONTENT changed since they were applied to the graph (the runner updates
+ * normalized_json + fingerprint in place when a source republishes a record —
+ * e.g. a Seattle application becoming an issued permit on the same row).
+ * Without this pass those transitions were invisible: resolveUnresolved skips
+ * records with an active resolution, so the project stayed at its first-seen
+ * stage forever and the digest's "material stage changes" section only ever
+ * saw brand-new records.
+ *
+ * For each drifted record: advance the project stage when the record states a
+ * LATER stage (spec §9 — never regress a stage from a single record), emit
+ * the stage-change event (materialChange when it actually advanced), refresh
+ * roles and geometry, and mark the content version processed. A NULL
+ * processed_fingerprint (rows from before migration 0015) is treated as
+ * drifted, so the first pass heals history.
+ */
+export async function applyRecordUpdates(
+  db: Db,
+  opts: {
+    limit?: number;
+    includeTestSources?: boolean;
+    /** Restrict to specific records (targeted re-runs; test isolation). */
+    sourceRecordIds?: string[];
+    logger?: { info(o: unknown, m?: string): void; error(o: unknown, m?: string): void };
+  } = {},
+): Promise<RecordUpdateSummary> {
+  const limit = opts.limit ?? 10_000;
+  const idFilter =
+    opts.sourceRecordIds && opts.sourceRecordIds.length > 0
+      ? sql`AND ${sourceRecords.id} IN (${sql.join(
+          opts.sourceRecordIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
+  const rows = await db
+    .select({
+      resolutionId: recordResolutions.id,
+      projectId: recordResolutions.projectId,
+      recordId: sourceRecords.id,
+      normalizedJson: sourceRecords.normalizedJson,
+      rawFieldsJson: sourceRecords.rawFieldsJson,
+      lastSeenAt: sourceRecords.lastSeenAt,
+      fingerprint: sourceRecords.normalizedFingerprint,
+    })
+    .from(recordResolutions)
+    .innerJoin(sourceRecords, eq(sourceRecords.id, recordResolutions.sourceRecordId))
+    .innerJoin(sources, eq(sources.id, sourceRecords.sourceId))
+    .where(
+      sql`${recordResolutions.status} = 'active'
+          AND ${recordResolutions.processedFingerprint} IS DISTINCT FROM ${sourceRecords.normalizedFingerprint}
+          ${opts.includeTestSources ? sql`` : sql`AND ${sources.priority} != 'test'`}
+          ${idFilter}
+          AND ${sharedGraphSourceGuard()}`,
+    )
+    .orderBy(sourceRecords.lastSeenAt)
+    .limit(limit);
+
+  const summary: RecordUpdateSummary = { checked: 0, stageAdvanced: 0, refreshed: 0, errors: 0 };
+  for (const r of rows) {
+    summary.checked++;
+    try {
+      const record = NormalizedSourceRecordSchema.parse(r.normalizedJson);
+      const row: RecordRow = {
+        id: r.recordId,
+        normalized: record,
+        rawFields: (r.rawFieldsJson ?? {}) as Record<string, unknown>,
+        // Observation time of THIS content version (when the update was fetched).
+        firstSeenAt: r.lastSeenAt,
+      };
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, r.projectId))
+        .limit(1);
+      if (!project) throw new Error(`project ${r.projectId} missing for update`);
+
+      const newStage = laterStage(project.currentStage, record.normalizedStage);
+      const advanced = newStage !== project.currentStage && stageOrder(newStage) > -1;
+      if (advanced) {
+        await db
+          .update(projects)
+          .set({ currentStage: newStage, lastSeenAt: r.lastSeenAt })
+          .where(eq(projects.id, r.projectId));
+        await emitEvent(db, r.projectId, row, {
+          priorStage: project.currentStage,
+          resultingStage: newStage,
+        });
+        summary.stageAdvanced++;
+        opts.logger?.info(
+          {
+            projectId: r.projectId,
+            sourceRecordId: r.recordId,
+            priorStage: project.currentStage,
+            resultingStage: newStage,
+          },
+          "record update advanced project stage",
+        );
+      } else {
+        await db
+          .update(projects)
+          .set({ lastSeenAt: r.lastSeenAt })
+          .where(eq(projects.id, r.projectId));
+      }
+      // Non-stage refreshes: new orgs/roles and geometry the update may carry.
+      await upsertOrganizationsAndRoles(db, r.projectId, row);
+      await fillGeometry(db, r.projectId, row);
+      await db
+        .update(recordResolutions)
+        .set({ processedFingerprint: r.fingerprint })
+        .where(eq(recordResolutions.id, r.resolutionId));
+      summary.refreshed++;
+    } catch (err) {
+      summary.errors++;
+      opts.logger?.error({ sourceRecordId: r.recordId, err: String(err) }, "record update failed");
+    }
+  }
+  opts.logger?.info(summary, "record updates applied");
   return summary;
 }

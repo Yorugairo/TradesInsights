@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { createDb, createPool } from "@otn/db";
 import { loadSourcesConfig, type SourceConfig } from "@otn/config";
 import {
+  applyRecordUpdates,
   buildDevelopments,
   computeCampusVelocity,
   computeClusterVelocity,
@@ -38,6 +39,8 @@ export const MAINTENANCE_QUEUE = "pipeline-maintenance";
 export const DIGEST_DRAFT_QUEUE = "digest-draft";
 /** Nightly geocode batch size (Census pacing stays polite). */
 export const NIGHTLY_GEOCODE_LIMIT = 500;
+/** Boot catch-up: enqueue maintenance if none completed within this window. */
+export const MAINTENANCE_CATCHUP_HOURS = 24;
 const TZ = "America/Los_Angeles";
 
 export function scheduledQueueName(sourceKey: string): string {
@@ -83,6 +86,7 @@ async function runMaintenance(logger: Logger): Promise<void> {
   const db = createDb(pool);
   try {
     const resolved = await resolveUnresolved(db, { logger });
+    const updates = await applyRecordUpdates(db, { logger });
     const developments = await buildDevelopments(db, { logger });
     const velocity = await computeClusterVelocity(db, { logger });
     const campus = await computeCampusVelocity(db, { logger });
@@ -97,11 +101,19 @@ async function runMaintenance(logger: Logger): Promise<void> {
     for (const s of loadSourcesConfig().sources) {
       if (s.mitigates.length > 0) substitutes[s.key] = s.mitigates;
     }
-    const alerts = await runAlerts(db, { monthlyBudgetUsd, substitutes });
+    // Alert EMAILS go out when a recipient is configured (ALERTS_EMAIL):
+    // an unattended pipeline whose alerts stay in a table isn't alerting.
+    // Idempotent rows + exactly-once send semantics live in runAlerts (M4.7).
+    const alerts = await runAlerts(db, {
+      monthlyBudgetUsd,
+      substitutes,
+      send: Boolean(process.env.ALERTS_EMAIL),
+    });
 
     logger.info(
       {
         resolved,
+        updates,
         developments,
         velocity,
         campus,
@@ -143,6 +155,54 @@ async function runDigestDrafts(logger: Logger): Promise<void> {
 export interface ScheduleSummary {
   scheduled: string[];
   unscheduled: string[];
+}
+
+/**
+ * Dead-worker stall protection: cron only fires while a worker is alive, and
+ * the safety-net alerts run INSIDE the nightly chain — so a worker that was
+ * down through the 04:45 window would stall the whole pipeline silently. On
+ * boot, if no maintenance run completed within the catch-up window and none
+ * is queued, enqueue one immediately (singleton-keyed so racing boots enqueue
+ * exactly once; the chain itself is idempotent, so a same-day cron run after
+ * a catch-up is harmless).
+ */
+export async function catchUpMaintenance(
+  boss: PgBoss,
+  logger: Logger,
+  queue: string = MAINTENANCE_QUEUE,
+): Promise<{ enqueued: boolean; reason: string }> {
+  const pool = createPool();
+  const db = createDb(pool);
+  try {
+    const res = await db.execute(sql`
+      SELECT
+        greatest(
+          (SELECT max(completed_on) FROM pgboss.job
+             WHERE name = ${queue} AND state = 'completed'),
+          (SELECT max(completed_on) FROM pgboss.archive
+             WHERE name = ${queue} AND state = 'completed')
+        ) AS last_completed,
+        EXISTS (SELECT 1 FROM pgboss.job
+                  WHERE name = ${queue} AND state IN ('created', 'active', 'retry')) AS pending`);
+    const row = res.rows[0] as { last_completed: string | null; pending: boolean };
+    if (row.pending) {
+      return { enqueued: false, reason: "maintenance already queued or running" };
+    }
+    const last = row.last_completed ? new Date(row.last_completed) : null;
+    const ageHours = last ? (Date.now() - last.getTime()) / 3_600_000 : Infinity;
+    if (ageHours < MAINTENANCE_CATCHUP_HOURS) {
+      return { enqueued: false, reason: `last completed ${ageHours.toFixed(1)}h ago` };
+    }
+    const jobId = await boss.send(queue, {}, { singletonKey: "boot-catchup", singletonSeconds: 3600 });
+    const summary = {
+      enqueued: jobId !== null,
+      reason: jobId !== null ? "no completed run in window — catch-up enqueued" : "singleton already pending",
+    };
+    logger.info({ queue, lastCompleted: row.last_completed, ...summary }, "maintenance catch-up check");
+    return summary;
+  } finally {
+    await pool.end();
+  }
 }
 
 /** Reconcile pg-boss cron schedules with config. Idempotent at every boot. */

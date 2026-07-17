@@ -156,7 +156,7 @@ describe("M2.5 merge-review workflow", () => {
     expect(ti.outcome).toBe("review");
     tiRecordId = ti.sourceRecordId;
 
-    const pending = await listPendingReviews(db);
+    const pending = await listPendingReviews(db, 10_000); // live corpus carries real pending reviews
     const mine = pending.find((r) => r.sourceRecordId === tiRecordId);
     expect(mine).toBeTruthy();
     tiReviewId = mine!.id;
@@ -229,7 +229,7 @@ describe("M2.5 merge-review workflow", () => {
       ),
     );
     expect(ti2.outcome).toBe("review");
-    const pending = await listPendingReviews(db);
+    const pending = await listPendingReviews(db, 10_000); // live corpus carries real pending reviews
     const reviewId = pending.find((r) => r.sourceRecordId === ti2.sourceRecordId)!.id;
 
     const outcome = await decideReview(db, reviewId, "reject", {

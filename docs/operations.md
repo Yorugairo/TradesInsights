@@ -103,6 +103,10 @@ pnpm geocode:run [--limit N] [--county King] [--delay-ms 150]
 
 Two passes. **Materialize** (also runs at the end of `resolve:run`, no network): fills `projects.geometry` from an active resolved record's own geometry (`geometry_source = 'source_record'`). **Geocode**: for projects with an address but no geometry, queries the **US Census Bureau geocoder** (`geocoding.geo.census.gov`, official, free, no key; verified 2026-07-17; honors `HTTPS_PROXY`). Normalized addresses are street-only, so a match is accepted ONLY when it is unique AND the returned county equals the project's stored county — a geocoded point is a labeled inference (`geometry_source = 'census_geocoder'` + `geocode_meta_json`), never overwrites record geometry, and is replaced when record geometry later arrives. Every attempt outcome (matched / no_match / ambiguous / county_mismatch) is stored in `geocode_meta_json` so reruns skip attempted projects; transient HTTP errors are NOT stored (next run retries). Default 500 addresses/run at 150 ms pacing. Coverage by provenance: `/app/admin/coverage`.
 
+### Stage-change follow-through (applyRecordUpdates)
+
+Runs inside `resolve:run` and the nightly chain. Sources that republish a record in place (Seattle Socrata, Pierce ArcGIS, Lacey REST) update `source_records.normalized_json` + fingerprint without creating a new record — `applyRecordUpdates` diffs `record_resolutions.processed_fingerprint` against the record's current fingerprint and, for drifted records: advances the project stage when the record states a LATER stage (never regresses from a single record), emits the stage-change event (`material_change` when it advanced, event date from the source-stated date), refreshes roles/geometry, and marks the version processed. This is what turns an application→issuance update into visible lead time and a digest stage-change item.
+
 `resolve:run` finishes with development grouping (M2.4): projects sharing a distinctive base name (phase/lot/div tokens stripped; permit-type vocabulary alone never groups) plus org/parcel/proximity support get a `development_id`; a single plat/base project parents its phases. **The development layer is derived and rebuildable**: `UPDATE projects SET development_id=NULL, parent_project_id=NULL; DELETE FROM developments;` then `pnpm resolve:run`.
 
 ## Intelligence (M3)
@@ -188,6 +192,8 @@ Inspect jobs: `SELECT name, state, count(*) FROM pgboss.job GROUP BY 1,2;`
 ### Cron schedules (#4 — self-driving cadence)
 
 `registerSchedules` (apps/worker/src/schedules.ts) runs at every worker boot and reconciles pg-boss cron schedules from `config/sources.yaml`: every **enabled** source with a cadence other than `on_demand` (private-class sources are never scheduled) gets a per-source cron derived from its cadence — daily at 02:xx–03:xx Pacific with a deterministic per-source minute stagger (no county-infrastructure stampede), weekly on Mondays, monthly on the 2nd (reports post after month end). `pipeline-maintenance` runs nightly at 04:45 PT (after the fetch window); `digest-draft` Mondays 05:15 PT. Config is the source of truth: disabling or removing a source unschedules it at the next boot. Schedules fire only while `pnpm worker` is running; the M4.7 alerts (red / stale > 2× cadence / unsent drafts) are the safety net and run inside the nightly chain. Inspect: `SELECT name, cron FROM pgboss.schedule;`
+
+**Stall protection:** on boot, `catchUpMaintenance` checks pg-boss history; if no maintenance run completed in the last 24 h and none is queued, it enqueues one immediately (singleton-keyed — racing boots enqueue once; the chain is idempotent so a same-day cron rerun is harmless). **Alert emails:** the nightly chain passes `send: true` to `runAlerts` whenever `ALERTS_EMAIL` is set — configure it (plus `SMTP_HOST`/`SMTP_PORT`) and new alerts reach the inbox exactly once; leave it unset and alerts stay in the table only.
 
 ## Health & monitoring (spec §14)
 

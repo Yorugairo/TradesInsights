@@ -1,6 +1,6 @@
 import { createLogger } from "@otn/source-sdk";
 import { createBoss, registerWorkers } from "./jobs.js";
-import { registerSchedules } from "./schedules.js";
+import { catchUpMaintenance, registerSchedules } from "./schedules.js";
 import { modelAvailability } from "./env.js";
 
 async function main() {
@@ -14,6 +14,9 @@ async function main() {
   // #4 — reconcile cron schedules (per-source cadence, nightly maintenance,
   // weekly digest drafts) from config at every boot.
   await registerSchedules(boss, logger);
+  // Stall protection: if the worker slept through the nightly window, run
+  // the maintenance chain now instead of waiting for the next cron.
+  await catchUpMaintenance(boss, logger);
   logger.info("worker started — listening for jobs and schedules");
 
   const shutdown = async () => {

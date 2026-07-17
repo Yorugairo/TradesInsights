@@ -43,13 +43,16 @@ export const PARCEL_BLOCK_PREFIX_LEN = 6;
  * - Thurston (11-digit): 7 — never merges beyond one plat for platted parcels
  *   and stays sub-quarter-section for unplatted; max observed group 5. At 5–6
  *   the unplatted numbering risks merging unrelated section-sized areas.
- * - Pierce: no parcels in corpus yet (source blocked) — default until data.
+ * - Pierce (10-digit, calibrated 2026-07-17 after pierce_permits_arcgis
+ *   activation, 3,857 parcels): 6 — max structural group 21 (vs 81 at len 5,
+ *   189 at len 4); same plat/block altitude as King.
  * The ≥minProjects-distinct-projects-in-window activity gate is the primary
  * false-positive control; the prefix only shapes candidate grouping.
  */
 export const PARCEL_BLOCK_PREFIX_BY_COUNTY: Record<string, number> = {
   King: 6,
   Lewis: 6,
+  Pierce: 6,
   Thurston: 7,
 };
 
