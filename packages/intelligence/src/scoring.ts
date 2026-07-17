@@ -1,4 +1,5 @@
 import { stageOrder } from "@otn/resolution";
+import { bidTrackFor, type BidTrack } from "./bid-window.js";
 
 /**
  * M3.2 — deterministic routing + scoring (spec §12). Pure functions: a
@@ -10,7 +11,10 @@ import { stageOrder } from "@otn/resolution";
 // small jobs; no minimum job size by default). Only oversize work scores down.
 // 1.6.0 — Solis: King-county jobs under $10k are digest-band, not priority
 // (valid but lower — a distant secondary market; home counties unaffected).
-export const SCORING_ALGORITHM_VERSION = "1.6.0";
+// 1.7.0 — Solis timing is bid-track-aware (docs/domain-bid-timing.md): an
+// issued commercial-track project (buyout likely done) scores timing 0.5, and
+// in-review commercial stages peak — the score now agrees with the 🔨 line.
+export const SCORING_ALGORITHM_VERSION = "1.7.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -222,7 +226,23 @@ function timingResidentialGlass(stage: string): number {
   return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
 }
 
-function timingInterior(stage: string): number {
+/**
+ * Interior-trades timing, per bid track (docs/domain-bid-timing.md, v1.7.0).
+ * Residential: drywall bids run 4–8 wks AFTER issuance → issued/construction
+ * peak. Commercial: drywall is bought out during plan review, BEFORE the
+ * permit → in-review stages peak and an issued commercial project is likely
+ * already let (0.5, not 0 — plan-check addendum re-pricing is real). Keeps the
+ * digest's 🔨 line and the score telling the same story.
+ */
+function timingInterior(stage: string, track: BidTrack): number {
+  if (track === "commercial") {
+    const map: Record<string, number> = {
+      bidding_confirmed: 1, permit_applied: 1, construction_documents: 1, approved: 1,
+      entitlement: 0.9, preapplication: 0.7, permit_issued: 0.5, construction: 0.4,
+      near_final: 0.2, concept: 0.2,
+    };
+    return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
+  }
   const map: Record<string, number> = {
     permit_issued: 1, construction: 1, bidding_confirmed: 1, permit_applied: 0.7,
     approved: 0.6, construction_documents: 0.6, near_final: 0.5, entitlement: 0.4,
@@ -379,6 +399,7 @@ export function routeSolis(
   if (!fits) return null;
 
   const overCapacity = (f.maxValuation ?? 0) > 2_000_000 && c.isMultifamily;
+  const track = bidTrackFor(c);
   const signals: string[] = [];
   if (c.isTi) signals.push("tenant_improvement");
   if (c.hasInterior) signals.push("drywall_painting_keywords");
@@ -386,6 +407,15 @@ export function routeSolis(
   // rationale/digest but score-neutral until customer calibration.
   if (f.campusBlock) signals.push("active_campus");
   if (overCapacity) signals.push("gc_relationship_radar");
+  // v1.7.0 — why an issued commercial project ranks lower (auditability).
+  // bidding_confirmed sorts after issuance but is a CONFIRMED-open window.
+  if (
+    track === "commercial" &&
+    f.stage !== "bidding_confirmed" &&
+    stageOrder(f.stage) >= stageOrder("permit_issued")
+  ) {
+    signals.push("commercial_bid_window_likely_closed");
+  }
 
   const components = {
     // Priority-band trade fit needs BOTH an explicit TI signal and interior
@@ -416,7 +446,7 @@ export function routeSolis(
           : f.maxValuation <= 2_000_000
             ? 1
             : 0.3,
-    timing: timingInterior(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
+    timing: timingInterior(f.stage, track) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: 1,
     evidence_quality: evidenceQuality(f),
   };

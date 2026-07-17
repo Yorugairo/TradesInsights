@@ -340,6 +340,7 @@ const SIGNAL_PHRASES: Record<string, string> = {
   public_work: "public-agency work",
   multifamily: "multifamily project",
   king_routes_commercial: "Seattle-area commercial",
+  commercial_bid_window_likely_closed: "commercial buyout likely already done",
   subdivision: "part of a subdivision",
   clustered_sfr_townhome_permits: "part of a home-building cluster",
   low_rise_multifamily_joint_review: "low-rise multifamily",
@@ -451,7 +452,9 @@ async function buildItem(
     sourceLinks: links,
     unitCountDisagreement: unitDisagreement,
     campus,
-    easyWin: isEasyWin(c, opts.easyWinConfig),
+    // v1.7.0 consistency: a "⚡ Winnable now" item cannot carry a "Likely
+    // passed" drywall line — a closed bid window disqualifies the easy-win cut.
+    easyWin: isEasyWin(c, opts.easyWinConfig) && bidWindow?.status !== "likely_closed",
     eventIds: events.map((e) => e.id),
   };
 }
