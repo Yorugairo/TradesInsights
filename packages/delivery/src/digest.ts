@@ -44,6 +44,9 @@ export interface DigestItem {
    * one silently (that would fabricate certainty). Null when sources agree or
    * only one states a count. */
   unitCountDisagreement: { units: number; sources: { url: string; label: string }[] }[] | null;
+  /** #1 — active-campus context: this project is one of `projectCount` on one
+   * parcel block (derived campus_block). Null when not in an active campus. */
+  campus: { block: string; projectCount: number } | null;
   eventIds: string[];
 }
 
@@ -86,12 +89,13 @@ interface CandidateRow {
   rationale_json: { signals?: string[]; route?: string } | null;
   text: string;
   max_valuation: number | null;
+  campus_block: string | null;
 }
 
 async function loadCandidates(db: Db, accountProfileId: string): Promise<CandidateRow[]> {
   const res = await db.execute(sql`
     SELECT o.id, o.project_id, p.canonical_name, p.county, p.permitting_jurisdiction,
-      p.current_stage, o.current_score, o.route, o.state, o.rationale_json,
+      p.current_stage, o.current_score, o.route, o.state, o.rationale_json, p.campus_block,
       COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation
     FROM opportunities o JOIN projects p ON p.id = o.project_id
     LEFT JOIN LATERAL (
@@ -205,12 +209,13 @@ async function buildItem(
   c: CandidateRow,
   opts: { isNew: boolean; periodStart: Date; periodEnd: Date; gate: GateResult },
 ): Promise<DigestItem> {
-  const [events, links, extraction, verification, unitDisagreement] = await Promise.all([
+  const [events, links, extraction, verification, unitDisagreement, campus] = await Promise.all([
     materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
     sourceLinks(db, c.project_id),
     latestExtraction(db, c.project_id),
     latestVerification(db, c.project_id),
     unitCountDisagreement(db, c.project_id),
+    campusContext(db, c.campus_block),
   ]);
   const inclusion = decideInclusion({
     gate: opts.gate,
@@ -261,8 +266,24 @@ async function buildItem(
     nextAction: nextAction({ isNew: opts.isNew, missing, state: c.state }),
     sourceLinks: links,
     unitCountDisagreement: unitDisagreement,
+    campus,
     eventIds: events.map((e) => e.id),
   };
+}
+
+/** #1 — sibling count for an active campus (derived campus_block). */
+async function campusContext(
+  db: Db,
+  campusBlock: string | null,
+): Promise<{ block: string; projectCount: number } | null> {
+  if (!campusBlock) return null;
+  const res = await db.execute(
+    sql`SELECT count(*) AS n FROM projects WHERE campus_block = ${campusBlock}`,
+  );
+  const n = Number((res.rows[0] as { n: string } | undefined)?.n ?? 0);
+  // The parcel block, without the internal county prefix, for display.
+  const block = campusBlock.includes(":") ? campusBlock.split(":")[1]! : campusBlock;
+  return { block, projectCount: n };
 }
 
 async function coverageCaveats(db: Db): Promise<CoverageCaveat[]> {

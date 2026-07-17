@@ -159,6 +159,7 @@ export interface OpportunityDetail {
     lastMaterialChangeAt: string | null;
     maxUnits: number | null;
     maxValuation: number | null;
+    campusBlock: string | null;
   };
   roles: RoleView[];
   evidence: EvidenceView[];
@@ -202,7 +203,7 @@ export async function opportunityDetail(
     SELECT o.id, o.state, o.route, o.current_score, o.score_version, o.rationale_json,
       o.last_material_change_at,
       p.id AS project_id, p.canonical_name, p.county, p.permitting_jurisdiction, p.city,
-      p.address_normalized, p.parcel_ids, p.current_stage,
+      p.address_normalized, p.parcel_ids, p.current_stage, p.campus_block,
       rec.max_units, rec.max_valuation
     FROM opportunities o
     JOIN projects p ON p.id = o.project_id
@@ -246,6 +247,7 @@ export async function opportunityDetail(
       lastMaterialChangeAt: (r["last_material_change_at"] as string | null) ?? null,
       maxUnits: r["max_units"] === null ? null : Number(r["max_units"]),
       maxValuation: r["max_valuation"] === null ? null : Number(r["max_valuation"]),
+      campusBlock: (r["campus_block"] as string | null) ?? null,
     },
     roles,
     evidence,
@@ -256,6 +258,31 @@ export async function opportunityDetail(
       : null,
     gate,
     nextAction: recommendNextAction(state, gate, extraction?.extraction ?? null),
+  };
+}
+
+/** #1 — sibling projects of an active campus (same derived campus_block). */
+export interface CampusView {
+  block: string;
+  siblings: { id: string; name: string; stage: string }[];
+}
+
+export async function campusSiblings(
+  db: Db,
+  projectId: string,
+  campusBlock: string | null,
+): Promise<CampusView | null> {
+  if (!campusBlock) return null;
+  const res = await db.execute(sql`
+    SELECT id, canonical_name, current_stage FROM projects
+    WHERE campus_block = ${campusBlock} AND id != ${projectId}
+    ORDER BY first_seen_at ASC LIMIT 25`);
+  const block = campusBlock.includes(":") ? campusBlock.split(":")[1]! : campusBlock;
+  return {
+    block,
+    siblings: (res.rows as { id: string; canonical_name: string; current_stage: string }[]).map(
+      (r) => ({ id: r.id, name: r.canonical_name, stage: r.current_stage }),
+    ),
   };
 }
 

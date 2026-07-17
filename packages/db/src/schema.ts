@@ -178,6 +178,9 @@ export const projects = pgTable(
     geometry: geometry("geometry"),
     currentStage: text("current_stage").notNull().default("unknown"),
     stageConfidence: doublePrecision("stage_confidence"),
+    /** Derived active-campus membership ('<county>:<block>'), stamped/cleared
+     * by computeCampusVelocity — rebuildable, like development_id. */
+    campusBlock: text("campus_block"),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
   },

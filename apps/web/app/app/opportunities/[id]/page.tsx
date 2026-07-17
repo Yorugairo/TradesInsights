@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { DISPOSITION_REASONS, buildDecisionMemo } from "@otn/intelligence";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
-import { accountByKey, opportunityDetail } from "../../../../lib/queries.js";
+import { accountByKey, campusSiblings, opportunityDetail } from "../../../../lib/queries.js";
 import { Badge, cell, fmtDate, fmtMoney, healthTone, table } from "../../../../lib/ui.js";
 import { FeedbackForm, StartPursuitButton, StateButtons } from "./actions.js";
 
@@ -28,6 +28,8 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
 
   // S1 decision memo — assembled from stored rows (side-effect-free preview).
   const memo = await buildDecisionMemo(db(), id);
+  // #1 — active-campus siblings (derived campus_block; null when not in one).
+  const campus = await campusSiblings(db(), o.project.id, o.project.campusBlock);
 
   const rationale = o.rationale as {
     components?: Record<string, number>;
@@ -84,6 +86,28 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           <p>
             <strong>Timing:</strong> {memo.timingAssessment}
           </p>
+        </section>
+      )}
+
+      {campus && (
+        <section
+          data-testid="campus-panel"
+          style={{ border: "1px solid #ddd", borderRadius: 8, padding: "1rem", margin: "1rem 0" }}
+        >
+          <h2 style={{ marginTop: 0 }}>
+            Active campus <Badge tone="green">parcel block {campus.block}</Badge>
+          </h2>
+          <p>
+            This project is one of <strong>{campus.siblings.length + 1}</strong> active projects on
+            the same parcel block — one site, one relationship. Related projects:
+          </p>
+          <ul>
+            {campus.siblings.map((s) => (
+              <li key={s.id}>
+                <Link href={`/app/projects/${s.id}`}>{s.name}</Link> — {s.stage}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

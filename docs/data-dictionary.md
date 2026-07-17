@@ -21,7 +21,7 @@ Key columns: `key` (unique), `authority`, `priority` (P0/P1/lookup/context/test)
 
 **developments** — top-level real-estate efforts. `canonical_name`, `development_type`, `county`, `geometry`.
 
-**projects** — phase/project level. `development_id`, `parent_project_id` (hierarchy), `permitting_jurisdiction` (always retained; King = unincorporated unless stated), `county`, `address_normalized`, `parcel_ids` (jsonb array), `geometry`, `current_stage` (spec §9 enum), `stage_confidence`.
+**projects** — phase/project level. `development_id`, `parent_project_id` (hierarchy), `permitting_jurisdiction` (always retained; King = unincorporated unless stated), `county`, `address_normalized`, `parcel_ids` (jsonb array), `geometry`, `current_stage` (spec §9 enum), `stage_confidence`, `campus_block` (migration `0013_campus_block`, #1 — derived active-campus membership `'<county>:<parcel-block-prefix>'`, stamped/cleared by `computeCampusVelocity` on every run like `development_id`; a rebuildable derived layer, never source data; prefix lengths per county are calibrated in `PARCEL_BLOCK_PREFIX_BY_COUNTY` — King 6 = the official PIN "major", Lewis 6 = base parcel of the 12-digit number, Thurston 7, default 6).
 
 **project_external_ids** — namespaced official IDs: (authority, id_type, external_id) unique.
 

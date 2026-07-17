@@ -288,6 +288,62 @@ describe("per-record Division-08 classification (campus-cluster fix)", () => {
   });
 });
 
+describe("active-campus feature (#1 campus surfacing, scorer v1.4.0)", () => {
+  const smallCommercial = {
+    county: "King" as const,
+    permittingJurisdiction: "Unincorporated King County",
+    text: "commercial tenant improvement suite 210",
+    maxValuation: 40_000, // below every scale threshold on its own
+    stage: "permit_issued" as const,
+  };
+
+  it("campus membership floors commercial scale_value at 0.6 and adds the signal", () => {
+    const inCampus = routeProject(
+      features({ ...smallCommercial, campusBlock: "King:720232" }),
+      ACCOUNTS,
+    ).find((r) => r.accountKey === "lacey_glass_commercial")!;
+    expect(inCampus.components["scale_value"]).toBe(0.6);
+    expect(inCampus.signals).toContain("active_campus");
+  });
+
+  it("absent campusBlock (frozen eval examples) scores exactly as before", () => {
+    const solo = routeProject(features(smallCommercial), ACCOUNTS).find(
+      (r) => r.accountKey === "lacey_glass_commercial",
+    )!;
+    expect(solo.components["scale_value"]).toBe(0.15);
+    expect(solo.signals).not.toContain("active_campus");
+  });
+
+  it("campus never affects At Home routing (campuses are commercial sites)", () => {
+    // An industrial campus member must not become residentialFit for At Home.
+    const f = features({
+      county: "Lewis",
+      text: "industrial fabrication building",
+      campusBlock: "Lewis:003882",
+      stage: "permit_issued",
+    });
+    const atHome = routeProject(f, ACCOUNTS).find((r) => r.accountKey === "lacey_glass_at_home");
+    expect(atHome).toBeUndefined();
+  });
+
+  it("Solis gets the signal but no score change (provisional profile)", () => {
+    const base = features({
+      county: "Thurston",
+      text: "commercial tenant improvement drywall",
+      maxValuation: 100_000,
+      stage: "permit_issued",
+    });
+    const solo = routeProject(base, ACCOUNTS).find((r) => r.accountKey === "solis_interiors")!;
+    const inCampus = routeProject(
+      { ...base, campusBlock: "Thurston:1180232" },
+      ACCOUNTS,
+    ).find((r) => r.accountKey === "solis_interiors")!;
+    expect(inCampus.score).toBe(solo.score);
+    expect(inCampus.signals).toContain("active_campus");
+    expect(solo.signals).not.toContain("active_campus");
+  });
+});
+
 describe("S6 Lacey cost control — shared services, no org-id branches", () => {
   it("Home and Commercial both route through the shared config-keyed pipeline", () => {
     // A project with NO organization still routes for the Lacey profiles — route

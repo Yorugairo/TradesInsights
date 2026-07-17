@@ -6,7 +6,7 @@ import { stageOrder } from "@otn/resolution";
  * Final scores are arithmetic over stored components — model prose never
  * sets a score (spec §13).
  */
-export const SCORING_ALGORITHM_VERSION = "1.3.0";
+export const SCORING_ALGORITHM_VERSION = "1.4.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -29,6 +29,14 @@ export interface ProjectFeatures {
   maxValuation: number | null;
   clusterSize: number;
   hasVelocitySignal: boolean;
+  /**
+   * Derived active-campus membership ('<county>:<block>'; #1). A campus is a
+   * commercial/institutional site with many DISTINCT-named permits on one
+   * parcel block — deliberately NOT folded into hasVelocitySignal, which
+   * feeds the residential cluster concept (routeAtHome's residentialFit).
+   * Absent on frozen eval examples → prior behavior, gates hold unchanged.
+   */
+  campusBlock?: string | null;
   orgs: { name: string; role: string | null }[];
   aGradeEvidence: number;
   lastMaterialChangeAt: Date | null;
@@ -306,10 +314,15 @@ export function routeCommercial(
   const fits = c.isCommercial || c.isMultifamily || c.isPublicWork || c.hasGlazing;
   if (!fits) return null;
 
+  // Active-campus membership (#1): many distinct permits on one parcel block
+  // means repeat commercial work at a single site — one relationship, many
+  // packages. Deterministic floor on scale_value, never a fabricated valuation.
+  const inCampus = Boolean(f.campusBlock);
   const signals: string[] = [];
   if (c.hasGlazingScope) signals.push("division_08_keywords");
   if (c.isPublicWork) signals.push("public_work");
   if (c.isMultifamily) signals.push("multifamily");
+  if (inCampus) signals.push("active_campus");
   if (f.county === "King") signals.push("king_routes_commercial");
 
   const components = {
@@ -318,7 +331,7 @@ export function routeCommercial(
     // max, so a glazing keyword in a demolition record cannot borrow a sibling
     // record's construction scope (M3.8 turf field; S6 SpaceX campus cluster).
     division_08_system_fit: c.division08Fit,
-    scale_value:
+    scale_value: Math.max(
       (f.maxValuation ?? 0) >= 1_000_000 || c.effectiveUnits >= 20
         ? 1
         : (f.maxValuation ?? 0) >= 250_000 || c.effectiveUnits >= 5
@@ -326,6 +339,10 @@ export function routeCommercial(
           : f.maxValuation === null
             ? 0.3
             : 0.15,
+      // A member of an active campus carries at least mid-scale value even when
+      // its own permit is small — the site aggregates many packages (#1).
+      inCampus ? 0.6 : 0,
+    ),
     timing: timingResidentialGlass(f.stage) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: 1,
     gc_developer_architect_known: orgIdentified(f, [
@@ -361,6 +378,9 @@ export function routeSolis(
   const signals: string[] = [];
   if (c.isTi) signals.push("tenant_improvement");
   if (c.hasInterior) signals.push("drywall_painting_keywords");
+  // Signal-only while Solis's profile is provisional (§12.3) — visible in the
+  // rationale/digest but score-neutral until customer calibration.
+  if (f.campusBlock) signals.push("active_campus");
   if (overCapacity) signals.push("gc_relationship_radar");
 
   const components = {

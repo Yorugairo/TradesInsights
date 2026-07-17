@@ -167,6 +167,27 @@ describe("M4.6 customer bid inbox", () => {
     expect(summary.errors).toBe(0);
   });
 
+  it("private-CLASS records stay out even when the account binding is unbound", async () => {
+    // Regression (2026-07-17): the guard used to key ONLY on account_profile_id,
+    // so an unbound/not-yet-activated private inbox source leaked its records
+    // into the shared graph on the next resolve run. access_class must hold on
+    // any binding state.
+    await db.execute(sql`UPDATE sources SET account_profile_id = NULL WHERE id = ${sourceId}`);
+    try {
+      const summary = await resolveUnresolved(db, { limit: 10_000 });
+      const resolved = await db.execute(sql`
+        SELECT count(*) AS n FROM record_resolutions rr
+        JOIN source_records sr ON sr.id = rr.source_record_id
+        WHERE sr.source_id = ${sourceId}`);
+      expect(Number((resolved.rows[0] as { n: string }).n)).toBe(0);
+      expect(summary.errors).toBe(0);
+    } finally {
+      await db.execute(
+        sql`UPDATE sources SET account_profile_id = ${ownerAccountId} WHERE id = ${sourceId}`,
+      );
+    }
+  });
+
   it("account isolation: only the owning account's scoped query reaches the records", async () => {
     const forOwner = await db.execute(sql`
       SELECT count(*) AS n FROM source_records sr JOIN sources s ON s.id = sr.source_id

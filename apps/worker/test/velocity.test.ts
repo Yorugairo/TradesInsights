@@ -15,6 +15,7 @@ import {
   type Db,
 } from "@otn/db";
 import type { NormalizedSourceRecord } from "@otn/domain";
+import { loadFeatures } from "@otn/intelligence";
 import {
   buildDevelopments,
   computeCampusVelocity,
@@ -214,6 +215,7 @@ describe("M2.6 depth — campus velocity (#3)", () => {
     }
     const summary = await computeCampusVelocity(db, { county: "Lewis", minProjects: 5, prefixLen: 6 });
     expect(summary.campusEventsEmitted).toBeGreaterThanOrEqual(1);
+    expect(summary.projectsStamped).toBeGreaterThanOrEqual(5);
 
     // Exactly one campus_velocity across the block — on the anchor, not 5.
     const evs = await db
@@ -222,6 +224,14 @@ describe("M2.6 depth — campus velocity (#3)", () => {
       .where(eq(projectEvents.eventType, "campus_velocity"));
     expect(evs.filter((e) => campusIds.has(e.projectId)).length).toBe(1);
 
+    // #1 — every member carries the derived campus_block for scoring/UI/digest.
+    const stamped = await db.execute(sql`
+      SELECT campus_block FROM projects WHERE id IN
+        (${sql.join([...campusIds].map((id) => sql`${id}`), sql`, `)})`);
+    expect(
+      (stamped.rows as { campus_block: string | null }[]).map((r) => r.campus_block),
+    ).toEqual(Array(campusIds.size).fill("Lewis:991100"));
+
     // Idempotent: a second run adds nothing new for the block.
     await computeCampusVelocity(db, { county: "Lewis", minProjects: 5, prefixLen: 6 });
     const evs2 = await db
@@ -229,6 +239,24 @@ describe("M2.6 depth — campus velocity (#3)", () => {
       .from(projectEvents)
       .where(eq(projectEvents.eventType, "campus_velocity"));
     expect(evs2.filter((e) => campusIds.has(e.projectId)).length).toBe(1);
+  });
+
+  it("scoring features expose campus membership (#1 loadFeatures integration)", async () => {
+    const anchorId = [...campusIds][0]!;
+    // loadFeatures excludes the test-jurisdiction marker; temporarily rename
+    // this one project so the real feature SQL path is exercised, then revert.
+    await db.execute(sql`
+      UPDATE projects SET permitting_jurisdiction = 'Campus Integration City'
+      WHERE id = ${anchorId}`);
+    try {
+      const feats = await loadFeatures(db, [anchorId]);
+      expect(feats).toHaveLength(1);
+      expect(feats[0]!.campusBlock).toBe("Lewis:991100");
+    } finally {
+      await db.execute(sql`
+        UPDATE projects SET permitting_jurisdiction = 'Test Jurisdiction'
+        WHERE id = ${anchorId}`);
+    }
   });
 
   it("stays silent for a block below the threshold (4 projects)", async () => {
@@ -244,6 +272,26 @@ describe("M2.6 depth — campus velocity (#3)", () => {
       .from(projectEvents)
       .where(eq(projectEvents.eventType, "campus_velocity"));
     expect(evs.filter((e) => below.has(e.projectId)).length).toBe(0);
+
+    // Below-threshold members are never stamped.
+    const rows = await db.execute(sql`
+      SELECT campus_block FROM projects WHERE id IN
+        (${sql.join([...below].map((id) => sql`${id}`), sql`, `)})`);
+    expect((rows.rows as { campus_block: string | null }[]).every((r) => r.campus_block === null)).toBe(true);
+  });
+
+  it("a campus that goes quiet loses the derived badge (clear-then-stamp)", async () => {
+    // windowDays 0 → nothing qualifies in Lewis → stamps in scope are cleared.
+    const cleared = await computeCampusVelocity(db, { county: "Lewis", windowDays: 0, prefixLen: 6 });
+    expect(cleared.campusesFound).toBe(0);
+    const rows = await db.execute(sql`
+      SELECT count(*) AS n FROM projects WHERE campus_block IS NOT NULL AND county = 'Lewis'`);
+    expect(Number((rows.rows[0] as { n: string }).n)).toBe(0);
+
+    // Restore: a default-window run re-stamps the active block (and any real
+    // Lewis campuses this scoped run may have cleared — derived layer hygiene).
+    const restored = await computeCampusVelocity(db, { county: "Lewis", minProjects: 5, prefixLen: 6 });
+    expect(restored.projectsStamped).toBeGreaterThanOrEqual(5);
   });
   // Cleanup: campus projects are tracked in createdProjects via resolveTracked,
   // so the file-level afterAll deletes them (and their campus_velocity events).

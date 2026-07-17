@@ -31,10 +31,27 @@ export const VELOCITY_MIN_PERMITS = 5;
  */
 export const CAMPUS_WINDOW_DAYS = 90;
 export const CAMPUS_MIN_PROJECTS = 5;
-/** Leading chars of a normalized parcel that identify the plat/block. Tuned to
- * King's 10-digit parcels (the pilot's dense-campus county); may need per-county
- * tuning — documented, not silently assumed. */
+/** Fallback block-prefix length when a county has no calibrated entry. */
 export const PARCEL_BLOCK_PREFIX_LEN = 6;
+/**
+ * Per-county parcel-block prefix (#5), calibrated 2026-07-17 against the live
+ * corpus (grouping power measured at len 5–8 per county):
+ * - King (10-digit PIN): 6 = the official "major" number (plat/block) — exact
+ *   semantics, max observed group 16.
+ * - Lewis (12-digit): 6 = the base parcel of the 12-digit number; segregations
+ *   and BLAs share it. Max observed group 4 — conservative.
+ * - Thurston (11-digit): 7 — never merges beyond one plat for platted parcels
+ *   and stays sub-quarter-section for unplatted; max observed group 5. At 5–6
+ *   the unplatted numbering risks merging unrelated section-sized areas.
+ * - Pierce: no parcels in corpus yet (source blocked) — default until data.
+ * The ≥minProjects-distinct-projects-in-window activity gate is the primary
+ * false-positive control; the prefix only shapes candidate grouping.
+ */
+export const PARCEL_BLOCK_PREFIX_BY_COUNTY: Record<string, number> = {
+  King: 6,
+  Lewis: 6,
+  Thurston: 7,
+};
 
 export interface VelocitySummary {
   developmentsScanned: number;
@@ -135,6 +152,8 @@ export async function computeClusterVelocity(
 export interface CampusVelocitySummary {
   campusesFound: number;
   campusEventsEmitted: number;
+  /** Member projects stamped with a derived campus_block this run. */
+  projectsStamped: number;
 }
 
 export async function computeCampusVelocity(
@@ -150,13 +169,23 @@ export async function computeCampusVelocity(
 ): Promise<CampusVelocitySummary> {
   const windowDays = opts.windowDays ?? CAMPUS_WINDOW_DAYS;
   const minProjects = opts.minProjects ?? CAMPUS_MIN_PROJECTS;
-  const prefixLen = opts.prefixLen ?? PARCEL_BLOCK_PREFIX_LEN;
   const countyFilter = opts.county ? sql`AND p.county = ${opts.county}` : sql``;
+  // Per-county prefix (#5) unless a fixed length is forced. Built as a CASE
+  // over the calibrated map so one query serves all counties.
+  const prefixExpr =
+    opts.prefixLen != null
+      ? sql`${opts.prefixLen}::int`
+      : sql`(CASE p.county ${sql.join(
+          Object.entries(PARCEL_BLOCK_PREFIX_BY_COUNTY).map(
+            ([county, len]) => sql`WHEN ${county} THEN ${len}`,
+          ),
+          sql` `,
+        )} ELSE ${PARCEL_BLOCK_PREFIX_LEN} END)::int`;
 
   const res = await db.execute(sql`
     WITH member AS (
       SELECT p.id AS project_id, p.county, p.first_seen_at,
-        left(regexp_replace(p.parcel_ids->>0, '[^0-9A-Za-z]', '', 'g'), ${prefixLen}) AS block,
+        left(regexp_replace(p.parcel_ids->>0, '[^0-9A-Za-z]', '', 'g'), ${prefixExpr}) AS block,
         pe.source_record_id,
         COALESCE(pe.event_date, pe.observed_at) AS at
       FROM projects p
@@ -164,34 +193,58 @@ export async function computeCampusVelocity(
       WHERE p.development_id IS NULL
         ${countyFilter}
         AND p.parcel_ids->>0 IS NOT NULL
-        AND length(regexp_replace(p.parcel_ids->>0, '[^0-9A-Za-z]', '', 'g')) >= ${prefixLen}
+        AND length(regexp_replace(p.parcel_ids->>0, '[^0-9A-Za-z]', '', 'g')) >= ${prefixExpr}
         -- Any permit-lifecycle activity (application through issuance) counts as
         -- campus activity, including the application_submitted type King reports emit.
         AND pe.event_type IN ('permit_applied', 'permit_issued', 'application_submitted')
         AND COALESCE(pe.event_date, pe.observed_at) >= now() - make_interval(days => ${windowDays})
     ),
     campus AS (
-      SELECT county, block, count(DISTINCT project_id) AS project_count, max(at) AS latest_at
+      SELECT county, block, count(DISTINCT project_id) AS project_count, max(at) AS latest_at,
+        json_agg(DISTINCT project_id) AS member_ids
       FROM member
       GROUP BY county, block
       HAVING count(DISTINCT project_id) >= ${minProjects}
     )
-    SELECT c.county, c.block, c.project_count, c.latest_at,
+    SELECT c.county, c.block, c.project_count, c.latest_at, c.member_ids,
       (SELECT m.project_id FROM member m WHERE m.county = c.county AND m.block = c.block
         ORDER BY m.first_seen_at ASC LIMIT 1) AS anchor_project_id,
       (SELECT m.source_record_id FROM member m WHERE m.county = c.county AND m.block = c.block
         ORDER BY m.at DESC LIMIT 1) AS latest_record_id
     FROM campus c`);
 
-  let emitted = 0;
-  for (const r of res.rows as {
+  const campuses = res.rows as {
     county: string;
     block: string;
     project_count: string | number;
     latest_at: string;
+    member_ids: string[];
     anchor_project_id: string;
     latest_record_id: string;
-  }[]) {
+  }[];
+
+  // Derived campus membership (#1): stamp campus_block on every member of a
+  // qualifying campus so scoring, the UI, and the digest read one indexed
+  // column instead of re-deriving parcel prefixes. Clear-then-stamp keeps the
+  // column a pure recomputation of current state (a campus that goes quiet
+  // loses the badge) — scoped to the county filter when one is set.
+  let stamped = 0;
+  await db.execute(sql`
+    UPDATE projects p SET campus_block = NULL
+    WHERE p.campus_block IS NOT NULL ${countyFilter}`);
+  for (const c of campuses) {
+    const key = `${c.county}:${c.block}`;
+    const upd = await db.execute(sql`
+      UPDATE projects SET campus_block = ${key}
+      WHERE id IN (${sql.join(
+        c.member_ids.map((id) => sql`${id}`),
+        sql`, `,
+      )})`);
+    stamped += Number(upd.rowCount ?? 0);
+  }
+
+  let emitted = 0;
+  for (const r of campuses) {
     // Idempotent: one campus_velocity per (anchor, latest permit record) — a new
     // permit on the block moves latest_record_id and re-signals.
     const existing = await db.execute(sql`
@@ -222,7 +275,11 @@ export async function computeCampusVelocity(
     );
   }
 
-  const summary = { campusesFound: res.rows.length, campusEventsEmitted: emitted };
+  const summary = {
+    campusesFound: campuses.length,
+    campusEventsEmitted: emitted,
+    projectsStamped: stamped,
+  };
   opts.logger?.info(summary, "campus velocity complete");
   return summary;
 }

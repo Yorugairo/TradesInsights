@@ -466,6 +466,19 @@ export async function resolveRecord(
   return { sourceRecordId: row.id, outcome: "created", rule: "new_project", projectId };
 }
 
+/**
+ * Guard for sources whose records may enter the SHARED project graph.
+ * Account-scoped private records (customer bid inboxes) stay out: merging
+ * them would let a private invitation move a shared project's stage/events,
+ * leaking one account's private signal to others (M4.6 scaffold boundary).
+ * The access_class check holds even when the account binding is NULL (a
+ * not-yet-activated or unbound inbox source): private-CLASS data never
+ * enters the shared graph on any binding state.
+ */
+export function sharedGraphSourceGuard() {
+  return sql`(${sources.accountProfileId} IS NULL AND ${sources.accessClass} != 'private_authorized')`;
+}
+
 export interface ResolveRunSummary {
   processed: number;
   merged: number;
@@ -500,12 +513,7 @@ export async function resolveUnresolved(
       sql`NOT EXISTS (SELECT 1 FROM record_resolutions rr WHERE rr.source_record_id = ${sourceRecords.id} AND rr.status = 'active')
           AND NOT EXISTS (SELECT 1 FROM resolution_reviews rv WHERE rv.source_record_id = ${sourceRecords.id} AND rv.status = 'pending')
           ${opts.includeTestSources ? sql`` : sql`AND ${sources.priority} != 'test'`}
-          -- Account-scoped private records (customer bid inboxes) stay out of
-          -- the SHARED project graph: merging them would let a private
-          -- invitation move a shared project's stage/events, leaking one
-          -- account's private signal to others. Per-account graph overlays
-          -- are activation-time work (M4.6 scaffold boundary, see STATUS).
-          AND ${sources.accountProfileId} IS NULL`,
+          AND ${sharedGraphSourceGuard()}`,
     )
     .orderBy(sourceRecords.firstSeenAt)
     .limit(limit);

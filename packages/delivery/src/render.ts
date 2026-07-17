@@ -28,6 +28,11 @@ function itemHtml(item: DigestItem): string {
         )
         .join(" vs. ")} — verify before quoting.</p>`
     : "";
+  // #1 — active-campus context: one site aggregating many permits is one
+  // relationship worth working, not N disconnected leads.
+  const campus = item.campus
+    ? `<p><strong>Active campus:</strong> one of ${item.campus.projectCount} active projects on parcel block ${esc(item.campus.block)} — one site, one relationship.</p>`
+    : "";
   const links = item.sourceLinks
     .map((l) => `<a href="${esc(l.url)}">${esc(l.label)}</a>`)
     .join(" · ");
@@ -35,7 +40,7 @@ function itemHtml(item: DigestItem): string {
     <p><strong>${esc(item.projectName)}</strong> — ${esc(item.stage)} · ${esc(item.county)} / ${esc(item.jurisdiction)} · score ${item.score ?? "—"}</p>
     <p><strong>What changed:</strong> ${esc(item.whatChanged)}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
-    ${facts}${inferences}${missing}${unitConflict}
+    ${campus}${facts}${inferences}${missing}${unitConflict}
     <p><strong>Next action:</strong> ${esc(item.nextAction)}</p>
     <p>Sources: ${links || "—"}</p>
   </li>`;

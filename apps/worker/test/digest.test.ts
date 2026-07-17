@@ -555,6 +555,44 @@ describe("M3.6 weekly digest", () => {
     expect(a?.unitCountDisagreement ?? null).toBeNull();
   });
 
+  it("#1: an active-campus member carries campus context into the brief", async () => {
+    // Stamp both test projects onto one derived campus block (what
+    // computeCampusVelocity does for a qualifying block).
+    const block = `Thurston:99${RUN.slice(0, 4)}`;
+    await db.execute(sql`
+      UPDATE projects SET campus_block = ${block}
+      WHERE id IN (${projectPassId}, ${projectBlockedId})`);
+    try {
+      const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+      const item = [
+        ...model.sections.priorityNew,
+        ...model.sections.stageChanges,
+        ...model.sections.missingFacts,
+        ...model.sections.monitoring,
+      ].find((i) => i.projectId === projectPassId)!;
+      expect(item.campus).toEqual({ block: `99${RUN.slice(0, 4)}`, projectCount: 2 });
+      const html = renderDigestHtml(model);
+      expect(html).toContain("Active campus:");
+      expect(html).toContain(`2 active projects on parcel block 99${RUN.slice(0, 4)}`);
+    } finally {
+      await db.execute(sql`
+        UPDATE projects SET campus_block = NULL
+        WHERE id IN (${projectPassId}, ${projectBlockedId})`);
+    }
+  });
+
+  it("a non-campus project renders no campus line", async () => {
+    const model = await buildDigest(db, accountDiscId, { start: PERIOD_START, end: PERIOD_END });
+    const item = [
+      ...model.sections.priorityNew,
+      ...model.sections.stageChanges,
+      ...model.sections.missingFacts,
+      ...model.sections.monitoring,
+    ].find((i) => i.projectId === projectDiscrepancyId)!;
+    expect(item.campus).toBeNull();
+    expect(renderDigestHtml(model)).not.toContain("Active campus:");
+  });
+
   it("M4.4: a recorded human decision (promote) is the only automation override", async () => {
     await db
       .update(opportunities)
