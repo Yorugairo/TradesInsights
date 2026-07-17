@@ -415,3 +415,40 @@ describe("P2 — outreach talking points (evidence-only)", () => {
     expect(joined).toContain("$400,000");
   });
 });
+
+// Runs LAST in this file: it mutates the easy fixture's route + issue date.
+describe("B — drywall bid-window line on interior-trades items", () => {
+  it("permit issued ~5 wks ago on the interior route → OPEN, rendered; other routes get no line", async () => {
+    const fiveWeeksAgo = new Date(Date.now() - 35 * 86_400_000).toISOString().slice(0, 10);
+    await db.execute(sql`UPDATE opportunities SET route = 'interior_trades' WHERE id = ${easyOppId}`);
+    await db.execute(sql`
+      UPDATE source_records
+      SET normalized_json = jsonb_set(normalized_json, '{issueDate}', to_jsonb(${fiveWeeksAgo}::text))
+      WHERE id IN (
+        SELECT source_record_id FROM record_resolutions
+        WHERE project_id = (SELECT project_id FROM opportunities WHERE id = ${easyOppId}))`);
+
+    const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+    const all = [
+      ...model.easyWins,
+      ...model.sections.priorityNew,
+      ...model.sections.stageChanges,
+      ...model.sections.missingFacts,
+      ...model.sections.monitoring,
+      ...model.reviewQueue,
+    ];
+    const item = all.find((i) => i.opportunityId === easyOppId)!;
+    expect(item.bidWindow).not.toBeNull();
+    // "interior buildout of 12 suites" has no commercial/SFR keyword →
+    // residential track; issued 5 wks ago → the typical window is open.
+    expect(item.bidWindow!.status).toBe("open");
+    expect(item.bidWindow!.note).toMatch(/framed and dried-in/);
+
+    const html = renderDigestHtml(model);
+    expect(html).toContain("Drywall bids — OPEN NOW");
+
+    // Route-less items (the other fixtures) carry no drywall line.
+    const other = all.find((i) => i.opportunityId !== easyOppId);
+    if (other) expect(other.bidWindow).toBeNull();
+  });
+});

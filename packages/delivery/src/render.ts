@@ -13,6 +13,107 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ── Plain-English humanization (deterministic — no model involved) ───────────
+// The DigestModel keeps raw audit values; this layer turns them into words a
+// busy owner reads in seconds. Unknown inputs degrade to de-snake-cased text,
+// never to fabricated content.
+
+const STAGE_PHRASES: Record<string, string> = {
+  concept: "Concept",
+  preapplication: "Pre-application",
+  entitlement: "In land-use review",
+  approved: "Approved",
+  construction_documents: "In design",
+  permit_applied: "Permit applied",
+  permit_issued: "Permit issued",
+  bidding_confirmed: "Out to bid",
+  construction: "Under construction",
+  near_final: "Nearly complete",
+  complete: "Complete",
+  withdrawn: "Withdrawn",
+  unknown: "Status unknown",
+};
+
+function humanStage(stage: string): string {
+  return STAGE_PHRASES[stage] ?? stage.replace(/_/g, " ");
+}
+
+/** "City of Seattle (King Co.)" — or just the jurisdiction when it already
+ * names the county ("Unincorporated King County"). */
+function humanPlace(county: string, jurisdiction: string): string {
+  if (jurisdiction.toLowerCase().includes(county.toLowerCase())) return jurisdiction;
+  return `${jurisdiction} (${county} Co.)`;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** ISO date prefix → "Jun 3, 2026" — pure string math, no timezone drift. */
+function humanDate(v: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  if (!m) return null;
+  const month = MONTHS[Number(m[2]) - 1];
+  return month ? `${month} ${Number(m[3])}, ${m[1]}` : null;
+}
+
+function deSnake(s: string): string {
+  const last = s.includes(".") ? s.slice(s.lastIndexOf(".") + 1) : s;
+  return last.replace(/_/g, " ");
+}
+
+/** One verified (path, value) fact → a phrase. */
+function humanFact(f: { path: string; value: unknown }): string {
+  const v = f.value;
+  if (f.path === "project.valuationUsd" || f.path === "project_valuation") {
+    return typeof v === "number" ? `$${v.toLocaleString("en-US")} job value` : `job value ${String(v)}`;
+  }
+  if (f.path.startsWith("dates.")) {
+    const what = deSnake(f.path);
+    const d = typeof v === "string" ? humanDate(v) : null;
+    return d ? `${what} ${d}` : `${what} on record`;
+  }
+  if (f.path === "project.stage") return `status “${String(v)}”`;
+  if (f.path === "project.parcel") return `parcel ${String(v)}`;
+  if (f.path === "project.units" || f.path === "unit_count") return `${String(v)} units`;
+  if (f.path === "externalId") return `record ${String(v)}`;
+  if (f.path === "project.address") return String(v);
+  if (f.path === "project.description") {
+    const s = String(v);
+    return `“${s.length > 140 ? `${s.slice(0, 140)}…` : s}”`;
+  }
+  return `${deSnake(f.path)}: ${typeof v === "string" ? v : JSON.stringify(v)}`;
+}
+
+/** Missing-critical-fact keys → what the owner still needs to find out. */
+const MISSING_PHRASES: Record<string, string> = {
+  general_contractor: "who the GC is",
+  procurement_status: "whether it's out to bid",
+  bid_date: "the bid due date",
+  unit_count: "unit count",
+  "project.units": "unit count",
+  "project.address": "the site address",
+  "project.parcel": "the parcel number",
+  "project.description": "scope details",
+  "roles.developer": "the developer",
+  "roles.architect": "the architect",
+  "roles.applicant": "the applicant",
+  "dates.permit_issued": "the issue date",
+  project_valuation: "the job value",
+  "project.valuationUsd": "the job value",
+};
+
+function humanMissing(key: string): string {
+  return MISSING_PHRASES[key] ?? deSnake(key);
+}
+
+/** Bid-window status → the bolded lead-in on the 🔨 line. */
+const BID_PREFIX: Record<string, string> = {
+  confirmed_open: "BID NOW",
+  open: "OPEN NOW",
+  opens_soon: "Opens soon",
+  likely_closed: "Likely passed",
+  watch: "Watching",
+};
+
 function actionButtons(id: string, opts: RenderOptions): string {
   const links = opts.actionLinks?.get(id);
   if (!links) return "";
@@ -21,13 +122,18 @@ function actionButtons(id: string, opts: RenderOptions): string {
 
 function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
   const facts = item.confirmedFacts.length
-    ? `<p><strong>Confirmed facts:</strong> ${item.confirmedFacts.map(esc).join(" · ")}</p>`
+    ? `<p><strong>What we know:</strong> ${item.confirmedFacts.map((f) => esc(humanFact(f))).join(" · ")}</p>`
     : "";
   const inferences = item.inferences.length
     ? `<p><em>${item.inferences.map(esc).join("<br/>")}</em></p>`
     : "";
   const missing = item.missingCriticalFacts.length
-    ? `<p><strong>Missing critical facts:</strong> ${item.missingCriticalFacts.map(esc).join(", ")}</p>`
+    ? `<p><strong>Still unknown:</strong> ${item.missingCriticalFacts.map((k) => esc(humanMissing(k))).join(" · ")}</p>`
+    : "";
+  // Drywall bid-window inference (docs/domain-bid-timing.md) — the one line a
+  // busy owner acts on. Always typical-sequencing language, never a promise.
+  const bidWindow = item.bidWindow
+    ? `<p>🔨 <strong>Drywall bids — ${BID_PREFIX[item.bidWindow.status] ?? "Watching"}:</strong> ${esc(item.bidWindow.note)}</p>`
     : "";
   // M3.8 — sources disagree on unit count: show every value with its citation,
   // never a single silently-chosen number.
@@ -50,11 +156,11 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
     .map((l) => `<a href="${esc(l.url)}">${esc(l.label)}</a>`)
     .join(" · ");
   return `<li>
-    <p><strong>${esc(item.projectName)}</strong> — ${esc(item.stage)} · ${esc(item.county)} / ${esc(item.jurisdiction)} · score ${item.score ?? "—"}</p>
-    <p><strong>What changed:</strong> ${esc(item.whatChanged)}</p>
+    <p><strong>${esc(item.projectName)}</strong><br/>${esc(humanStage(item.stage))} · ${esc(humanPlace(item.county, item.jurisdiction))} · score ${item.score ?? "—"}</p>
+    ${bidWindow}<p><strong>What changed:</strong> ${esc(item.whatChanged).replace(/_/g, " ")}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
     ${campus}${facts}${inferences}${missing}${unitConflict}
-    <p><strong>Next action:</strong> ${esc(item.nextAction)}</p>
+    <p><strong>Next step:</strong> ${esc(item.nextAction)}</p>
     ${actionButtons(item.opportunityId, opts)}
     <p>Sources: ${links || "—"}</p>
   </li>`;
@@ -97,7 +203,7 @@ function topBlock(model: DigestModel, opts: RenderOptions): string {
 <ul>${model.radar
       .map(
         (i) =>
-          `<li><strong>${esc(i.projectName)}</strong> — ${esc(i.stage)} · ${esc(i.county)} · ${esc(i.whatChanged)}</li>`,
+          `<li><strong>${esc(i.projectName)}</strong> — ${esc(humanStage(i.stage))} · ${esc(i.county)} · ${esc(i.whatChanged).replace(/_/g, " ")}</li>`,
       )
       .join("\n")}</ul>`);
   }

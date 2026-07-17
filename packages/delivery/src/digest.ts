@@ -1,14 +1,19 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import {
+  bidTrackFor,
+  classify,
   decideInclusion,
+  drywallBidWindow,
   evaluateGate,
   latestExtraction,
   latestVerification,
   relationshipTargets,
   suppressedProjectIds,
+  type BidWindowStatus,
   type GateResult,
   type InclusionDecision,
+  type ProjectFeatures,
 } from "@otn/intelligence";
 
 /**
@@ -35,9 +40,14 @@ export interface DigestItem {
   isNew: boolean;
   whatChanged: string;
   whyItFits: string;
-  confirmedFacts: string[];
+  /** Verified facts as (path, value) pairs — render humanizes; the model keeps
+   * the raw audit form so nothing is lost between the email and the record. */
+  confirmedFacts: { path: string; value: unknown }[];
   inferences: string[];
   missingCriticalFacts: string[];
+  /** Drywall bid-window inference (docs/domain-bid-timing.md) — only attached
+   * on interior-trades routes; display-only, never sets bidding_confirmed. */
+  bidWindow: { status: BidWindowStatus; note: string } | null;
   nextAction: string;
   sourceLinks: { url: string; label: string }[];
   /** M3.8 — when a project's sources report different unit counts, every
@@ -114,6 +124,8 @@ interface CandidateRow {
   rationale_json: { signals?: string[]; route?: string } | null;
   text: string;
   max_valuation: number | null;
+  /** Latest stated permit issue date among active records (null when unstated). */
+  latest_issue_date: string | null;
   campus_block: string | null;
   last_material_change_at: string | null;
   has_org: boolean;
@@ -145,6 +157,7 @@ async function loadCandidates(
       p.current_stage, o.current_score, o.route, o.state, o.rationale_json, p.campus_block,
       o.last_material_change_at,
       COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation,
+      rec.latest_issue_date,
       EXISTS (SELECT 1 FROM project_roles pr WHERE pr.project_id = p.id
         AND pr.role IN ('applicant', 'owner', 'primary_contractor', 'contractor')) AS has_org,
       ${home} AS dist_m
@@ -152,7 +165,8 @@ async function loadCandidates(
     LEFT JOIN LATERAL (
       SELECT lower(string_agg(concat_ws(' ',
           sr.normalized_json->>'title', left(sr.normalized_json->>'description', 800)), ' ')) AS text,
-        max((sr.normalized_json->>'valuationUsd')::numeric)::float AS max_valuation
+        max((sr.normalized_json->>'valuationUsd')::numeric)::float AS max_valuation,
+        max(sr.normalized_json->>'issueDate') AS latest_issue_date
       FROM record_resolutions rr JOIN source_records sr ON sr.id = rr.source_record_id
       WHERE rr.project_id = p.id AND rr.status = 'active'
     ) rec ON true
@@ -296,12 +310,49 @@ async function unitCountDisagreement(
 
 function nextAction(item: { isNew: boolean; missing: string[]; state: string }): string {
   if (item.missing.length > 0) {
-    return `Verify missing critical facts before outreach: ${item.missing.join(", ")}.`;
+    // The "Still unknown" line lists WHAT is missing in plain words; this line
+    // just says what to do about it.
+    return "Confirm the unknowns above before reaching out.";
   }
   if (item.state === "priority_review" || item.state === "promoted") {
-    return "Review evidence and decide pursue/dismiss.";
+    return "Review the evidence and tap pursue or dismiss.";
   }
-  return "Monitor for stage changes.";
+  return "Nothing to do yet — we're watching for changes.";
+}
+
+/** Plain-English "why it fits" — routes/signals are internals; the owner gets
+ * one readable sentence. Unknown signals degrade to de-snake-cased words. */
+const ROUTE_PHRASES: Record<string, string> = {
+  interior_trades: "Matches your drywall + painting work",
+  gc_relationship_radar: "Likely oversize for a direct bid — a GC-relationship play",
+  residential_glass: "Matches your residential glass work",
+  commercial_glazing: "Matches your commercial glazing work",
+  division_08: "Matches your Division 08 scope",
+  joint_review: "Mixed signals — worth a judgment call",
+};
+const SIGNAL_PHRASES: Record<string, string> = {
+  tenant_improvement: "tenant-improvement scope",
+  drywall_painting_keywords: "drywall/paint mentioned in the records",
+  active_campus: "on an active multi-permit site",
+  gc_relationship_radar: "GC relationship opportunity",
+  division_08_keywords: "glazing scope in the records",
+  glass_product_keywords: "glass products mentioned",
+  public_work: "public-agency work",
+  multifamily: "multifamily project",
+  king_routes_commercial: "Seattle-area commercial",
+  subdivision: "part of a subdivision",
+  clustered_sfr_townhome_permits: "part of a home-building cluster",
+  low_rise_multifamily_joint_review: "low-rise multifamily",
+  late_stage_shower_mirror: "late-stage finish work (showers/mirrors)",
+};
+
+function humanWhyItFits(route: string | null, signals: string[]): string {
+  const base = route ? (ROUTE_PHRASES[route] ?? "Matched your routing rules") : "";
+  const parts = signals
+    .map((s) => SIGNAL_PHRASES[s] ?? s.replace(/_/g, " "))
+    .filter((p, i, a) => a.indexOf(p) === i);
+  if (base && parts.length > 0) return `${base} — ${parts.join(", ")}`;
+  return base || (parts.length > 0 ? parts.join(", ") : "");
 }
 
 async function buildItem(
@@ -349,9 +400,35 @@ async function buildItem(
         : "no change since your last digest";
 
   const signals = c.rationale_json?.signals ?? [];
-  const whyItFits = [c.route ? `route: ${c.route}` : null, signals.length ? `signals: ${signals.join(", ")}` : null]
-    .filter(Boolean)
-    .join(" · ");
+  const whyItFits = humanWhyItFits(c.route, signals);
+
+  // Drywall bid-window inference — interior-trades routes only (the timing
+  // model is drywall-specific; glass sequencing differs). classify() runs on
+  // the stored record text with honest nulls for unavailable aggregates.
+  let bidWindow: DigestItem["bidWindow"] = null;
+  if (c.route === "interior_trades" || c.route === "gc_relationship_radar") {
+    const cls = classify({
+      projectId: c.project_id,
+      county: c.county,
+      permittingJurisdiction: c.permitting_jurisdiction,
+      city: null,
+      stage: c.current_stage,
+      text: c.text ?? "",
+      maxUnits: null,
+      maxValuation: c.max_valuation === null ? null : Number(c.max_valuation),
+      clusterSize: 0,
+      hasVelocitySignal: false,
+      orgs: [],
+      aGradeEvidence: 0,
+      lastMaterialChangeAt: null,
+    } satisfies ProjectFeatures);
+    const w = drywallBidWindow({
+      stage: c.current_stage,
+      track: bidTrackFor(cls),
+      issuedAt: c.latest_issue_date ? new Date(c.latest_issue_date) : null,
+    });
+    bidWindow = { status: w.status, note: w.note };
+  }
 
   return {
     opportunityId: c.id,
@@ -365,10 +442,11 @@ async function buildItem(
     route: c.route,
     isNew: opts.isNew,
     whatChanged,
-    whyItFits: whyItFits || "matched account routing rules",
-    confirmedFacts: facts.map((f) => `${f.path} = ${JSON.stringify(f.value)}`),
+    whyItFits: whyItFits || "Matched your routing rules",
+    confirmedFacts: facts.map((f) => ({ path: f.path, value: f.value })),
     inferences: inferences.map((i) => `[inference] ${i.type} = ${JSON.stringify(i.value)} (${i.reason})`),
     missingCriticalFacts: missing,
+    bidWindow,
     nextAction: nextAction({ isNew: opts.isNew, missing, state: c.state }),
     sourceLinks: links,
     unitCountDisagreement: unitDisagreement,

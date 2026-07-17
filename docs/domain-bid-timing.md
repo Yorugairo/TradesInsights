@@ -63,10 +63,16 @@ watch issued permits.
 
 ## Where this plugs into the codebase (implementation plan)
 
-1. **`bidWindow(stage, isCommercial, issuedAt|appliedAt, now)`** in
-   `packages/intelligence` — returns `{ status: 'open'|'opens_soon'|'likely_closed'|'watch',
+> **STATUS 2026-07-17: steps 1 and 3 IMPLEMENTED** — `drywallBidWindow` +
+> `bidTrackFor` in `packages/intelligence/src/bid-window.ts` (14 unit tests), surfaced
+> as the 🔨 line on interior-trades digest items (`packages/delivery`). Steps 2
+> (stage-lag overlay) and 4 (timing-component refinement) remain, plus the memo.
+
+1. **`drywallBidWindow({stage, track, issuedAt, now})`** in
+   `packages/intelligence` — returns `{ status: 'confirmed_open'|'open'|'opens_soon'|'likely_closed'|'watch',
    opensAt, closesAt, note }`. Deterministic; pure function over stored dates + the
-   residential/commercial class the scorer already computes (`classify`).
+   residential/commercial track from the scorer's `classify` (via `bidTrackFor`:
+   SFR → residential; commercial/multifamily keywords → commercial; default residential).
 2. **Stage-lag (P3):** the existing `stage_lag_stats` gives *our own* observed
    applied→issued lags; this model supplies the **trade-specific** overlay
    (issued→drywall-bid for residential; the pre-permit window for commercial). Surface

@@ -382,7 +382,7 @@ describe("M3.6 weekly digest", () => {
     expect(model.sections.priorityNew.map((i) => i.projectId)).toContain(projectPassId);
     const item = model.sections.priorityNew.find((i) => i.projectId === projectPassId)!;
     expect(item.isNew).toBe(true);
-    expect(item.confirmedFacts.join(" ")).toContain("project.units");
+    expect(item.confirmedFacts.map((f) => f.path)).toContain("project.units");
     expect(item.inferences[0]).toContain("[inference]");
     expect(item.inclusion.mode).toBe("auto"); // verified, high-confidence, complete
     expect(item.sourceLinks.length).toBeGreaterThan(0);
