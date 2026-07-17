@@ -79,15 +79,21 @@ describe("model availability gate", () => {
   });
 
   it("blocks an OpenRouter key with no model slug", () => {
-    const saved = process.env.LLM_MONTHLY_BUDGET_USD;
+    const saved = {
+      budget: process.env.LLM_MONTHLY_BUDGET_USD,
+      key: process.env.OPENROUTER_API_KEY,
+      model: process.env.OPENROUTER_MODEL,
+    };
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     delete process.env.OPENROUTER_MODEL;
     process.env.LLM_MONTHLY_BUDGET_USD = "100";
     const result = modelAvailability();
     expect(result.available).toBe(false);
     expect(result.reason).toContain("OPENROUTER_MODEL");
-    delete process.env.OPENROUTER_API_KEY;
-    if (saved) process.env.LLM_MONTHLY_BUDGET_USD = saved;
-    else delete process.env.LLM_MONTHLY_BUDGET_USD;
+    const restore = (k: string, v: string | undefined) =>
+      v !== undefined ? (process.env[k] = v) : delete process.env[k];
+    restore("LLM_MONTHLY_BUDGET_USD", saved.budget);
+    restore("OPENROUTER_API_KEY", saved.key);
+    restore("OPENROUTER_MODEL", saved.model);
   });
 });

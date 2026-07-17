@@ -20,10 +20,22 @@ const OK_BODY = {
 
 describe("OpenRouterProvider", () => {
   it("requires a key and a model — no fabricated defaults", () => {
-    expect(() => new OpenRouterProvider({ model: "anthropic/claude-opus-4.1" })).toThrow(
-      /OPENROUTER_API_KEY is not set/,
-    );
-    expect(() => new OpenRouterProvider({ apiKey: "sk-or-test" })).toThrow(/OPENROUTER_MODEL is not set/);
+    // Hermetic: the constructor falls back to process.env, and a real
+    // OPENROUTER_API_KEY/MODEL may be injected into the run environment.
+    const saved = { key: process.env.OPENROUTER_API_KEY, model: process.env.OPENROUTER_MODEL };
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_MODEL;
+    try {
+      expect(() => new OpenRouterProvider({ model: "anthropic/claude-opus-4.1" })).toThrow(
+        /OPENROUTER_API_KEY is not set/,
+      );
+      expect(() => new OpenRouterProvider({ apiKey: "sk-or-test" })).toThrow(
+        /OPENROUTER_MODEL is not set/,
+      );
+    } finally {
+      if (saved.key !== undefined) process.env.OPENROUTER_API_KEY = saved.key;
+      if (saved.model !== undefined) process.env.OPENROUTER_MODEL = saved.model;
+    }
   });
 
   it("returns text, token usage, and OpenRouter's authoritative cost", async () => {
