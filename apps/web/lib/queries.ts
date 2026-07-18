@@ -2,8 +2,10 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import {
   evaluateGate,
+  latestBrief,
   latestExtraction,
   latestVerification,
+  type DecisionBrief,
   type GateResult,
   type ModelExtraction,
   type VerifierResult,
@@ -205,6 +207,10 @@ export interface OpportunityDetail {
   extraction: ModelExtraction | null;
   verification: { status: string; result: VerifierResult | null } | null;
   gate: GateResult | null;
+  /** Verified narrative brief (model prose over the memo), or null when none
+   * has been generated (no key / not yet run). The deterministic memo panel
+   * is always present regardless. */
+  brief: DecisionBrief | null;
   nextAction: string;
 }
 
@@ -256,13 +262,14 @@ export async function opportunityDetail(
   if (!r) return null;
   const projectId = r["project_id"] as string;
 
-  const [roles, evidence, timeline, extraction, verification, gate] = await Promise.all([
+  const [roles, evidence, timeline, extraction, verification, gate, brief] = await Promise.all([
     projectRoles(db, projectId),
     projectEvidence(db, projectId, { accountProfileId }),
     projectTimeline(db, projectId),
     latestExtraction(db, projectId),
     latestVerification(db, projectId),
     evaluateGate(db, opportunityId),
+    latestBrief(db, opportunityId, accountProfileId, projectId),
   ]);
 
   const state = r["state"] as string;
@@ -295,6 +302,7 @@ export async function opportunityDetail(
       ? { status: verification.status, result: verification.result }
       : null,
     gate,
+    brief,
     nextAction: recommendNextAction(state, gate, extraction?.extraction ?? null),
   };
 }

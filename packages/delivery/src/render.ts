@@ -160,9 +160,15 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
   const links = item.sourceLinks
     .map((l) => `<a href="${esc(l.url)}">${esc(l.label)}</a>`)
     .join(" · ");
+  // The verified brief — a one-line plain-English lead a busy owner reads
+  // first. Every sentence traces to a verified fact/inference; it never sets
+  // the score or a bid state, so the structured fields below remain the record.
+  const brief = item.brief
+    ? `<p style="font-size:1.05em;line-height:1.5">${esc(item.brief)}</p>`
+    : "";
   return `<li>
     <p><strong>${esc(item.projectName)}</strong><br/>${esc(humanStage(item.stage))} · ${esc(humanPlace(item.county, item.jurisdiction))} · score ${item.score ?? "—"}</p>
-    ${bidWindow}<p><strong>What changed:</strong> ${esc(item.whatChanged).replace(/_/g, " ")}</p>
+    ${brief}${bidWindow}<p><strong>What changed:</strong> ${esc(item.whatChanged).replace(/_/g, " ")}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
     ${campus}${facts}${inferences}${missing}${unitConflict}
     <p><strong>Next step:</strong> ${esc(item.nextAction)}</p>

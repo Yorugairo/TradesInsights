@@ -56,6 +56,40 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
         <Link href={`/app/projects/${o.project.id}`}>project page</Link>
       </p>
 
+      {o.brief && (
+        <section
+          data-testid="decision-brief"
+          style={{
+            border: "1px solid #cfe3d0",
+            background: "#f4faf5",
+            borderRadius: 8,
+            padding: "1rem",
+            margin: "1rem 0",
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>
+            The brief{" "}
+            <Badge tone={memo?.verifierStatus === "passed" ? "green" : "amber"}>
+              verified{memo?.verifierStatus === "passed" ? "" : " — pending gate"}
+            </Badge>
+          </h2>
+          <p data-testid="brief-narrative" style={{ fontSize: "1.05rem", lineHeight: 1.55 }}>
+            {o.brief.segments.map((s, i) => (
+              <span
+                key={i}
+                style={s.kind === "inference" ? { color: "#6b6b6b", fontStyle: "italic" } : undefined}
+              >
+                {s.text}{" "}
+              </span>
+            ))}
+          </p>
+          <p style={{ fontSize: "0.8rem", color: "#6b6b6b", marginBottom: 0 }}>
+            Composed from verified facts only — every sentence traces to the evidence below; italics
+            are labeled inferences, not confirmed facts.
+          </p>
+        </section>
+      )}
+
       {memo && (
         <section
           data-testid="decision-memo"

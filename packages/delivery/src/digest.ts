@@ -5,6 +5,7 @@ import {
   classify,
   decideInclusion,
   evaluateGate,
+  latestBrief,
   latestExtraction,
   latestVerification,
   relationshipTargets,
@@ -39,6 +40,11 @@ export interface DigestItem {
   score: number | null;
   route: string | null;
   isNew: boolean;
+  /** Verified narrative brief (model prose over the memo), or null when none
+   * has been generated. Every sentence traces to a verified fact/inference;
+   * it never sets the score or a bid state. A one-line lead for the busy
+   * owner — the structured fields below stay the audit trail. */
+  brief: string | null;
   whatChanged: string;
   whyItFits: string;
   /** Verified facts as (path, value) pairs — render humanizes; the model keeps
@@ -369,16 +375,19 @@ async function buildItem(
     periodEnd: Date;
     gate: GateResult;
     easyWinConfig: EasyWinConfig | null;
+    accountProfileId: string;
   },
 ): Promise<DigestItem> {
-  const [events, links, extraction, verification, unitDisagreement, campus] = await Promise.all([
-    materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
-    sourceLinks(db, c.project_id),
-    latestExtraction(db, c.project_id),
-    latestVerification(db, c.project_id),
-    unitCountDisagreement(db, c.project_id),
-    campusContext(db, c.campus_block),
-  ]);
+  const [events, links, extraction, verification, unitDisagreement, campus, brief] =
+    await Promise.all([
+      materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
+      sourceLinks(db, c.project_id),
+      latestExtraction(db, c.project_id),
+      latestVerification(db, c.project_id),
+      unitCountDisagreement(db, c.project_id),
+      campusContext(db, c.campus_block),
+      latestBrief(db, c.id, opts.accountProfileId, c.project_id),
+    ]);
   const inclusion = decideInclusion({
     gate: opts.gate,
     extraction: extraction?.extraction ?? null,
@@ -445,6 +454,7 @@ async function buildItem(
     score: c.current_score,
     route: c.route,
     isNew: opts.isNew,
+    brief: brief?.narrative ?? null,
     whatChanged,
     whyItFits: whyItFits || "Matched your routing rules",
     confirmedFacts: facts.map((f) => ({ path: f.path, value: f.value })),
@@ -569,6 +579,7 @@ export async function buildDigest(
       periodEnd: period.end,
       gate,
       easyWinConfig: account.easyWin,
+      accountProfileId,
     });
 
     // M4.3/M4.4 — controlled automation: only independently verified,

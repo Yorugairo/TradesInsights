@@ -15,6 +15,7 @@
     "score:run": "tsx src/cli/score-run.ts",
     "extract:run": "tsx src/cli/extract-run.ts",
     "verify:run": "tsx src/cli/verify-run.ts",
+    "brief:run": "tsx src/cli/brief-run.ts",
     "gate:run": "tsx src/cli/gate-run.ts",
     "digest:run": "tsx src/cli/digest-run.ts",
     "feedback:report": "tsx src/cli/feedback-report.ts",
