@@ -23,6 +23,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <strong>OTN Insights</strong>
         {session.accountKey && (
           <>
+            <Link href="/app/pipeline">Pipeline</Link>
             <Link href="/app/pursuits">Pursuits</Link>
             <Link href="/app/opportunities">Opportunities</Link>
             <Link href="/app/map">Map</Link>
