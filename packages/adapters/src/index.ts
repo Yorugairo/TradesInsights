@@ -17,6 +17,7 @@ import {
 } from "./seattle-socrata.js";
 import { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 import { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
+import { CentraliaPermitReportsAdapter } from "./centralia-permit-reports.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 import { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 import { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
@@ -65,11 +66,13 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   tumwater_development_arcgis: () => new TumwaterDevelopmentArcgisAdapter(),
   pierce_permits_arcgis: () => new PiercePermitsArcgisAdapter(),
   puyallup_permits_arcgis: () => new PuyallupPermitsArcgisAdapter(),
+  centralia_permit_reports: () => new CentraliaPermitReportsAdapter(),
   tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
   tacoma_solicitations: () => new TacomaSolicitationsAdapter(),
 };
 export { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 export { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
+export { CentraliaPermitReportsAdapter } from "./centralia-permit-reports.js";
 export { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 export { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
 

@@ -1,0 +1,37 @@
+{
+  "captured_at": "2026-07-18",
+  "index_url": "https://www.cityofcentralia.com/524/Building-Permit-Statistics",
+  "publisher_verified": "Official City of Centralia site (cityofcentralia.com CivicPlus CMS); the Building Permit Statistics page under Community Development lists one issued-permit report per month, Nov 2024 → Jun 2026 (20 reports at capture).",
+  "fixtures": {
+    "index.html": "the live index page (server-rendered /DocumentCenter/View/<id>/<title> links; three naming styles across the series: 'Monthly Permit Report', 'Monthly Building Permit Report', 'Issued Permits')",
+    "february-2026.pdf": "recent format (cell-level glyph runs, rotated headers, single-run 'TOTAL FOR'); 55 rows, printed total $2,584,093.08; includes Century Communities SFR-New rows at $379–438k and the merged-run permit '202500798 Mechanical'",
+    "may-2026.pdf": "recent format; 61 rows, printed total $2,845,425.88; includes the space-split permit run '2026 0328 Demo' (permit 20260328) and a blank value printed as an accounting dash (20260324 → null, never zero)",
+    "july-2025.pdf": "recent format with a page spill: the last row sits alone on page 3 (too sparse to derive columns; inherits page 2 geometry) and merges permit+type AND date+owner glyph runs"
+  },
+  "format_generations": {
+    "pre_may_2025": "word-level glyph runs, split header words ('PERMIT'/'NUMBER' stacked), split 'TOTAL'/'FOR' label, header labels offset from data columns",
+    "may_2025_onward": "cell-level glyph runs, rotated single-run headers, single-run 'TOTAL FOR <Month>'"
+  },
+  "manual_comparison": {
+    "full_series_reconciliation_2026_07_18": "all 20 reports Nov 2024–Jun 2026 parse with the sum of row valuations matching the report's own printed monthly total to the penny (verified live 2026-07-18); e.g. Feb 2026 $2,584,093.08 over 55 rows, Dec 2025 $45,949,776.35 over 48 rows",
+    "spot_checks_verbatim": [
+      {
+        "permit": "20250786",
+        "type": "SFR - New",
+        "issued": "2/13/2026",
+        "owner_and_contractor": "Century Communities, LLC",
+        "address": "1429 Salzer Creek Loop",
+        "value": "398,000.00"
+      },
+      {
+        "permit": "20260056",
+        "type": "SFR - Remodel",
+        "contractor": "Promise Land Construction",
+        "comments": "Add toilet & sink to laundry room",
+        "value": "4,500.00"
+      }
+    ],
+    "known_source_quirks": "permit 20260073 in the Feb 2026 report prints DATE '2/11/2023' (evident city-side typo for 2026) — stored verbatim, never corrected; occasional 9-digit permit numbers (202500798); 'Owner' in the CONTRACTOR column means owner-performed work and is not emitted as an organization"
+  },
+  "notes": "Monthly ISSUED-permit reports: every row maps to normalizedStage permit_issued. Rows carry owner AND contractor names plus a stated value — the value is mapped to valuationUsd (unlike permit-fee fields elsewhere) because the column is the project value the city itself totals per month. D1 invariant reconciles the parsed sum against that printed total per artifact."
+}

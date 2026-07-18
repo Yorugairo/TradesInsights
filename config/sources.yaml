@@ -331,6 +331,32 @@ sources:
       /media/oldSite/. Reports' printed grand total can exceed the sum of
       printed per-row valuations (source-side; we never fabricate).
 
+  - key: centralia_permit_reports
+    name: City of Centralia Monthly Building Permit Reports
+    authority: City of Centralia
+    priority: P1
+    landing_url: https://www.cityofcentralia.com/524/Building-Permit-Statistics
+    format: pdf_index
+    access_class: pdf_index
+    cadence: weekly
+    county: Lewis
+    permitting_jurisdiction: City of Centralia
+    enabled: true
+    terms_reviewed_at: "2026-07-18"
+    robots_reviewed_at: "2026-07-18"
+    required_fields: [issueDate]
+    notes: >-
+      Lewis County's largest city — Solis home-market SFR gap (county sources
+      cover unincorporated Lewis only). Verified 2026-07-18: Building Permit
+      Statistics page lists one issued-permit report per month, Nov 2024 →
+      current (server-rendered /DocumentCenter/View links; mostly PDF, at
+      least one month XLSX — both parsed, other formats warn + zero records).
+      Rotated header labels; column geometry derived from data-cell x
+      clusters; cells bottom-aligned on the permit-number line. Rows carry
+      owner AND contractor names plus stated value; parsed sum reconciles to
+      the report's printed monthly total (D1 invariant). Reports publish
+      monthly but the index is polled weekly for late/amended postings.
+
   - key: lewis_inspections
     name: Lewis Daily Scheduled Building Inspections
     authority: Lewis County Community Development

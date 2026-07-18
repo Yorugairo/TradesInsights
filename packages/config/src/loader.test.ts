@@ -32,6 +32,7 @@ describe("sources.yaml", () => {
       "tacoma_permits_arcgis", // activated 2026-07-17 (Batch3 #3, ledger entry)
       "tacoma_solicitations", // activated 2026-07-17 (P5, ledger entry)
       "lewis_issued_permits",
+      "centralia_permit_reports", // activated 2026-07-18 (suburb-city SFR track, ledger entry)
       "lewis_inspections",
       "lewis_current_planning",
       "lewis_source_canary",
