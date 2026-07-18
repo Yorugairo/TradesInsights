@@ -127,6 +127,7 @@ corrected).
 |---|---|
 | Pierce (unincorp.) | `pierce_permits_arcgis` — the PALS extract carries Pre-Application Screening, SEPA Review, Land Use, Short plat, Site Dev Commercial |
 | Pierce (Tacoma) | `tacoma_permits_arcgis` — Accela extract carries Land Use + Pre-Application cases |
+| Pierce (Puyallup) | `puyallup_permits_arcgis` — city Permit Viewer layer incl. Pre-Application ×343/120d + Residential New SFD (activated 2026-07-18) |
 | King | `seattle_land_use_permits` (Socrata) + `king_public_notices`; building applications flow pre-issuance via applieddate |
 | Thurston | `thurston_active_notices` (SEPA/land-use notices) + `tumwater_development_arcgis` |
 | Lewis | `lewis_current_planning` |

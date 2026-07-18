@@ -28,6 +28,7 @@ describe("sources.yaml", () => {
       "thurston_active_notices",
       "tumwater_development_arcgis",
       "pierce_permits_arcgis", // activated 2026-07-17 (Batch2 #1, ledger entry)
+      "puyallup_permits_arcgis", // activated 2026-07-17 (suburb-city SFR track, ledger entry)
       "tacoma_permits_arcgis", // activated 2026-07-17 (Batch3 #3, ledger entry)
       "tacoma_solicitations", // activated 2026-07-17 (P5, ledger entry)
       "lewis_issued_permits",

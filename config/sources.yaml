@@ -208,6 +208,29 @@ sources:
       Pierce; SEPA Review rows add substitute coverage for the blocked
       pierce_environmental_determinations.
 
+  - key: puyallup_permits_arcgis
+    name: City of Puyallup Permits (Permit Viewer layer, ArcGIS)
+    authority: City of Puyallup
+    priority: P1
+    landing_url: https://experience.arcgis.com/experience/cde5b0c96ea24ef89ebec30da40d93a9
+    access_url: https://services8.arcgis.com/5K6vnOH0GkPyJs6A/arcgis/rest/services/City_View/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+    format: arcgis_json
+    access_class: arcgis
+    cadence: daily
+    county: Pierce
+    permitting_jurisdiction: City of Puyallup
+    enabled: true
+    terms_reviewed_at: "2026-07-17"
+    robots_reviewed_at: "2026-07-17"
+    required_fields: [applicationDate]
+    notes: >-
+      Largest Pierce suburb — Solis home-market SFR gap (PALS is unincorporated
+      only; Tacoma Accela covers Tacoma only). Official city ArcGIS org
+      (5K6vnOH0GkPyJs6A = "City of Puyallup", verified 2026-07-17); layer backs
+      the city's official Permit Viewer app. 25,595 rows since 2008 incl.
+      Residential New SFD, remodels, commercial TI, Pre-Application. FeeAmount
+      is fees, never valuation.
+
   - key: tacoma_permits_arcgis
     name: City of Tacoma Permits & Applications (Accela extract, ArcGIS)
     authority: City of Tacoma

@@ -1,0 +1,47 @@
+{
+  "captured_at": "2026-07-17",
+  "layer": "https://services8.arcgis.com/5K6vnOH0GkPyJs6A/arcgis/rest/services/City_View/FeatureServer/0",
+  "publisher_verified": "ArcGIS org 5K6vnOH0GkPyJs6A resolves to name 'City of Puyallup' (urlKey puyallup); the layer is the operational layer behind the city's official 'Permit Viewer' Web Experience (item cde5b0c96ea24ef89ebec30da40d93a9, owned by the same org).",
+  "window": "trailing 210 days on ApplicationDate OR ClosedDate (typed date fields only — IssueDate is esriFieldTypeString with mixed MM/DD/YYYY and epoch values and cannot be windowed server-side), day-quantized, captured 2026-07-18",
+  "manual_comparison": {
+    "total_rows_all_time": 25595,
+    "window_page1_feature_count": 2000,
+    "application_date_range_all_time": ["2008-05-23", "2026-07-05"],
+    "in_window_120d_types_from_first_capture": {
+      "Pre-Application": 343,
+      "Fire Alarms": 164,
+      "Mechanical/Plumbing - RESIDENTIAL ONLY": 155,
+      "Zoning Verification": 132,
+      "Commercial - Tenant Improvement/Remodel": 46
+    },
+    "spot_checks_verbatim": [
+      {
+        "PermitNumber": "PRRNSF20241562",
+        "PermitType_contains": "Single Family",
+        "CurrentStatus": "Closed",
+        "PermitAddress": "2704 9TH AVE SW, PUYALLUP, WA 98371"
+      },
+      {
+        "PermitNumber": "PRRNSF20250245",
+        "PermitType_contains": "Single Family",
+        "CurrentStatus": "Closed",
+        "PermitAddress": "2609 12TH AVE SW, PUYALLUP, WA 98371"
+      },
+      {
+        "PermitNumber": "PRRNSF20260469",
+        "PermitType_contains": "Single Family",
+        "CurrentStatus": "In Plan Check (first capture 2026-07-17)",
+        "PermitAddress": "411 18TH ST SW, PUYALLUP, WA 98371"
+      }
+    ],
+    "mixed_issue_date_observed": "530/1175 rows in the first capture carried string MM/DD/YYYY IssueDate; parser normalizes both forms, unparseable -> null"
+  },
+  "status_vocabulary_enumerated": [
+    "Closed", "Permit(s) Issued", "File Closed", "Approved w/Conditions",
+    "Returned for Correction", "Waiting for Submittals", "Ready for Issuance",
+    "Finaled", "In Plan Check", "Submittals Incomplete", "Waiting for Revisions",
+    "Open", "Pending", "Complete Application", "Approved", "Under Review",
+    "Waiting for Conditions", "Issued", "Administrative Approval"
+  ],
+  "notes": "FeeAmount is permit fees, NOT project valuation — never mapped to valuationUsd. No units/valuation fields exist; both stay null (unknown, never guessed). Fixture facts prove parsing only; live status must be rechecked."
+}
