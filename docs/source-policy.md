@@ -241,10 +241,16 @@ One entry per source, appended when the §5 checklist runs. Format:
 - Shadow 2026-07-18: 2,126 parsed / 0 rejected / 0 errors, health green; idempotent rerun 2 pages unchanged-hash; D5 replay after status-map addition (2,144 re-parsed, 952 corrected); backfill 2025-09-01→12-19: +364 new, 140 overlap duplicates, 0 errors. Resolution: 1,557 processed → 506 merged, 933 created, 116 review, 0 errors; Solis +132 routed.
 - Enabled: yes — 2026-07-18.
 
-### Suburb-city sweep notes (2026-07-17, verify-first candidates)
-- **Lakewood, Bonney Lake, Sumner (Pierce); Centralia, Chehalis (Lewis):** no official city-owned permit dataset found on the ArcGIS hub; city sites reachable (Lakewood, Sumner) or blocked/unresolved (Bonney Lake, Centralia; Chehalis 403). Next: check each city site for monthly permit-report PDFs (the Lacey pattern) before considering any dynamic lookup.
-- **Olympia (Thurston):** olympiawa.gov returns 403 to our agent — standing re-verification blocker remains; no official open-data permit layer found on the hub.
-- Lookup-class portals (MyBuildingPermit et al.) remain enrich-only per policy — never the sole alert source.
+### Suburb-city sweep notes (2026-07-17/18, verify-first)
+Monthly-PDF sweep completed 2026-07-18:
+- **Centralia (Lewis) — FOUND, ready to build:** official monthly permit reports on cityofcentralia.com DocumentCenter (series observed Jan 2025 → Feb 2026), per-permit detail incl. type, owner/applicant, address, permit number, CONTRACTOR, description, estimated cost. Feb 2026 PDF fetched from our egress (HTTP 200, real 2-page PDF); robots.txt present (200) — full review at build time. NOTE the official domain is cityofcentralia.com (centralia.com is unrelated). Candidate key: centralia_permit_reports.
+- **Tumwater (Thurston) — RE-VERIFIED LIVE 2026-07-18:** the "Notice of Applications and SEPA Determinations" page is current (items through 06/12/2026, incl. 5th Ave Townhomes Preliminary Plat and Anderson Place Preliminary Plat — home-county residential early signals). Unblocks the disabled `tumwater_development_review`/`tumwater_sepa` config stubs; **no adapter exists yet** — build required before enabling. Prior years live in the Tumwater Records Center (lookup class).
+- **Lakewood (Pierce):** publishes QUARTERLY permit-report PDFs (Q1 2023 → Q3 2024 observed) — cadence is coarse and content may be summary-level rather than per-permit rows; verify row-level detail before building. Their permits.cityoflakewood.us portal is lookup-class (enrich-only).
+- **Bonney Lake (Pierce):** monthly BLDGPERMITRPT PDF series existed on the OLD CivicLive CMS (2021–2022 archive still up) but 404s for 2024+ — series apparently discontinued after the bonneylake.gov migration; the current Building Permits page links forms only. Recheck occasionally.
+- **Sumner (Pierce):** no permit-report series found (site reachable; permits page is forms/specs only).
+- **Chehalis (Lewis):** a "Permits Issued" page EXISTS (ci.chehalis.wa.us/building/page/permits-issued-1, monthly copies per the building dept) but the site 403s every fetcher from our egress (curl + WebFetch). Blocker recorded; do not bypass.
+- **Olympia (Thurston):** BLOCK CONFIRMED AT NETWORK LEVEL 2026-07-18 — stock Chromium (no bypass tooling) gets net::ERR_CONNECTION_RESET on both hosts; curl gets 403. The block is against our datacenter egress IP range, not the client. Honest paths: run collection from a non-datacenter connection (e.g. operator's local Claude Code), or operator manually saves pages/reports into a provided directory (the customer-provided-file pattern). Never bypassed.
+- Lookup-class portals (MyBuildingPermit, Eden, CivicLive permit portals) remain enrich-only per policy — never the sole alert source.
 
 ### tacoma_permits_arcgis
 - Checklist run: 2026-07-17 (agent session, Batch3 #3 — Pierce PALS covers unincorporated county only; Tacoma is the pilot region's second-largest city with zero prior coverage).
