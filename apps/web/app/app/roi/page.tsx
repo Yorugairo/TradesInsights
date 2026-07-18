@@ -1,5 +1,10 @@
 import { redirect } from "next/navigation";
-import { detectionLagBySource, evidenceLeadTime, roiScorecard } from "@otn/delivery";
+import {
+  detectionLagBySource,
+  evidenceLeadTime,
+  firstLookByCoverage,
+  roiScorecard,
+} from "@otn/delivery";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
 import { accountByKey } from "../../../lib/queries.js";
@@ -19,9 +24,10 @@ export default async function RoiPage() {
   const end = new Date();
   const start = new Date(end.getTime() - 90 * 86_400_000);
   const s = await roiScorecard(db(), account.id, { start, end });
-  const [lead, lag] = await Promise.all([
+  const [lead, lag, firstLook] = await Promise.all([
     evidenceLeadTime(db(), account.id),
     detectionLagBySource(db()),
+    firstLookByCoverage(db()),
   ]);
   const d = (v: number | null): string => (v === null ? "—" : `${v} d`);
 
@@ -96,6 +102,46 @@ export default async function RoiPage() {
             <td style={cell}>No early warning (first sighting was the permit)</td>
             <td style={{ ...cell, fontWeight: 600 }}>{lead.noEarlyWarning}</td>
           </tr>
+        </tbody>
+      </table>
+
+      <h2>First-look advantage — we see it before the boards</h2>
+      <p style={{ color: "#666" }}>
+        Per source and county: how often our earliest sighting of a project predates its
+        permit-issued (publicly biddable) milestone, and — when it does — the median days of
+        lead. Once a permit issues it surfaces on the aggregator bid boards, so this is the
+        head start OTN gives you over everyone quoting off those boards. Permit-only sources
+        sit near zero (they see it at permit time); pre-permit coverage is where the lead comes
+        from. Groups below {20} milestoned projects are omitted, never shown thin.
+      </p>
+      <table style={table} data-testid="first-look-table">
+        <thead>
+          <tr>
+            <th style={cell}>Source</th>
+            <th style={cell}>County</th>
+            <th style={cell}>Projects</th>
+            <th style={cell}>Surfaced pre-permit</th>
+            <th style={cell}>Median lead when early</th>
+          </tr>
+        </thead>
+        <tbody>
+          {firstLook.length === 0 ? (
+            <tr>
+              <td style={cell} colSpan={5}>
+                No source×county group meets the sample floor yet.
+              </td>
+            </tr>
+          ) : (
+            firstLook.map((f) => (
+              <tr key={`${f.sourceKey}:${f.county ?? "statewide"}`}>
+                <td style={cell}>{f.sourceKey}</td>
+                <td style={cell}>{f.county ?? "statewide"}</td>
+                <td style={cell}>{f.projects}</td>
+                <td style={{ ...cell, fontWeight: 600 }}>{pct(f.shareEarly)}</td>
+                <td style={{ ...cell, fontWeight: 600 }}>{d(f.medianLeadDaysWhenEarly)}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
 

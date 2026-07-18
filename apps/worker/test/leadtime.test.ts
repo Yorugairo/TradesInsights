@@ -18,7 +18,7 @@ import {
   sourceRuns,
   type Db,
 } from "@otn/db";
-import { detectionLagBySource, evidenceLeadTime } from "@otn/delivery";
+import { detectionLagBySource, evidenceLeadTime, firstLookByCoverage } from "@otn/delivery";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toUpperCase();
@@ -196,6 +196,30 @@ describe("#2 detection lag by source", () => {
 
   it("excludes test-priority sources by default", async () => {
     const rows = await detectionLagBySource(db);
+    expect(rows.find((r) => r.sourceKey === "fake_source")).toBeUndefined();
+  });
+});
+
+describe("first-look advantage by coverage", () => {
+  it("credits the earliest-sighting source with days-before-permit, per county", async () => {
+    const rows = await firstLookByCoverage(db, { includeTestSources: true, minSamples: 1 });
+    const g = rows.find((r) => r.sourceKey === "fake_source" && r.county === "Thurston")!;
+    expect(g).toBeTruthy();
+    // A (100d lead), B (0), D (0) reached permit_issued; C never did → excluded.
+    expect(g.projects).toBe(3);
+    expect(g.medianLeadDays).toBe(0); // median of [100, 0, 0] — permit-first dominates
+    expect(g.p75Days).toBeGreaterThanOrEqual(49); // interpolates toward A's 100d
+    expect(g.shareEarly).toBeCloseTo(1 / 3, 2); // only A's first sighting predated its permit
+    expect(g.medianLeadDaysWhenEarly).toBe(100); // when early (A only), 100 days ahead
+  });
+
+  it("drops groups below the sample floor rather than publishing a thin number", async () => {
+    const rows = await firstLookByCoverage(db, { includeTestSources: true }); // default floor 20
+    expect(rows.find((r) => r.sourceKey === "fake_source")).toBeUndefined();
+  });
+
+  it("excludes test-priority sources by default", async () => {
+    const rows = await firstLookByCoverage(db, { minSamples: 1 });
     expect(rows.find((r) => r.sourceKey === "fake_source")).toBeUndefined();
   });
 });

@@ -125,3 +125,99 @@ export async function detectionLagBySource(
         : Math.round(Number(r["median_recent"]) * 10) / 10,
   }));
 }
+
+/** A per-source first-look group needs at least this many milestoned projects
+ * before its median is published — a thin sample would read as an
+ * over-confident guarantee. */
+export const FIRST_LOOK_MIN_SAMPLES = 20;
+
+export interface SourceFirstLook {
+  sourceKey: string;
+  /** The source's county (null for statewide feeds like wa_sepa). */
+  county: string | null;
+  /** Milestoned projects this source surfaced FIRST (before any other source). */
+  projects: number;
+  /** Median days our earliest sighting predated the permit-issued milestone,
+   * over ALL milestoned projects (0 for a permit-only source that never beats
+   * the permit — most projects are permit-first, so this understates the edge). */
+  medianLeadDays: number | null;
+  p25Days: number | null;
+  p75Days: number | null;
+  /** Share whose first sighting genuinely predated the permit (lead > 0) —
+   * "how often we surface it before it hits the boards". */
+  shareEarly: number | null;
+  /** Median lead over ONLY the early ones (lead > 0) — "when we are early, how
+   * early". The marketable number; null when nothing was early. */
+  medianLeadDaysWhenEarly: number | null;
+}
+
+/**
+ * FIRST-LOOK ADVANTAGE (per first-look source × county) — the "we see it first"
+ * number, the marketable proof behind the premium price. For every project
+ * that reached the bid-relevant `permit_issued` milestone, the days between OUR
+ * EARLIEST sighting of that project and the permit-issued date, credited to the
+ * source that gave us that earliest sighting. `permit_issued` is the
+ * public/biddable proxy: once a permit issues it surfaces on the aggregator bid
+ * boards, so "days before permit_issued" is "days before everyone else could
+ * act on it". A permit-only source scores ~0 here (it never beats the permit);
+ * a pre-permit feed (SEPA, land-use, pre-application) shows real lead.
+ *
+ * No fabrication: stated event dates (ingestion time only as a fallback), lead
+ * floored at 0, test sources excluded, and groups below the sample floor are
+ * dropped rather than published thin.
+ */
+export async function firstLookByCoverage(
+  db: Db,
+  opts: { minSamples?: number; includeTestSources?: boolean } = {},
+): Promise<SourceFirstLook[]> {
+  const floor = opts.minSamples ?? FIRST_LOOK_MIN_SAMPLES;
+  const testFilter = opts.includeTestSources ? sql`` : sql`AND s.priority != 'test'`;
+  const res = await db.execute(sql`
+    WITH ev AS (
+      SELECT pe.project_id, s.key AS source_key, s.county AS county,
+        COALESCE(pe.event_date, pe.observed_at) AS at, pe.resulting_stage
+      FROM project_events pe
+      JOIN source_records sr ON sr.id = pe.source_record_id
+      JOIN sources s ON s.id = sr.source_id
+      WHERE COALESCE(pe.event_date, pe.observed_at) IS NOT NULL ${testFilter}
+    ),
+    milestone AS (
+      SELECT project_id, MIN(at) FILTER (WHERE resulting_stage = 'permit_issued') AS issued_at
+      FROM ev GROUP BY project_id
+    ),
+    first_sight AS (
+      SELECT DISTINCT ON (project_id) project_id, source_key, county, at AS earliest_at
+      FROM ev ORDER BY project_id, at ASC
+    ),
+    leads AS (
+      SELECT fs.source_key, fs.county,
+        GREATEST(extract(epoch FROM m.issued_at - fs.earliest_at) / 86400, 0) AS lead_days
+      FROM first_sight fs JOIN milestone m ON m.project_id = fs.project_id
+      WHERE m.issued_at IS NOT NULL
+    )
+    SELECT source_key, county, count(*) AS n,
+      percentile_cont(0.5) WITHIN GROUP (ORDER BY lead_days) AS median,
+      percentile_cont(0.25) WITHIN GROUP (ORDER BY lead_days) AS p25,
+      percentile_cont(0.75) WITHIN GROUP (ORDER BY lead_days) AS p75,
+      count(*) FILTER (WHERE lead_days > 0) AS early,
+      percentile_cont(0.5) WITHIN GROUP (ORDER BY lead_days) FILTER (WHERE lead_days > 0) AS median_early
+    FROM leads
+    GROUP BY source_key, county
+    HAVING count(*) >= ${floor}
+    ORDER BY median_early DESC NULLS LAST, early DESC`);
+  const days = (v: unknown): number | null =>
+    v === null || v === undefined ? null : Math.round(Number(v) * 10) / 10;
+  return (res.rows as Record<string, unknown>[]).map((r) => {
+    const n = Number(r["n"] ?? 0);
+    return {
+      sourceKey: r["source_key"] as string,
+      county: (r["county"] as string | null) ?? null,
+      projects: n,
+      medianLeadDays: days(r["median"]),
+      p25Days: days(r["p25"]),
+      p75Days: days(r["p75"]),
+      shareEarly: n === 0 ? null : Math.round((Number(r["early"]) / n) * 1000) / 1000,
+      medianLeadDaysWhenEarly: days(r["median_early"]),
+    };
+  });
+}
