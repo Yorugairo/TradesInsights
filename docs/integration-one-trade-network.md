@@ -25,8 +25,10 @@ coin.
 3. **Then the login-walled CRM** (registry → Insights enrichment): the premium intelligence
    product for paying accounts, consuming registry identity — where the account-isolation/RLS
    work actually lives.
-4. **Defer full DB co-location** (Part E) and **repo convergence** (Part F) until the seam is
-   proven and load is measured.
+4. **Sequence DB co-location** (Part E) and **repo convergence** (Part F) after the seam is
+   proven and load is measured. Convergence is a **decided direction, not an open question**:
+   the Insights web app re-homes into `apps/crm` as the trades vertical (shared SaaS chassis,
+   trades-specific product module), with the ingest/evidence engine staying a backend service.
 
 ## Part A — What we found (registry architecture)
 
@@ -305,14 +307,87 @@ settled first — this is why it is **not** a lift-and-shift:
 - [ ] **Secrets.** Model keys / connection strings live in environment config, never in the
       repo or migrations (unchanged rule).
 
-## Part F — Repo convergence (last)
+## Part F — Repo convergence: Insights becomes the trades vertical of `apps/crm`
 
-Both codebases clearly share DNA (canonical-name normalization, a match-decision model with
+**Decision of record (product owner):** the Insights web app comes to live inside
+`apps/crm`. `apps/crm` (`@gobjj/crm`) is the SaaS/CRM product to the vertical spin-offs;
+the gym coaching product (`/coach/*`) is its first skin. Insights becomes the **trades
+skin** on that same chassis. The stated ideal is that Insights be *byte-identical* to the
+gobjj CRM app — "may not be possible at this point," so read this as: the **chassis is
+shared verbatim; the trades product module is the vertical-specific delta.**
+
+### What `apps/crm` already is (the chassis)
+
+`@gobjj/crm` is a Next.js 16 / React 19 multi-tenant SaaS CRM in the registry monorepo.
+The parts that are vertical-agnostic and meant to be shared unchanged:
+
+- **Auth & tenancy** — Supabase SSR auth (`tenantAuth.ts`), per-tenant isolation.
+- **Entitlements** — `moduleAccess.ts` gates which product modules a tenant can see; this
+  is exactly the mechanism that lets one chassis serve gym tenants and trades tenants.
+- **Platform admin** — `platformAdmin.ts`, routes under `/admin/*`.
+- **Billing** — Stripe.
+- **Comms** — Twilio (SMS) + Resend (email); Upstash for rate/limits and queues.
+- **AI** — OpenRouter via the Vercel AI SDK (`aiModels.ts` / `aiGeneration.ts`).
+- **Registry handoff** — `registryHandoff.ts` already exists: the CRM is designed to
+  consume the registry.
+- **Design system** — the shared app chrome/layout.
+
+The gym product (`/coach/*`: roster, billing, messages, rollcall, POS) is a **module on
+top of that chassis**, not the chassis itself. Trades is a second module of the same shape.
+
+### The split: byte-identical chassis, vertical-specific module
+
+| Layer | Trades vertical | Sharing |
+|---|---|---|
+| Auth / tenancy / entitlements / billing / comms / platform-admin / design | reused as-is | **byte-identical** — the "same coin" chassis |
+| Product module (routes, screens, domain vocab) | Insights: opportunity briefs, ROI ledger, first-look coverage, GC/relationship views | **vertical-specific** — the trades skin |
+| Ingest → parse → resolve → score → evidence **engine** | the current `apps/worker` + `packages/*` | **stays a backend service** — not merged into the CRM app |
+
+The engine does **not** move into the Next.js app. Insights' collectors, parsers,
+resolution, scoring, and the evidence graph remain an independent worker/DB tier. The CRM
+trades module reads that tier through the **same contract seam** Parts C/D/H define — it is
+another consumer of the evidence graph and the registry contract view, exactly like the
+digest/email path today. Keeping the engine out of the request path preserves the §13 AI
+contract, the immutable-evidence invariant, and account isolation regardless of how the UI
+is packaged.
+
+### Why this order (forcing function)
+
+This convergence is **downstream of Part E co-location and the Part C/D/H contract**, not a
+prerequisite. The seam that lets the CRM render Insights is the same account-scoped read
+API the current web app already uses; co-location (Part E) is what makes it a local read
+instead of a cross-service call. So the sequence is: prove the identity federation and the
+contract view (Parts B–D, H) → co-locate the data (Part E) → **then** re-home the UI into
+`apps/crm` as the trades module. Doing it in that order means the move is a re-skinning of a
+proven read path, not a rewrite of the engine.
+
+### Known deltas (why "byte-identical" is aspirational)
+
+Insights and `apps/crm` diverge in four places that must be reconciled during the move, not
+assumed away:
+
+1. **Auth** — Insights uses its own app-layer account scoping; the CRM uses Supabase SSR
+   auth + `tenantAuth`. Insights' account isolation maps onto CRM tenancy; the account
+   profile becomes a tenant/entitlement, not a bespoke scope.
+2. **Data access** — Insights uses Drizzle + hand-authored SQL migrations against
+   Postgres/PostGIS; the CRM uses Supabase (raw client). The engine tier keeps Drizzle; the
+   CRM trades module reads through the contract/read layer, so the ORM mismatch stays on the
+   engine side of the seam.
+3. **Design system** — Insights' current UI must be reskinned onto the CRM chrome/design
+   system to reach chassis parity.
+4. **AI** — Insights routes models through its own `providerFromEnv` + budget contract;
+   the CRM routes through `aiModels.ts`/`aiGeneration.ts`. The §13 budget/validation
+   contract must be preserved wherever the brief generator ultimately runs — re-homing the
+   *call site* is fine; dropping the Zod-validated evidence-ID contract and per-job/monthly
+   budget is not.
+
+Both codebases already share DNA (canonical-name normalization, a match-decision model with
 `rule_hit`/`margin`/`evidence`, `*_current` read models, evidence+confidence on every
-assertion). A monorepo's real payoff is a **shared entity-resolution/normalization/evidence
-core** with two verticals (projects, businesses) instead of two reimplementations. That is a
-refactor, not a move — sequence it after the identity federation proves the seam and the
-teams want shared release cadence.
+assertion), which is why the chassis fit is real and not forced. The deeper prize — a
+**shared entity-resolution/normalization/evidence core** with two verticals (projects,
+businesses) instead of two implementations — is a further refactor beyond the UI move;
+sequence it only after the trades module ships on the chassis and the teams want a shared
+release cadence.
 
 ## Part G — Security & governance notes
 
@@ -636,4 +711,6 @@ reviewed candidate; both teams then build against that single agreement.
 3. **Login-walled CRM** (registry → Insights) — surface registry identity on the GC league →
    build the relationship copilot; this is where the account-isolation/RLS work lives.
 4. Reassess **DB co-location** against Part E once the seam is live and load is measured.
-5. **Repo convergence** (Part F) when a shared entity-resolution core justifies it.
+5. **Repo convergence** (Part F) — re-home the Insights web app into `apps/crm` as the trades
+   vertical (chassis reused, engine stays a service); a shared entity-resolution core is a
+   further refactor after that.
