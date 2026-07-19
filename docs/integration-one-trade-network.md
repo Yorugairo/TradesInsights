@@ -25,13 +25,45 @@ operator ARE the identity spine — each accept binds `registry_ref`
 (`name_review_confirmed`), stamps the identity snapshot, and unlocks phone/alias/trade flow
 for that org on the next nightly pass.
 
+**Phone-based matching (built 2026-07-19, second pass):** identifiers are now first-class on
+both sides of the matcher. Insights side: `organization_identifiers` (migration `0023`) stores
+evidence-carrying phone/ubi/license/email rows harvested from PUBLIC sources (parsers may now
+emit optional `phone`/`ubi`/`contractorLicense` on `organizations[]` entries; the resolver
+persists them with the source record as evidence, and **strong keys backfeed onto
+`organizations.ubi`/`contractor_registration`** so the nightly strong-key link binds without
+any new machinery). Matcher side: trust gains an `identifier` component (weights now name .3 /
+identifier .15 / locality .1 / role .1 / corroboration .15 / ruleHistory .2) valued 1 =
+phone agrees with L&I, 0 = org phone evidence CONTRADICTS the registry, 0.5 = no evidence;
+three phone-aware binding rules — `binding_name_phone` (name key + phone agree; also
+disambiguates a name key shared by multiple entities), `binding_name_exact` (name only),
+`binding_phone_match` (phone-exact against a UNIQUE registry L&I phone, gated on ≥0.3 name
+similarity — phones get recycled/shared, so a phone with a foreign name is noise, and a phone
+shared by 2+ registry entities is dropped as a key). All still land in the same review queue —
+phone never auto-binds. Google phones stay registry-side corroboration per
+`phone_write_policy=lni_phone_authoritative`.
+
+**Phone-supply reconnaissance (2026-07-19, verify-first):** our ArcGIS layers already request
+`outFields=*` — the layers genuinely publish no contractor phones (0 phone fields across the
+21,616-record corpus; the only phone-ish raw field is the SEPA *lead-agency* office phone,
+excluded by construction). Portal findings: **Pierce PALS** has a real contractor endpoint —
+`https://pals.piercecountywa.gov/public/api/contractorInfo/:id` (route template recovered from
+their own app bundle `app5.1.3-001.js`; permit ids we already hold from the open-data layer) —
+but the API path is **blocked from datacenter egress** (curl 403 pre-Tomcat; plain Chromium
+`ERR_CONNECTION_RESET`; same class as Olympia/Tumwater; never bypassed). Activation path:
+operator-local capture of golden fixtures → parser built against verified shape → enrichment
+job. **Puyallup**: public status page exposes owner/status/dates only — no contractor fields;
+dead end. **Tacoma (Accela)**: bot-protected citizen portal; poorest candidate. So the
+identifier supply will most likely arrive via a PALS operator-local run, and the pipeline is
+ready for it end-to-end the moment any source emits `phone`/`ubi`/`contractorLicense`.
+
 **Remaining ops gates:** (a) provision login credentials for `otn_insights_reader` (SELECT on
 `registry_public`) and `otn_insights_writer` (INSERT/UPDATE on `registry_partner`) — one
 credential may hold both memberships — and set Insights' `REGISTRY_DATABASE_URL`; until then
 link/generate/export all report visible "skipped" states. (b) Seed `registry_trade_taxonomy`
 registry-side — until then the loader skips trade evidence as `skipped:unknown_trade_code`.
 (c) Registry operator runs `ingest-otn-insights.mjs` after exports (batch pull-based, same as
-every registry stage). Once co-located (Part E) the reads/writes become local.
+every registry stage). (d) PALS contractorInfo: operator-local fixture capture to activate the
+phone/UBI/license supply. Once co-located (Part E) the reads/writes become local.
 
 > Original framing retained below as the plan of record for connecting the two systems.
 

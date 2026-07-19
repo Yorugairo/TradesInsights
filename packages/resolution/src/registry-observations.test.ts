@@ -10,7 +10,7 @@ import {
 } from "./registry-observations.js";
 
 describe("computeTrust", () => {
-  const base: TrustComponents = { name: 1, locality: 1, role: 1, corroboration: 1, ruleHistory: 1 };
+  const base: TrustComponents = { name: 1, identifier: 1, locality: 1, role: 1, corroboration: 1, ruleHistory: 1 };
 
   it("is 1.0 when every component is 1.0 (weights sum to 1)", () => {
     expect(Object.values(TRUST_WEIGHTS).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
@@ -18,14 +18,23 @@ describe("computeTrust", () => {
   });
 
   it("is deterministic and weighted (name dominates)", () => {
-    expect(computeTrust({ ...base, name: 0 })).toBeCloseTo(0.6);
+    expect(computeTrust({ ...base, name: 0 })).toBeCloseTo(0.7);
     expect(computeTrust({ ...base, ruleHistory: 0.5 })).toBeCloseTo(0.9);
     expect(computeTrust({ ...base, name: 0 })).toBeLessThan(computeTrust({ ...base, locality: 0 }));
   });
 
+  it("scores identifier evidence: agree > neutral > contradiction", () => {
+    const agree = computeTrust(base); // identifier 1
+    const neutral = computeTrust({ ...base, identifier: 0.5 }); // no phone evidence
+    const contradict = computeTrust({ ...base, identifier: 0 }); // phone disagrees with L&I
+    expect(agree).toBeGreaterThan(neutral);
+    expect(neutral).toBeGreaterThan(contradict);
+    expect(agree - contradict).toBeCloseTo(0.15); // the identifier weight
+  });
+
   it("clamps out-of-range components", () => {
     expect(computeTrust({ ...base, name: 2 })).toBe(1);
-    expect(computeTrust({ ...base, name: -1 })).toBeCloseTo(0.6);
+    expect(computeTrust({ ...base, name: -1 })).toBeCloseTo(0.7);
   });
 });
 

@@ -21,6 +21,7 @@ import {
   type MatchFeatures,
 } from "./normalize.js";
 import { evaluateFuzzy } from "./fuzzy.js";
+import { persistOrganizationIdentifiers } from "./identifiers.js";
 
 export const RESOLVER_VERSION = "0.3.0"; // M2.2 passes 1–3 + M2.3 passes 4–5
 
@@ -119,6 +120,12 @@ async function upsertOrganizationsAndRoles(
         .values({ canonicalName: norm.canonical })
         .returning({ id: organizations.id });
       orgId = inserted!.id;
+    }
+    // Persist any contractor identifiers the source published for this org
+    // (phone/ubi/license — optional, additive) with this record as evidence;
+    // strong keys backfeed onto the organization for the registry link.
+    if (org.phone || org.ubi || org.contractorLicense) {
+      await persistOrganizationIdentifiers(db, orgId, row.id, org);
     }
     const [existingRole] = await db
       .select({ projectId: projectRoles.projectId })

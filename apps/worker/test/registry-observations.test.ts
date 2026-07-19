@@ -17,6 +17,7 @@ import {
   exportRegistryObservations,
   generateRegistryObservations,
   listRegistryObservations,
+  persistOrganizationIdentifiers,
   type RegistryIdentityRow,
 } from "@otn/resolution";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
@@ -26,7 +27,9 @@ let db: Db;
 let pool: pg.Pool;
 let accountId: string;
 let orgId: string;
+let org2Id: string;
 let projectId: string;
+let recId: string;
 
 const ENTITY = randomUUID();
 const REGISTRY_ROWS: RegistryIdentityRow[] = [
@@ -89,17 +92,29 @@ beforeAll(async () => {
     normalizedJson: { title: `REGOBS-${RUN}`, city: "Olympia", permitType: "Mechanical", sourceUrl: "https://example.invalid/p" },
     normalizedFingerprint: `regobs-${RUN}`,
   }).returning({ id: sourceRecords.id });
+  recId = rec!.id;
   await db.execute(sql`
     INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
     VALUES (${projectId}, ${orgId}, 'primary_contractor', ${rec!.id}, true, 1, now(), now())`);
+
+  // A second org whose name does NOT key-match its registry entity, but whose
+  // permit-published phone does (the phone-match path).
+  const [org2] = await db.insert(organizations).values({
+    canonicalName: `NW DRYWALL AND PAINT ${RUN}`, status: "active",
+  }).returning({ id: organizations.id });
+  org2Id = org2!.id;
+  await db.execute(sql`
+    INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
+    VALUES (${projectId}, ${org2Id}, 'primary_contractor', ${recId}, true, 1, now(), now())`);
 });
 
 afterAll(async () => {
-  await db.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${orgId}`);
-  await db.execute(sql`DELETE FROM organization_contacts WHERE organization_id = ${orgId}`);
-  await db.execute(sql`DELETE FROM project_roles WHERE organization_id = ${orgId}`);
+  await db.execute(sql`DELETE FROM registry_observations WHERE organization_id IN (${orgId}, ${org2Id})`);
+  await db.execute(sql`DELETE FROM organization_identifiers WHERE organization_id IN (${orgId}, ${org2Id})`);
+  await db.execute(sql`DELETE FROM organization_contacts WHERE organization_id IN (${orgId}, ${org2Id})`);
+  await db.execute(sql`DELETE FROM project_roles WHERE organization_id IN (${orgId}, ${org2Id})`);
   await deleteTestProjects(db, [projectId]);
-  await db.execute(sql`DELETE FROM organizations WHERE id = ${orgId}`);
+  await db.execute(sql`DELETE FROM organizations WHERE id IN (${orgId}, ${org2Id})`);
   await db.execute(sql`DELETE FROM account_profiles WHERE id = ${accountId}`);
   await pool.end();
 });
@@ -251,5 +266,61 @@ describe("registry observation loop", () => {
       (o) => o.organizationId === orgId && o.observationType === "binding_name_match",
     )!;
     expect(pendingBind.trustComponents["ruleHistory"]).toBeGreaterThan(0.5);
+  });
+
+  it("permit-published identifiers persist with evidence and backfeed strong keys", async () => {
+    const res = await persistOrganizationIdentifiers(db, org2Id, recId, {
+      phone: "(253) 555-0177",
+      ubi: "601-999-888", // formatted; normalizes to 601999888
+    });
+    expect(res.upserted).toBe(2);
+    const ids = (await db.execute(sql`
+      SELECT identifier_type, value_normalized, source_record_id FROM organization_identifiers
+      WHERE organization_id = ${org2Id} ORDER BY identifier_type`)).rows as {
+      identifier_type: string; value_normalized: string; source_record_id: string;
+    }[];
+    expect(ids.map((i) => [i.identifier_type, i.value_normalized])).toEqual([
+      ["phone", "2535550177"],
+      ["ubi", "601999888"],
+    ]);
+    expect(ids.every((i) => i.source_record_id === recId)).toBe(true); // no claim without a source
+    // Strong-key backfeed: the org row now carries the UBI for the nightly
+    // strong-key registry link (never overwrites an existing value).
+    const [org] = (await db.execute(sql`SELECT ubi FROM organizations WHERE id = ${org2Id}`)).rows as { ubi: string | null }[];
+    expect(org!.ubi).toBe("601999888");
+  });
+
+  it("phone-exact against the registry's L&I phone yields a binding_phone_match candidate", async () => {
+    const ENTITY2 = randomUUID();
+    const rowsWithPhone: RegistryIdentityRow[] = [
+      ...REGISTRY_ROWS,
+      {
+        entityId: ENTITY2, ubi: "601777666", contractorNumbers: [`NWDRY${RUN.slice(0, 5)}`],
+        canonicalName: `NW Drywall ${RUN} LLC`, canonicalNameNormalized: `NW DRYWALL ${RUN}`,
+        phone: "2535550177", cityToken: "puyallup", stateCode: "WA",
+      },
+    ];
+    const summary = await generateRegistryObservations(db, rowsWithPhone);
+    expect(summary.bindingCandidates).toBe(1); // org2 via phone; org1's is deduped
+
+    const cand = (await listRegistryObservations(db, { status: "pending", limit: 30 })).find(
+      (o) => o.organizationId === org2Id && o.observationType === "binding_name_match",
+    )!;
+    expect(cand.ruleKey).toBe("binding_phone_match");
+    expect(cand.trustComponents["identifier"]).toBe(1); // phone agrees with L&I
+    expect(cand.trustComponents["name"]).toBeGreaterThanOrEqual(0.3); // similarity floor
+    expect(cand.trustComponents["name"]).toBeLessThan(1); // not a name-key match
+    expect(cand.payload["phone_agrees"]).toBe(true);
+    expect(cand.payload["registry_phone"]).toBe("2535550177");
+
+    // Still review-gated: accepting binds org2 to the phone-matched entity.
+    const outcome = await decideRegistryObservation(db, cand.id, "accept", { decidedBy: "test:operator" });
+    expect(outcome.applied).toBe("bound_organization");
+    const [org] = (await db.execute(sql`
+      SELECT registry_ref, registry_ref_method FROM organizations WHERE id = ${org2Id}`)).rows as {
+      registry_ref: string; registry_ref_method: string;
+    }[];
+    expect(org!.registry_ref).toBe(ENTITY2);
+    expect(org!.registry_ref_method).toBe("name_review_confirmed");
   });
 });

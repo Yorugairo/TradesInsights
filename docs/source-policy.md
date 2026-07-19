@@ -259,6 +259,30 @@ Monthly-PDF sweep completed 2026-07-18:
 - **Bonney Lake (Pierce):** monthly BLDGPERMITRPT PDF series existed on the OLD CivicLive CMS (2021–2022 archive still up) but 404s for 2024+ — series apparently discontinued after the bonneylake.gov migration; the current Building Permits page links forms only. Recheck occasionally.
 - **Sumner (Pierce):** no permit-report series found (site reachable; permits page is forms/specs only).
 - **Chehalis (Lewis):** a "Permits Issued" page EXISTS (ci.chehalis.wa.us/building/page/permits-issued-1, monthly copies per the building dept) but the site 403s every fetcher from our egress (curl + WebFetch). Blocker recorded; do not bypass.
+
+### Contractor-identifier supply recon (2026-07-19, verify-first — registry phone matching)
+Goal: contractor phone/UBI/license on permits, feeding `organization_identifiers` (migration
+`0023`) and the phone-aware registry-binding rules. All three ArcGIS extracts already request
+`outFields=*` — the layers publish no contractor phones (0 phone fields across the corpus; the
+one phone-ish raw field is the SEPA *lead-agency* office line, excluded by construction).
+- **Pierce PALS contractor API — DISCOVERED, BLOCKED AT EGRESS 2026-07-19 (attempt logged):**
+  the PALS SPA's own bundle (`palsonline/js/app5.1.3-001.js`, fetched 200 with the transparent
+  `OTNInsightsBot` UA) declares an Angular resource `/public/api/contractorInfo/:id` (plus
+  `permitInformation`, `webApplPermitStatusHeader`, …) keyed by the same `applPermitId` our
+  `pierce_permits_arcgis` records already carry. The API path itself is filtered for our
+  egress: curl 403 (pre-Tomcat, with or without browser-context headers) and stock Chromium
+  `net::ERR_CONNECTION_RESET` — the Olympia/Tumwater datacenter-IP class; never bypassed. The
+  static shell and JS serve fine, so this is path-level WAF filtering, not a robots or terms
+  restriction (robots reviewed at layer activation). **Honest activation path:** operator-local
+  capture (normal browser or non-datacenter egress) of a handful of `contractorInfo` responses
+  as golden fixtures → parser built against the verified shape → enrichment job fetches for
+  permits holding `primary_contractor` roles. No parser is built against a guessed shape.
+- **Puyallup (`permits.puyallupwa.gov` StatusReference) — VERIFIED NO-DATA 2026-07-19:** the
+  public status page is server-rendered HTML (parse-friendly) but exposes owner name, status,
+  dates, and conditions only — no contractor name/phone fields (confirmed on a commercial
+  mechanical permit; the only phones on-page are the city's own). Dead end for identifiers.
+- **Tacoma (Accela citizen portal) — NOT ATTEMPTED:** `aca-prod.accela.com` deep links remain
+  citation-only per the tacoma_permits_arcgis ledger (bot-protected portal); poorest candidate.
 - **Olympia (Thurston):** BLOCK CONFIRMED AT NETWORK LEVEL 2026-07-18 — stock Chromium (no bypass tooling) gets net::ERR_CONNECTION_RESET on both hosts; curl gets 403. The block is against our datacenter egress IP range, not the client. Honest paths: run collection from a non-datacenter connection (e.g. operator's local Claude Code), or operator manually saves pages/reports into a provided directory (the customer-provided-file pattern). Never bypassed.
 - Lookup-class portals (MyBuildingPermit, Eden, CivicLive permit portals) remain enrich-only per policy — never the sole alert source.
 

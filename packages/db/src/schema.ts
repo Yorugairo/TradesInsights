@@ -908,6 +908,34 @@ export const alerts = pgTable(
   ],
 );
 
+// ── Organization identifiers (public evidence, migration 0023) ──────────────
+
+/**
+ * Contractor identifiers harvested from PUBLIC source evidence (portal detail
+ * pages, L&I-sourced feeds). Every row carries its source record; values are
+ * normalized beside the raw form. Feeds identifier-based registry matching
+ * (phone-exact) and the strong-key backfeed onto organizations.ubi /
+ * contractor_registration. Account-private artifacts are excluded by policy.
+ */
+export const organizationIdentifiers = pgTable(
+  "organization_identifiers",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+    /** phone | ubi | contractor_number | email */
+    identifierType: text("identifier_type").notNull(),
+    valueRaw: text("value_raw"),
+    valueNormalized: text("value_normalized").notNull(),
+    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().default(sql`now()`),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (t) => [
+    uniqueIndex("organization_identifiers_ux").on(t.organizationId, t.identifierType, t.valueNormalized),
+    index("organization_identifiers_value_ix").on(t.identifierType, t.valueNormalized),
+  ],
+);
+
 // ── Registry observations (One Trade Network seam, migration 0022) ──────────
 
 /**

@@ -24,6 +24,7 @@
  */
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
+import { loadOrganizationPhones } from "./identifiers.js";
 import { nameSimilarity, orgNameKey } from "./normalize.js";
 import { identitySnapshot, type RegistryIdentityRow } from "./registry-link.js";
 
@@ -42,6 +43,10 @@ export const AUTO_ACCEPT_MIN_RATE = 0.95;
 export interface TrustComponents {
   /** Name agreement ∈ [0,1]: 1.0 for cross-system exact key equality. */
   name: number;
+  /** Identifier agreement ∈ [0,1]: 1 = an evidence-backed identifier (phone)
+   * matches the registry's L&I value; 0 = the org has identifier evidence and
+   * it CONTRADICTS the registry; 0.5 = no identifier evidence (neutral). */
+  identifier: number;
   /** Locality corroboration ∈ [0,1]: registry city seen in the org's project counties/cities. */
   locality: number;
   /** Strongest role the org holds on projects (contractor > applicant > owner). */
@@ -53,8 +58,12 @@ export interface TrustComponents {
 }
 
 export const TRUST_WEIGHTS: Record<keyof TrustComponents, number> = {
-  name: 0.4, locality: 0.15, role: 0.1, corroboration: 0.15, ruleHistory: 0.2,
+  name: 0.3, identifier: 0.15, locality: 0.1, role: 0.1, corroboration: 0.15, ruleHistory: 0.2,
 };
+
+/** Phone-only matches need at least this much name agreement to be reviewable
+ * (phones get recycled and shared; a phone with a foreign name is noise). */
+export const PHONE_MATCH_MIN_NAME_SIMILARITY = 0.3;
 
 /** Deterministic weighted trust ∈ [0,1]; stored beside its components. */
 export function computeTrust(c: TrustComponents): number {
@@ -217,37 +226,90 @@ export async function generateRegistryObservations(
 
   const inserts: PendingInsert[] = [];
 
-  // ── binding_name_match: unbound orgs vs registry names (exact key only) ──
+  // Registry phone index from L&I phones — UNIQUE phones only (a phone shared
+  // by 2+ entities cannot disambiguate and is dropped as a match key).
+  const byPhone = new Map<string, RegistryIdentityRow | null>();
+  for (const row of registryRows) {
+    if (!row.phone) continue;
+    byPhone.set(row.phone, byPhone.has(row.phone) ? null : row);
+  }
+  // Evidence-backed phones per org (organization_identifiers, migration 0023).
+  const orgPhones = await loadOrganizationPhones(db);
+
+  // ── binding_name_match: unbound orgs vs registry (name key, phone-aware) ──
   const unbound = (await loadOrgFacts(db)).filter((o) => o.registry_ref === null);
   for (const org of unbound) {
+    const phones = orgPhones.get(org.id) ?? new Set<string>();
     const key = crossNameKey(org.canonical_name);
-    if (!key || key.split(" ").length < 2) continue; // one-token names are too generic to suggest
-    const hits = byNameKey.get(key);
-    if (!hits || hits.length !== 1) continue;
-    const hit = hits[0]!;
+    const nameHits = key && key.split(" ").length >= 2 ? byNameKey.get(key) : undefined;
+
+    let hit: RegistryIdentityRow | undefined;
+    let ruleKey = "";
+    let nameComponent = 1;
+    let identifier = 0.5;
+    if (nameHits && nameHits.length === 1) {
+      // Unique name match; phone evidence corroborates (1) or contradicts (0).
+      hit = nameHits[0]!;
+      const phoneAgrees = hit.phone !== null && phones.has(hit.phone);
+      identifier = phones.size === 0 ? 0.5 : phoneAgrees ? 1 : 0;
+      ruleKey = phoneAgrees ? "binding_name_phone" : "binding_name_exact";
+    } else if (nameHits && nameHits.length > 1 && phones.size > 0) {
+      // Ambiguous name key — the L&I phone may disambiguate to exactly one.
+      const agreeing = nameHits.filter((h) => h.phone !== null && phones.has(h.phone));
+      if (agreeing.length === 1) {
+        hit = agreeing[0]!;
+        identifier = 1;
+        ruleKey = "binding_name_phone";
+      }
+    } else if (phones.size > 0) {
+      // No name match — phone-exact against a UNIQUE registry phone, gated on
+      // a minimum of name agreement (phones get recycled between businesses).
+      let best: { row: RegistryIdentityRow; sim: number } | null = null;
+      for (const p of phones) {
+        const row = byPhone.get(p);
+        if (!row) continue;
+        const sim = nameSimilarity(org.canonical_name, row.canonicalName ?? "");
+        if (sim >= PHONE_MATCH_MIN_NAME_SIMILARITY && (best === null || sim > best.sim)) {
+          best = { row, sim };
+        }
+      }
+      if (best) {
+        hit = best.row;
+        nameComponent = best.sim;
+        identifier = 1;
+        ruleKey = "binding_phone_match";
+      }
+    }
+    if (!hit || !ruleKey) continue;
+
     const locality = hit.cityToken && org.localities.some((l) => l.includes(hit.cityToken!)) ? 1 : 0.3;
     const components: TrustComponents = {
-      name: 1,
+      name: nameComponent,
+      identifier,
       locality,
       role: org.role_weight,
       corroboration: Math.min(1, org.record_count / 3),
-      ruleHistory: rate("binding_name_exact"),
+      ruleHistory: rate(ruleKey),
     };
     inserts.push({
       observationType: "binding_name_match",
       organizationId: org.id,
       registryEntityId: hit.entityId,
-      ruleKey: "binding_name_exact",
+      ruleKey,
       payload: {
         org_name: org.canonical_name,
         registry_name: hit.canonicalName,
         name_similarity: nameSimilarity(org.canonical_name, hit.canonicalName ?? ""),
+        phone_evidence: phones.size > 0 ? [...phones] : [],
+        registry_phone: hit.phone,
+        phone_agrees: identifier === 1,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
         role_records: org.record_count,
         snapshot: identitySnapshot(hit),
       },
       components,
+      // One suggestion per org+entity pair regardless of which rule found it.
       dedupeKey: `bind:${org.id}:${hit.entityId}`,
     });
   }
@@ -261,6 +323,7 @@ export async function generateRegistryObservations(
     if (row.phone) {
       const components: TrustComponents = {
         name: 1, // binding already reviewed or strong-key exact
+        identifier: 1, // the phone IS the L&I identifier for this entity
         locality: 1, // L&I is the phone authority for exactly this entity
         role: org.role_weight,
         corroboration: 1,
@@ -282,6 +345,7 @@ export async function generateRegistryObservations(
     if (orgKey && registryKey && orgKey !== registryKey) {
       const components: TrustComponents = {
         name: nameSimilarity(org.canonical_name, row.canonicalName ?? ""),
+        identifier: 1, // entity identity already reviewed/strong-key bound
         locality: 1,
         role: org.role_weight,
         corroboration: Math.min(1, org.record_count / 3),
@@ -332,6 +396,7 @@ export async function generateRegistryObservations(
     const org = boundById.get(t.organizationId);
     const components: TrustComponents = {
       name: 1,
+      identifier: 1, // entity identity already reviewed/strong-key bound
       locality: 1,
       role: 1, // primary_contractor by construction
       corroboration: Math.min(1, t.n / 3),

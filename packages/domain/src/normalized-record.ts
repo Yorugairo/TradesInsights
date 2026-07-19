@@ -53,6 +53,12 @@ export const NormalizedSourceRecordSchema = z
         name: z.string().min(1),
         role: z.string().nullable(),
         evidenceText: z.string().min(1),
+        // Contractor identifiers, when the source publishes them (e.g. portal
+        // detail pages, L&I-sourced feeds). Optional and additive: absent for
+        // every source that doesn't emit them — never guessed (governing rule).
+        phone: z.string().min(7).optional(),
+        ubi: z.string().min(7).optional(),
+        contractorLicense: z.string().min(4).optional(),
       }),
     ),
     sourceUrl: z.string().url(),

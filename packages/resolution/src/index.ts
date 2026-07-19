@@ -7,5 +7,6 @@ export * from "./developments.js";
 export * from "./review.js";
 export * from "./velocity.js";
 export * from "./geocode.js";
+export * from "./identifiers.js";
 export * from "./registry-link.js";
 export * from "./registry-observations.js";
