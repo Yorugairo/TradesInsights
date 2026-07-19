@@ -316,6 +316,14 @@ skin** on that same chassis. The stated ideal is that Insights be *byte-identica
 gobjj CRM app — "may not be possible at this point," so read this as: the **chassis is
 shared verbatim; the trades product module is the vertical-specific delta.**
 
+> **Exact target location.** The trades CRM lives in `apps/crm` on the
+> **`release/trades-staging`** branch of **`Yorugairo/BJJRegistry`** — *not* the mainline
+> `apps/crm`. `release/trades-staging` is the trades-vertical staging line (it already
+> carries the WA-L&I resolution skin and the Google-Place productization schema; head at
+> time of writing: `36792eb`). All `apps/crm` references in this document mean that branch's
+> copy. The Insights-repo agent should target `release/trades-staging`, not `main`, when the
+> re-home lands.
+
 ### What `apps/crm` already is (the chassis)
 
 `@gobjj/crm` is a Next.js 16 / React 19 multi-tenant SaaS CRM in the registry monorepo.
