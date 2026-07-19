@@ -125,4 +125,6 @@ Extends M4.6. Provider-agnostic intake of customer-authorized bid invitations (.
 
 **account_profiles.delivery_config_json.easy_win** (P2.1) — per-account "winnable now" cut: `home_lon/lat`, `radius_km`, `max_age_days`, `min/max_valuation_usd`. Solis values are PROVISIONAL until the calibration session; absent home disables the geo check honestly.
 
-**organizations.registry_ref** (P1.4, migration `0016`) — One Trade Network registry join point; set only by authorized import.
+**organizations.registry_ref** (P1.4, migration `0016`) — One Trade Network canonical `entity_id`. Bound by the registry-link resolver (migration `0021`) from the registry's `registry_public.trades_identity_v1` contract view when a STRONG identifier (ubi / contractor_number) matches exactly; never set on a weak signal, and Insights never mutates registry identity.
+
+**organizations.registry_ref_method / registry_linked_at** (integration seam, migration `0021`) — provenance for the binding: `registry_ref_method` is `ubi_exact` or `contractor_number_exact`; `registry_linked_at` is when it was last bound. A UBI and contractor number pointing at different entities is a conflict and stays unbound (never auto-merged). See `docs/integration-one-trade-network.md` Parts B & D.

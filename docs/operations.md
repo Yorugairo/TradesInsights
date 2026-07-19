@@ -77,6 +77,10 @@ pnpm worker               # pg-boss worker
 
 The app boots **without** model keys; the worker logs `modelJobs: "blocked"` until a provider key (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`) **and** `LLM_MONTHLY_BUDGET_USD` are set. With `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` (a slug like `anthropic/claude-opus-4.1`) is also required — no slug is guessed.
 
+### Registry link (One Trade Network seam)
+
+The nightly maintenance chain includes a **registry-link** step that binds `organizations.registry_ref` to the canonical One Trade Network `entity_id` by strong-identifier exact match (ubi → contractor_number), reading the registry's `registry_public.trades_identity_v1` contract view. It is gated on `REGISTRY_DATABASE_URL` (a read-only connection whose role is a member of `otn_insights_reader`, SELECT on `registry_public` only). **Unset ⇒ the step logs `registry-link skipped (no REGISTRY_DATABASE_URL)` and the chain continues** — same boots-without-keys discipline as the model jobs. Binding is idempotent and records provenance (`registry_ref_method`, `registry_linked_at`); a UBI and contractor number that disagree are a conflict and stay unbound. Design + rollout: `docs/integration-one-trade-network.md`.
+
 ## Resolution (M2)
 
 ```bash

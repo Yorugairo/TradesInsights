@@ -260,8 +260,13 @@ export const organizations = pgTable(
     legalName: text("legal_name"),
     ubi: text("ubi"),
     contractorRegistration: text("contractor_registration"),
-    /** One Trade Network registry ID (P1.4) — set only by authorized import. */
+    /** One Trade Network canonical entity_id — bound by the registry-link
+     * resolver from the registry_public.trades_identity_v1 contract view. */
     registryRef: text("registry_ref"),
+    /** How registry_ref was bound: 'ubi_exact' | 'contractor_number_exact'. */
+    registryRefMethod: text("registry_ref_method"),
+    /** When registry_ref was last bound (provenance for re-runnable linking). */
+    registryLinkedAt: timestamp("registry_linked_at", { withTimezone: true }),
     organizationType: text("organization_type"),
     website: text("website"),
     status: text("status"),

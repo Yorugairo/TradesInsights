@@ -148,6 +148,13 @@
       "when": 1784330000000,
       "tag": "0020_public_business_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784331000000,
+      "tag": "0021_org_registry_link_meta",
+      "breakpoints": true
     }
   ]
 }

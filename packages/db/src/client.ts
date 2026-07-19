@@ -9,6 +9,21 @@ export function createPool(databaseUrl = process.env.DATABASE_URL): pg.Pool {
   return new pg.Pool({ connectionString: databaseUrl, max: 10 });
 }
 
+/**
+ * Read-only pool for the One Trade Network registry's contract surface
+ * (registry_public.*), from REGISTRY_DATABASE_URL. Returns null when unset so
+ * the app boots and the pipeline runs without a registry connection — the
+ * registry-link step then reports a visible "skipped" state (mirrors the
+ * model-key rule: no key ⇒ blocked/skipped, never a crash). Small pool: the
+ * link job is a low-frequency batch read.
+ */
+export function createRegistryPool(
+  registryDatabaseUrl = process.env.REGISTRY_DATABASE_URL,
+): pg.Pool | null {
+  if (!registryDatabaseUrl) return null;
+  return new pg.Pool({ connectionString: registryDatabaseUrl, max: 4 });
+}
+
 export function createDb(pool: pg.Pool): Db {
   return drizzle(pool, { schema });
 }

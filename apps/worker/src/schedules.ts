@@ -1,14 +1,16 @@
 import type PgBoss from "pg-boss";
 import type { Logger } from "pino";
 import { sql } from "drizzle-orm";
-import { createDb, createPool } from "@otn/db";
+import { createDb, createPool, createRegistryPool } from "@otn/db";
 import { loadSourcesConfig, type SourceConfig } from "@otn/config";
 import {
   applyRecordUpdates,
   buildDevelopments,
   computeCampusVelocity,
   computeClusterVelocity,
+  fetchRegistryIdentityRows,
   geocodeProjects,
+  linkRegistry,
   materializeProjectGeometry,
   resolveUnresolved,
 } from "@otn/resolution";
@@ -96,6 +98,20 @@ async function runMaintenance(logger: Logger): Promise<void> {
     const scored = await scoreAll(db, { logger });
     const tokenCleanup = await cleanupActionTokens(db);
 
+    // Registry identity seam: bind organizations to canonical One Trade Network
+    // entities by strong identifier. No REGISTRY_DATABASE_URL ⇒ visible skip
+    // (fetchRows returns null); never blocks the chain.
+    const registryPool = createRegistryPool();
+    let registryLink;
+    try {
+      registryLink = await linkRegistry(db, {
+        fetchRows: async () => (registryPool ? fetchRegistryIdentityRows(registryPool) : null),
+        logger,
+      });
+    } finally {
+      await registryPool?.end();
+    }
+
     const monthlyBudgetUsd = process.env.LLM_MONTHLY_BUDGET_USD
       ? Number(process.env.LLM_MONTHLY_BUDGET_USD)
       : null;
@@ -124,6 +140,9 @@ async function runMaintenance(logger: Logger): Promise<void> {
         stageLag,
         scored: scored.byAccount,
         tokenCleanup,
+        registryLink: registryLink.skipped
+          ? { skipped: true }
+          : { bound: registryLink.bound, alreadyLinked: registryLink.alreadyLinked, conflicts: registryLink.conflicts },
         alerts: { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped },
       },
       "pipeline maintenance complete",

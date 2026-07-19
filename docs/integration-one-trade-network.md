@@ -1,9 +1,25 @@
 # Integration design — OTN Insights ⇄ One Trade Network registry
 
-> Status: **design / not yet built** · Authored 2026-07-18 from a live inspection of the
+> Status: **seam built (Increments 1 & 2)** · Authored 2026-07-18 from a live inspection of the
 > One Trade Network "Trades" Supabase project (`arbmeioglflvzoffgtii`, PostgreSQL 17,
-> us-west-2). This is the plan of record for connecting the two systems. No production
-> change has been made; nothing here has run against either database yet.
+> us-west-2); the identity seam was **implemented and validated live on 2026-07-19**.
+
+## Build status (2026-07-19)
+
+The foundational identity seam is built end-to-end and proven against live registry data.
+
+| # | Increment | State | Where |
+|---|-----------|-------|-------|
+| 1 | **Registry contract view** `registry_public.trades_identity_v1` (+ `otn_insights_reader` role) | **Applied & validated on Trades** — 25,545 rows (one per active entity, no fan-out), UBI 100%, phone 99.95%. Solis → `8a12a7cb…` | Registry repo `release/trades-staging`, migration `20260719091458` / baseline patch `22`; branch `claude/insights-integration-seam` |
+| 2 | **Insights registry-link resolver** — binds `organizations.registry_ref` to the canonical `entity_id` by strong-identifier exact match (ubi → contractor_number), with provenance and conflict-safety | **Built & tested** (11 tests green; migration `0021`; wired into the nightly maintenance chain; skips cleanly without `REGISTRY_DATABASE_URL`) | Insights `packages/resolution/src/registry-link.ts`, `apps/worker/src/schedules.ts` |
+| 3 | **Observation feed** (Insights → registry `otn_insights` source_system) | Designed (Part I.3 / J.3); not yet built | — |
+
+**One remaining ops gate for Increment 2 to run live:** provision a login credential that is a
+member of `otn_insights_reader` (SELECT on `registry_public` only) and set it as Insights'
+`REGISTRY_DATABASE_URL`. Until then the step reports a visible "skipped" state and the pipeline
+runs normally. Once Insights and the registry co-locate (Part E) this becomes a local read.
+
+> Original framing retained below as the plan of record for connecting the two systems.
 
 ## TL;DR
 
