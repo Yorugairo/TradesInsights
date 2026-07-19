@@ -159,3 +159,34 @@ describe("pierce_permits_arcgis (golden fixture — live window page of 2026-07-
     expect(parsed[0]!.record.statusRaw).toBe("Some Brand New Status");
   });
 });
+
+describe("pierce_permits_arcgis WS4 — PALS project cluster key", () => {
+  it("promotes projectId as a namespaced project cluster key, not a party id", async () => {
+    const adapter = new PiercePermitsArcgisAdapter();
+    const body = await readFile(join(FIXTURES_DIR, "pierce_permits_arcgis/window-page-1.json"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+
+    // No party data on this layer → no fabricated org carries the id.
+    expect(parsed.every((p) => p.record.organizations.length === 0)).toBe(true);
+
+    const withCluster = parsed.filter(
+      (p) => (p.rawFields as { projectClusterId: string | null }).projectClusterId,
+    );
+    expect(withCluster.length).toBeGreaterThan(0);
+    for (const p of withCluster) {
+      const id = (p.rawFields as { projectClusterId: string }).projectClusterId;
+      expect(id).toMatch(/^pierce_pals_project:\S+$/);
+      expect(
+        p.record.evidence.some((e) => e.factPath === "externalRef" && e.text.includes(id)),
+      ).toBe(true);
+    }
+
+    // Permits on one development SHARE the cluster id (project-level, not party).
+    const counts = new Map<string, number>();
+    for (const p of withCluster) {
+      const id = (p.rawFields as { projectClusterId: string }).projectClusterId;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    expect([...counts.values()].some((n) => n > 1)).toBe(true);
+  });
+});

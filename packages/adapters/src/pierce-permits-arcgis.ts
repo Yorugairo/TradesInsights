@@ -66,6 +66,11 @@ const FeatureSchema = z.object({
       workType: z.string().nullable(),
       buildingValuation: z.number().nullable(),
       projectValue: z.number().nullable(),
+      // PALS project id — SHARED across the permits of one development (451
+      // records → 333 ids in the golden window). A PROJECT cluster key, not a
+      // party id (this layer has no applicant/owner), so it is promoted as
+      // externalRef evidence, never an organizations[].sourceEntityId.
+      projectId: z.union([z.string(), z.number()]).nullable().optional(),
       dwellingUnits: z.string().nullable(),
       applicationDate: z.number().nullable(),
       submittalDate: z.number().nullable(),
@@ -198,9 +203,18 @@ export class PiercePermitsArcgisAdapter implements SourceAdapter {
       const valuation = positive(a.buildingValuation) ?? positive(a.projectValue);
       const title = `${a.applicationNumber} – ${a.projectName?.trim() || a.applicationType || "Pierce County application"}`;
 
+      // WS4: PALS project cluster key (namespaced). Permits sharing it are the
+      // same development — a PROJECT-resolution key for M2 cluster velocity, not
+      // a party key, so it rides in rawFields + externalRef evidence only.
+      const projectClusterId =
+        a.projectId != null && String(a.projectId).trim() !== ""
+          ? `pierce_pals_project:${String(a.projectId).trim()}`
+          : null;
+
       out.push({
         rawFields: {
           ...a,
+          projectClusterId,
           applicationDateIso: epochToIso(a.applicationDate),
           submittalDateIso: epochToIso(a.submittalDate),
           issuedDateIso: epochToIso(a.issuedDate),
@@ -264,6 +278,15 @@ export class PiercePermitsArcgisAdapter implements SourceAdapter {
                     factPath: "parcelIds",
                     text: `parcel ${a.parcelNumber.trim()}`,
                     pageOrSection: "parcelNumber field",
+                  },
+                ]
+              : []),
+            ...(projectClusterId
+              ? [
+                  {
+                    factPath: "externalRef",
+                    text: `${projectClusterId} (PALS project cluster — shared by every permit on this development)`,
+                    pageOrSection: "projectId field",
                   },
                 ]
               : []),

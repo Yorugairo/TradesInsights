@@ -87,3 +87,31 @@ describe("tacoma_permits_arcgis (golden fixture — live window page of 2026-07-
     expect(NormalizedSourceRecordSchema.safeParse(parsed[0]!.record).success).toBe(false);
   });
 });
+
+describe("tacoma_permits_arcgis WS4 — stable Accela record id", () => {
+  it("promotes globalid_1 as an externalRef record id, never as a party key", async () => {
+    const adapter = new TacomaPermitsArcgisAdapter();
+    const body = await readFile(join(FIXTURES_DIR, "tacoma_permits_arcgis/window-page-1.json"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+
+    const ids = new Set<string>();
+    let withId = 0;
+    for (const p of parsed) {
+      const id = (p.rawFields as { recordGlobalId: string | null }).recordGlobalId;
+      // The per-record id is NEVER attached to the applicant as a party key.
+      for (const o of p.record.organizations) {
+        expect((o as { sourceEntityId?: string }).sourceEntityId).toBeUndefined();
+      }
+      if (!id) continue;
+      withId += 1;
+      expect(id).toMatch(/^tacoma_accela:\S+$/);
+      expect(
+        p.record.evidence.some((e) => e.factPath === "externalRef" && e.text.includes(id)),
+      ).toBe(true);
+      ids.add(id);
+    }
+    // Unique per record — confirms it is a record id, not a clustering key.
+    expect(ids.size).toBe(withId);
+    expect(withId).toBeGreaterThan(0);
+  });
+});

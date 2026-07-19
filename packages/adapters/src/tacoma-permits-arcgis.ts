@@ -76,6 +76,11 @@ const FeatureSchema = z.object({
       housing_units: z.number().nullable(),
       link: z.string().nullable(),
       pull_date: z.number().nullable(),
+      // Accela GlobalID — UNIQUE PER RECORD (1000 records → 1000 ids in the
+      // golden window), so it is a stable RECORD id, NOT a party key: attaching
+      // it to the applicant's sourceEntityId would give every permit a distinct
+      // key and defeat name-based clustering. Promoted as externalRef evidence.
+      globalid_1: z.string().nullable().optional(),
     })
     .passthrough(),
   geometry: z.object({ x: z.number(), y: z.number() }).nullish(),
@@ -190,9 +195,15 @@ export class TacomaPermitsArcgisAdapter implements SourceAdapter {
         .join(" / ");
       const link = a.link ? a.link.replace(/&amp;/g, "&") : null;
 
+      // WS4: stable Accela record id (namespaced). A per-record id, not a party
+      // key — it identifies THIS permit across refetches, so it rides in
+      // rawFields + externalRef evidence, never on the applicant org.
+      const recordGlobalId = a.globalid_1 ? `tacoma_accela:${a.globalid_1}` : null;
+
       out.push({
         rawFields: {
           ...a,
+          recordGlobalId,
           applicationDateIso: epochToIso(a.application_date),
           issuedDateIso: epochToIso(a.issued_date),
           pullDateIso: epochToIso(a.pull_date),
@@ -261,6 +272,15 @@ export class TacomaPermitsArcgisAdapter implements SourceAdapter {
                     factPath: "parcelIds",
                     text: `parcel ${a.parcel_number.trim()}`,
                     pageOrSection: "parcel_number field",
+                  },
+                ]
+              : []),
+            ...(recordGlobalId
+              ? [
+                  {
+                    factPath: "externalRef",
+                    text: `${recordGlobalId} (Accela GlobalID — stable per-permit record id)`,
+                    pageOrSection: "globalid_1 field",
                   },
                 ]
               : []),
