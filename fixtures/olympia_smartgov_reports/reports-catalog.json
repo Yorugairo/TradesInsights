@@ -1,0 +1,40 @@
+{
+  "surface": "City of Olympia Public Portal — SmartGov ReportsView",
+  "source_url": "https://ci-olympia-wa.smartgovcommunity.com/Public/ReportsView",
+  "capture": {
+    "captured_at": "2026-07-19",
+    "captured_via": "Ordinary-visitor page load in a normal browser, in-region Tacoma IP (AS14677 City of Tacoma). No bot/WAF bypass. Olympia was never network-blocked (docs/source-policy.md lists it as the top P1 permit-stage GAP, not blocked) — this confirms the public reports are reachable and enumerable.",
+    "vendor": "SmartGov (Granicus) public portal; reports engine is Exago hosted at reports-new.smartgovcommunity.com"
+  },
+  "report_open_mechanism": "Each catalog row is an anchor with href javascript:ReportsView.viewReport('<exago_guid>', 'Exago'). Invoking it navigates to https://reports-new.smartgovcommunity.com/exago/ExagoHome.aspx and loads an iframe https://reports-new.smartgovcommunity.com/exago/ExecuteExport.aspx?eid=<runtimeId>&bt=Chrome",
+  "format_reality": {
+    "rendered_content_type": "application/pdf",
+    "probed_2026_07_19": "PDF-ONLY in practice. ExecuteExport.aspx eit=0 (and eit=1) return application/pdf 200 with content-disposition filename '<Report Name>.pdf'. Every non-PDF export type tried (eit=3 Excel, eit=4 CSV, eit=5, eit=6) returns HTTP 500 'Object reference not set to an instance of an object.' (server-side NullReferenceException). So the earlier 'Exago engine supports HTML/Excel/CSV' finding is the ENGINE'S capability, but SmartGov's Olympia config 500s on non-PDF exports — the adapter path is PDF download + positioned-text parse (packages/documents extractPdfTextItems / pdfToMarkdown), NOT a clean tabular export.",
+    "eid_is_session_bound": "The ExecuteExport eid is tied to the browser's Exago session (HttpOnly cookie) AND is single-execution: a curl with the eid but no session returns the 500 page, and re-fetching a DIFFERENT eit on the same eid after it has been read once also 500s. Capture path: open the report fresh from the portal (ViewReport?reportId=<guid>&reportType=Exago -> ExagoHome mints a new eid in its ExecuteExport iframe), then fetch eit=0 ONCE.",
+    "captured_pdf": "permits-issued-last-30-days.pdf"
+  },
+  "capture_2026_07_19": {
+    "report": "Permits Issued Last 30 Days",
+    "exago_guid": "c7e5b4a5-9452-4861-a415-491cda5b44dc",
+    "file": "permits-issued-last-30-days.pdf",
+    "bytes": 646569,
+    "captured_via": "Genuine in-region visitor (in-app browser, Tacoma AS14677). Opened the report from the Olympia public portal (ReportsView.viewReport -> ViewReport?reportId=<guid>&reportType=Exago), read the fresh ExecuteExport eid from the ExagoHome iframe, fetched eit=0 in-session, and bridged the bytes to disk via a loopback sink (never through automation that spoofs the session). No bot/WAF bypass. Downloads owner-approved 2026-07-19.",
+    "report_coverage": "Permits ISSUED 06/19/2026 through 07/19/2026 (trailing 30 days). Report Run 2026-07-19 13:56:22.",
+    "structure": "60 pages, ~3178 positioned-text lines. Permits are grouped under permit-CATEGORY section headers (e.g. 'Accessory Dwelling Unit (ADU)', 'Block Party Street Closure ...', 'Civil Engineering'). Each category is a table with x-anchored columns: Permit Number (x~38), Date Issued (x~106), Site Address (x~157), Project Name (x~249), Project Description (x~340), Applicant (x~456). Records wrap across multiple lines (continuation lines carry a subset of columns forward). Each category ends with a printed 'Total <Category> Permits: N' (reconciliation anchor). Page footer 'Pg. N'.",
+    "fields_available": ["permit_number", "date_issued", "site_address", "project_name", "project_description", "applicant_name"],
+    "fields_absent": "No phone, no contractor licence, no valuation, no parcel, no coordinates. Applicant name is the only contact-identity column (people AND businesses) — feeds organizations[] name-only (no phone identifiers, unlike Pierce PALS).",
+    "parser_notes": "county=Thurston, permittingJurisdiction='City of Olympia', normalizedStage=permit_issued, issueDate=Date Issued, externalId=Permit Number (note formats like '26-3143' and 'EVNT - 0240'), permitType=category header. Reconcile parsed rows-per-category against the printed 'Total ... Permits: N' via checkInvariants."
+  },
+  "reports": [
+    {"title": "Permit Applications Submitted Last 30 Days", "exago_guid": "fc2bd193-c76e-4799-820f-48ddc37eb3ba", "category": "permit_applications", "priority_for_supply": "high"},
+    {"title": "Permits Issued Last 30 Days", "exago_guid": "c7e5b4a5-9452-4861-a415-491cda5b44dc", "category": "permits_issued", "priority_for_supply": "high"},
+    {"title": "Permits Issued - Year To Date", "exago_guid": "27303195-0151-4978-ab76-2432b3356a4b", "category": "permits_issued", "priority_for_supply": "medium"},
+    {"title": "Land Use Activity - Year to Date", "exago_guid": "8949b599-8258-49d3-84f6-8f5aaabf0145", "category": "land_use", "priority_for_supply": "medium"},
+    {"title": "Code Enforcement Cases Created By Address", "exago_guid": "2335875c-4f83-42b4-b306-b0c1ade3ad82", "category": "code_enforcement", "priority_for_supply": "low"},
+    {"title": "Code Enforcement Cases Created By Date", "exago_guid": "52992adb-4815-40ff-ad69-b6f07d090332", "category": "code_enforcement", "priority_for_supply": "low"}
+  ],
+  "external_links": [
+    {"title": "Building Permits & Land Use Review", "url": "http://olympiawa.gov/buildingpermits"},
+    {"title": "Permit Portal Help", "url": "https://www.olympiawa.gov/services/building_permits___land_use_review/online_permit_portal/permit_portal_help.php"}
+  ]
+}
