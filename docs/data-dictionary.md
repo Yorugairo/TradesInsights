@@ -81,7 +81,7 @@ Account-specific, kept strictly distinct from the shared graph's public `project
 
 **account_organization_relationships** — `(account_profile_id, organization_id)` unique. `relationship_state` (unknown / research_needed / target / contacted / active_relationship / preferred / incumbent_blocked / do_not_pursue), `preferred`, `blocked`, `relationship_owner_user_id`, `first/last_contact_at`, `notes`, `updated_at`. `blocked` or `do_not_pursue`/`incumbent_blocked` suppress that account's alerts (§9).
 
-**organization_contacts** — account-scoped contacts with provenance: `source_type` (`public_business` vs `customer_supplied`) and `customer_verified` keep a public listing distinct from a verified relationship contact. `name`, `role`, `email`, `phone`, `source_record_id`, `last_verified_at`.
+**organization_contacts** — contacts with provenance: `source_type` (`public_business` vs `customer_supplied`) and `customer_verified` keep a public listing distinct from a verified relationship contact. `name`, `role`, `email`, `phone`, `source_record_id`, `last_verified_at`. `account_profile_id` is nullable (migration 0020): **NULL = a global public-business contact** (e.g. adopted from the One Trade Network registry / Google profile) visible to every account in the login-locked CRM; a DB CHECK (`organization_contacts_account_scope_check`) permits NULL only with `source_type = 'public_business'` — customer-supplied contacts remain strictly account-scoped.
 
 **relationship_interactions** — `relationship_id`, `interaction_type`, `occurred_at`, `project_id`, `pursuit_id`, `summary`, `created_by`. Ties relationship activity to projects/pursuits.
 

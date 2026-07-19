@@ -47,7 +47,10 @@ export async function addContact(
   db: Db,
   input: {
     organizationId: string;
-    accountProfileId: string;
+    /** NULL = a GLOBAL public-business contact (registry/Google adoption),
+     * visible to every account; only legal with sourceType 'public_business'
+     * (DB CHECK, migration 0020). Customer-supplied stays account-scoped. */
+    accountProfileId: string | null;
     name: string;
     role?: string | null;
     email?: string | null;
@@ -56,6 +59,9 @@ export async function addContact(
     customerVerified?: boolean;
   },
 ): Promise<{ id: string }> {
+  if (input.accountProfileId === null && input.sourceType !== "public_business") {
+    throw new Error("a global (account-less) contact must have sourceType 'public_business'");
+  }
   const res = await db.execute(sql`
     INSERT INTO organization_contacts
       (organization_id, account_profile_id, name, role, email, phone, source_type, customer_verified, last_verified_at)
@@ -164,9 +170,15 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
       SELECT relationship_state, preferred, blocked, relationship_owner_user_id
       FROM account_organization_relationships
       WHERE account_profile_id = ${accountProfileId} AND organization_id = ${organizationId}`),
+    // The account's own contacts PLUS global public-business rows (NULL
+    // account — e.g. registry/Google adoptions): the login-locked CRM
+    // surfaces everything available for the client. Cross-ACCOUNT rows stay
+    // invisible; only the explicitly-global public rows are shared.
     db.execute(sql`
       SELECT name, role, email, source_type, customer_verified FROM organization_contacts
-      WHERE account_profile_id = ${accountProfileId} AND organization_id = ${organizationId} ORDER BY created_at ASC`),
+      WHERE (account_profile_id = ${accountProfileId}
+             OR (account_profile_id IS NULL AND source_type = 'public_business'))
+        AND organization_id = ${organizationId} ORDER BY created_at ASC`),
     db.execute(sql`
       SELECT bi.id, p.canonical_name AS project_name, bi.invitation_status, bi.bid_due_at
       FROM bid_invitations bi LEFT JOIN projects p ON p.id = bi.project_id

@@ -623,7 +623,11 @@ export const organizationContacts = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
     organizationId: uuid("organization_id").notNull().references(() => organizations.id),
-    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    /** NULL = a GLOBAL public-business contact (e.g. adopted from the One
+     * Trade Network registry / Google profile) visible to every account;
+     * customer-supplied contacts stay account-scoped. DB CHECK enforces that
+     * NULL is only legal with sourceType 'public_business' (migration 0020). */
+    accountProfileId: uuid("account_profile_id").references(() => accountProfiles.id),
     name: text("name").notNull(),
     role: text("role"),
     email: text("email"),

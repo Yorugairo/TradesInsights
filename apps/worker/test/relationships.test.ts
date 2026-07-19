@@ -106,4 +106,34 @@ describe("S4 GC relationships", () => {
     const viewB = (await getOrganizationView(db, orgId, accountB))!;
     expect(viewB.contacts).toHaveLength(0);
   });
+
+  it("global public-business contacts (NULL account) are visible to every account", async () => {
+    // Registry/Google adoption path (migration 0020): a public-business fact
+    // is global — surfaced to all paying accounts in the login-locked CRM.
+    await addContact(db, {
+      organizationId: orgId, accountProfileId: null, name: "Registry Office Line",
+      phone: "253-555-0100", sourceType: "public_business",
+    });
+    const viewA = (await getOrganizationView(db, orgId, accountA))!;
+    const viewB = (await getOrganizationView(db, orgId, accountB))!;
+    expect(viewA.contacts.some((c) => c.name === "Registry Office Line")).toBe(true);
+    expect(viewB.contacts.some((c) => c.name === "Registry Office Line")).toBe(true);
+    // Account A's own contacts remain invisible to B.
+    expect(viewB.contacts.some((c) => c.name === "Dana Lee")).toBe(false);
+  });
+
+  it("rejects a global contact that is not public_business (app guard + DB CHECK)", async () => {
+    await expect(
+      addContact(db, {
+        organizationId: orgId, accountProfileId: null, name: "Leaky Private Contact",
+        sourceType: "customer_supplied",
+      }),
+    ).rejects.toThrow(/public_business/);
+    // Defense in depth: the DB CHECK also rejects a raw insert.
+    await expect(
+      db.execute(sql`
+        INSERT INTO organization_contacts (organization_id, account_profile_id, name, source_type)
+        VALUES (${orgId}, NULL, 'Raw Leak', 'customer_supplied')`),
+    ).rejects.toThrow();
+  });
 });

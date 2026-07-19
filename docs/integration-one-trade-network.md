@@ -412,12 +412,132 @@ directly to `registry_business_entities`; that is what the registry-owned view (
 Net: **wait on the build, not the design.** The wait is spent making the seam contract-shaped
 so the registry's column work never ripples into Insights.
 
+## Part I — Bidirectional learning & the source-identity inventory
+
+The integration must **learn in both directions**: the registry teaches Insights *identity*;
+Insights teaches the registry *activity*. This part records what each side actually has to
+give (from a live inventory of every adapter + the production data, 2026-07-19) and specifies
+the two learning feeds.
+
+### I.1 — What Insights' sources actually carry (inventory, verified live)
+
+The binding constraint is the parser contract: the normalized `Organization`
+(`packages/domain/src/normalized-record.ts`) is **`{name, role, evidenceText}` only**
+(`.strict()`) — there is no slot for an identifier or contact, so nothing richer can flow
+into the graph today even where a source exposes it.
+
+| Identity field | In Insights? | Where / notes |
+|---|---|---|
+| Company/contractor **name** | **Yes** | `primary_contractor` ×1,043 (lewis_issued_permits `primaryContractor`, centralia `contractor`, tacoma `applicant_name`, bid-inbox `general_contractor`); plus `applicant`/`owner`/`proponent`/`lead_agency` names. ~1,580 of 5,151 orgs look company-shaped. |
+| Person full name | Yes (mostly non-contractors) | `applicant` ×7,109 + `owner` ×1,122 — largely owner-builders/homeowners. |
+| **UBI** | **No source carries it** | `organizations.ubi` column exists, 0-populated. |
+| **Contractor license / L&I registration** | **No source carries it** | `organizations.contractor_registration` exists, 0-populated. |
+| **Phone / email** | Effectively no | `organization_contacts` was empty; only the private bid-inbox `estimator_contact` (kept un-normalized by design, M4.4 high-risk) and SEPA lead-*agency* phone. |
+| Org mailing address | Trapped | king_permit_reports bundles "NAME & ADDRESS" into one un-parsed name string. |
+
+Only 8 of ~20 adapters emit any party at all. The **high-volume feeds (Pierce PALS, Puyallup,
+Seattle) carry zero contractor identity** in their extracts — project/parcel/valuation only.
+
+**The asymmetry that shapes the design:** Insights has *names + live activity* but no strong
+keys and no contact; the registry has *strong keys (UBI+license, 22k WA) + contact/Google*
+but is a static directory with no live activity. Each side's surplus is the other's gap.
+
+### I.2 — Feed 1: registry → Insights (identity adoption)
+
+The Part D resolver, sharpened by the inventory:
+
+- Match **contractor-role orgs only** (exclude the 8k+ applicant/owner person names —
+  owner-builders must not pollute a company registry); gate on a person-vs-company check
+  (`organization_type`).
+- Because Insights holds **no strong key of its own**, the working match is **name + county**
+  (normalized-name exact → auto-bind candidate at high confidence; anything fuzzy → review).
+  The Part B rank-1/2 strong-key rungs apply only to the handful of orgs where a UBI/license
+  is already known out-of-band (e.g. Solis itself).
+- On bind, **adopt into the columns that already exist and sit empty**: `organizations.ubi`,
+  `contractor_registration`, `website` (+ `verified_at`, `registry_ref`), and phone/Google
+  into `organization_contacts` as **global public-business rows** — `account_profile_id`
+  IS NULL, legal only for `source_type='public_business'` (migration
+  `0020_public_business_contacts`, **implemented 2026-07-19** with the app-level guard in
+  `addContact` and the org-view query returning own + global rows). Consistent with Part C:
+  the login-locked CRM surfaces everything available for the client; customer-supplied
+  contacts stay strictly account-scoped.
+
+### I.3 — Feed 2: Insights → registry (the observation feed — "learning company identifiers
+and assigning contractors to companies")
+
+Insights publishes **contractor observations** into the registry's own ingest
+(`registry_source_records` with `source_system='otn_insights'`, or the equivalent API), one
+observation per (org-role × project-event). What Insights can honestly teach:
+
+| Signal | From | Registry destination |
+|---|---|---|
+| **Liveness** — "pulled a permit on DATE in CITY" | project_events + roles | freshness/activity on the entity |
+| **Project history** — permit/project per contractor | the public project graph | contractor profiles (feeds the thin link, Part C-b) |
+| **Name aliases** — real-world spellings ("Century Communities, LLC" vs "…of WA LLC") | organization_aliases + raw names | `registry_entity_aliases` |
+| **Trade evidence** — permit work-type × contractor role | records + classification | supports `registry_trade_assignments` (sparse at inspection) |
+| **Co-occurrence** — GC↔sub appearing on the same project | roles per project | relationship edges |
+| **New-entity candidates** — a contractor the registry hasn't minted | unmatched contractor-role orgs | `registry_match_candidates` / review |
+
+Honest boundary: Insights **cannot teach a strong identifier** (it has none to give) — it
+teaches *name + activity + location + trade*, which the registry resolves through its own
+matcher (`registry_match_decisions` + review queue, never auto-merged). Public evidence only
+— account-private intelligence never enters the feed (Part C boundary).
+
+**The compounding loop:** Insights sees "Century Communities, LLC" on a permit → binds to the
+registry entity → adopts UBI/license/Google → pushes the permit as activity → the registry
+gains the project + the name variant → the next variant spelling resolves instantly for both
+sides.
+
+### I.4 — Closing the identity gap upstream (two build items)
+
+1. **Extend the normalized `Organization` contract** with *optional* typed fields —
+   `identifiers?: { type: 'ubi' | 'contractor_registration' | ...; value }[]` and
+   `contact?: { phone?; email? }` — mirroring the registry's own typed-identifier model, so a
+   source that exposes a strong key or contact can finally carry it into the graph instead of
+   stranding it in `rawFields`. Unblocks: un-bundling king_permit_reports' "NAME & ADDRESS";
+   promoting the bid-inbox `estimator_contact` **under the existing M4.4 high-risk review
+   rules** (contact data always human-reviewed, never auto-delivered); any future
+   license-bearing source.
+2. **Portal detail-page enrichment (directive 2026-07-19: pull contractor info from the
+   portal detail pages).** The big feeds' extracts lack the contractor, but the permit
+   portals' *detail pages* may carry contractor name + license. This becomes a
+   **verify-first enrichment track** — each portal goes through the standard activation
+   checklist (robots/terms/access-class/rate-limits; bounded: enrich routed opportunities
+   first, never blanket-crawl), superseding the earlier citation-only note *only after* a
+   portal passes. First-probe feasibility (2026-07-19, one page each, honest results):
+   - **PALS (Pierce)** — `pals.piercecountywa.gov` serves a 3KB Angular SPA shell; detail
+     data loads from a backing JSON API. The right target is **API discovery** (the app's
+     own REST endpoints), not page scraping — most promising of the three; needs a proper
+     probe. robots.txt: 302, unresolved.
+   - **Accela (Tacoma)** — no robots.txt (404); `urlrouting.ashx` deep links redirect to a
+     session-stateful landing page (`Tacoma.aspx`). Technically heavy (ACA session flow);
+     defer unless the value case is strong.
+   - **Puyallup Portal** — no robots.txt (404); `StatusReference` pages ARE server-rendered
+     (80–160KB real HTML) but the public status view exposes **conditions boilerplate only —
+     no party names** (checked on an SFR permit). No win available on the public page.
+   - **Better lever for identity specifically:** the registry itself already holds
+     UBI+license for 22k WA contractors — the portals' unique value is the **permit↔contractor
+     edge** (which contractor on which project), not identity. Weigh each portal build against
+     simply improving the name-match + observation feed.
+
+### I.5 — What to link / match / improve (priority order)
+
+1. Registry→Insights identity adoption (I.2) — fills the empty identity columns; contractor
+   orgs get real companies behind them. *(Schema prerequisite shipped: migration 0020.)*
+2. Insights→registry observation feed (I.3) — liveness/history/aliases/trade evidence.
+3. `Organization` contract extension (I.4.1) — stop stranding identity in rawFields.
+4. PALS API discovery (I.4.2) — the one portal probe worth doing next; Accela deferred;
+   Puyallup public page confirmed party-less.
+
 ## Recommended sequence (summary)
 
 0. **Now, no code** — lock the `v1` identity + enrichment contract (Part H): the field list
    (identity + the external-profile/Google join, H.4) and the registry-owned view/API stub.
-1. **Identity match** — `registry_ref` resolver via read-only sync (Part D), reading the
-   contract from H.1. **First build**, no DB migration; the spine both directions ride on.
+1. **Identity match + adoption** — `registry_ref` resolver via read-only sync (Part D),
+   reading the contract from H.1, adopting identity/contact per I.2 (the 0020 global-contact
+   migration is already in). **First build**; the spine both directions ride on.
+1b. **Observation feed** (I.3) — Insights starts teaching the registry
+   liveness/history/aliases/trade evidence; feeds the thin link's project history.
 2. **Thin trades link** (Insights → registry) — a read-only, public-only `projects-by-
    contractor` + contact/match API onto registry profiles. Lowest-risk, immediately enriches
    the registry, exposes no private data.
