@@ -263,10 +263,14 @@ export const organizations = pgTable(
     /** One Trade Network canonical entity_id — bound by the registry-link
      * resolver from the registry_public.trades_identity_v1 contract view. */
     registryRef: text("registry_ref"),
-    /** How registry_ref was bound: 'ubi_exact' | 'contractor_number_exact'. */
+    /** How registry_ref was bound: 'ubi_exact' | 'contractor_number_exact' |
+     * 'name_review_confirmed' (human-accepted name match). */
     registryRefMethod: text("registry_ref_method"),
     /** When registry_ref was last bound (provenance for re-runnable linking). */
     registryLinkedAt: timestamp("registry_linked_at", { withTimezone: true }),
+    /** Cached PUBLIC identity snapshot from the registry contract view (display
+     * cache stamped at bind; the registry stays the identity authority). */
+    registryIdentityJson: jsonb("registry_identity_json"),
     organizationType: text("organization_type"),
     website: text("website"),
     status: text("status"),
@@ -901,6 +905,46 @@ export const alerts = pgTable(
   (t) => [
     uniqueIndex("alerts_idempotency_ux").on(t.idempotencyKey),
     index("alerts_open_ix").on(t.alertType, t.resolvedAt),
+  ],
+);
+
+// ── Registry observations (One Trade Network seam, migration 0022) ──────────
+
+/**
+ * The reviewed observation queue between Insights and the registry, both
+ * directions. Every cross-system enrichment (identity binding, contact
+ * adoption, alias/trade export) is an observation with a deterministic trust
+ * score; nothing applies until accepted by the operator or by a rule whose
+ * reviewed accept-history earned auto-accept. Decisions feed the per-rule
+ * accept rate, so scoring improves deterministically with each pass.
+ */
+export const registryObservations = pgTable(
+  "registry_observations",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** binding_name_match | phone_adoption | alias_export | trade_export */
+    observationType: text("observation_type").notNull(),
+    organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+    registryEntityId: text("registry_entity_id").notNull(),
+    /** Which deterministic rule produced this observation (accept-rate bucket). */
+    ruleKey: text("rule_key").notNull(),
+    payloadJson: jsonb("payload_json").notNull().default(sql`'{}'::jsonb`),
+    trustScore: doublePrecision("trust_score").notNull(),
+    trustComponentsJson: jsonb("trust_components_json").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    /** pending | accepted | rejected */
+    status: text("status").notNull().default("pending"),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
+    exportedAt: timestamp("exported_at", { withTimezone: true }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    createdAt: now(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (t) => [
+    uniqueIndex("registry_observations_dedupe_ux").on(t.dedupeKey),
+    index("registry_observations_org_ix").on(t.organizationId),
   ],
 );
 

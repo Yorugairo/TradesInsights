@@ -39,6 +39,26 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
         )}
       </p>
 
+      {view.organization.registryIdentity && (
+        <p data-testid="org-registry-identity">
+          <Badge tone="green">One Trade Network verified</Badge>{" "}
+          {String(view.organization.registryIdentity["canonical_name"] ?? "")}
+          {view.organization.registryIdentity["ubi"]
+            ? ` · UBI ${String(view.organization.registryIdentity["ubi"])}`
+            : ""}
+          {Array.isArray(view.organization.registryIdentity["contractor_numbers"]) &&
+          (view.organization.registryIdentity["contractor_numbers"] as string[]).length > 0
+            ? ` · License ${(view.organization.registryIdentity["contractor_numbers"] as string[]).join(", ")}`
+            : ""}
+          {view.organization.registryIdentity["phone"]
+            ? ` · ${String(view.organization.registryIdentity["phone"])}`
+            : ""}
+          {view.organization.registryIdentity["city"]
+            ? ` · ${String(view.organization.registryIdentity["city"])}, ${String(view.organization.registryIdentity["state"] ?? "WA")}`
+            : ""}
+        </p>
+      )}
+
       <h2>Your relationship</h2>
       <RelationshipActions organizationId={view.organization.id} current={view.relationship} />
 

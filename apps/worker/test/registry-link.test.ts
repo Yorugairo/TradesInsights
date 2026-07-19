@@ -25,8 +25,16 @@ let unknownId: string;
 const SOLIS_ENTITY = "8a12a7cb-fb4b-4418-8378-def585ef88ff";
 const OTHER_ENTITY = randomUUID();
 const REGISTRY_ROWS: RegistryIdentityRow[] = [
-  { entityId: SOLIS_ENTITY, ubi: "604837560", contractorNumbers: ["SOLISIL785NT"], canonicalName: "Solis Interiors LLC", phone: "3603508616" },
-  { entityId: OTHER_ENTITY, ubi: "601000001", contractorNumbers: ["OTHERCO999XX"], canonicalName: "Other Trades LLC", phone: null },
+  {
+    entityId: SOLIS_ENTITY, ubi: "604837560", contractorNumbers: ["SOLISIL785NT"],
+    canonicalName: "Solis Interiors LLC", canonicalNameNormalized: "SOLIS INTERIORS",
+    phone: "3603508616", cityToken: "olympia", stateCode: "WA",
+  },
+  {
+    entityId: OTHER_ENTITY, ubi: "601000001", contractorNumbers: ["OTHERCO999XX"],
+    canonicalName: "Other Trades LLC", canonicalNameNormalized: "OTHER TRADES",
+    phone: null, cityToken: "tacoma", stateCode: "WA",
+  },
 ];
 
 async function mkOrg(name: string, ubi: string | null, cn: string | null): Promise<string> {

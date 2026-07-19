@@ -12,12 +12,26 @@ The foundational identity seam is built end-to-end and proven against live regis
 |---|-----------|-------|-------|
 | 1 | **Registry contract view** `registry_public.trades_identity_v1` (+ `otn_insights_reader` role) | **Applied & validated on Trades** — 25,545 rows (one per active entity, no fan-out), UBI 100%, phone 99.95%. Solis → `8a12a7cb…` | Registry repo `release/trades-staging`, migration `20260719091458` / baseline patch `22`; branch `claude/insights-integration-seam` |
 | 2 | **Insights registry-link resolver** — binds `organizations.registry_ref` to the canonical `entity_id` by strong-identifier exact match (ubi → contractor_number), with provenance and conflict-safety | **Built & tested** (11 tests green; migration `0021`; wired into the nightly maintenance chain; skips cleanly without `REGISTRY_DATABASE_URL`) | Insights `packages/resolution/src/registry-link.ts`, `apps/worker/src/schedules.ts` |
-| 3 | **Observation feed** (Insights → registry `otn_insights` source_system) | Designed (Part I.3 / J.3); not yet built | — |
+| 3 | **Observation feed + review gate** — deterministic trust-scored observations (`binding_name_match` / `phone_adoption` / `alias_export` / `trade_export`), top-N human review at `/app/admin/registry-review`, per-rule accept-history learning (Laplace-smoothed; proven non-binding rules earn `auto:rule-history` accept; **bindings are always human**), export of accepted rows into `registry_partner` staging | **Built & tested** (16 tests; migration `0022`; nightly generate + export wired; registry-side `registry_partner` schema + `ingest-otn-insights.mjs` loader applied & validated live) | Insights `packages/resolution/src/registry-observations.ts`; registry migrations `20260719095534/095646/100034` + loader |
+| 4 | **Thin trades link** (Insights → registry profiles): per-entity public project-fact rollups (`partner_project_facts`, replace-on-export) for the registry to project onto contractor profiles via its reviewed read models | **Built** (exported by the same nightly step; registry-side table live) | `exportRegistryObservations` → `registry_partner.partner_project_facts` |
+| 5 | **CRM enrichment** (registry → Insights, the login-locked bucket): bind-time public identity snapshot (`organizations.registry_identity_json`), "One Trade Network verified" panel on the org page, accepted phone adoptions become GLOBAL `public_business` contacts (0020) visible to every paying account | **Built & tested** | `getOrganizationView`, `apps/web/app/app/organizations/[id]/page.tsx` |
 
-**One remaining ops gate for Increment 2 to run live:** provision a login credential that is a
-member of `otn_insights_reader` (SELECT on `registry_public` only) and set it as Insights'
-`REGISTRY_DATABASE_URL`. Until then the step reports a visible "skipped" state and the pipeline
-runs normally. Once Insights and the registry co-locate (Part E) this becomes a local read.
+**Why the review gate is the binding path right now:** the live Insights corpus has **zero
+organizations with a UBI or contractor registration** (public portals don't emit them — the
+Part I source inventory), so strong-key auto-binding has nothing to bind until portal
+detail-page enrichment lands. The deterministic **name+locality candidates** (exact
+cross-system name key, ambiguous keys dropped, one-token names excluded) reviewed top-N by the
+operator ARE the identity spine — each accept binds `registry_ref`
+(`name_review_confirmed`), stamps the identity snapshot, and unlocks phone/alias/trade flow
+for that org on the next nightly pass.
+
+**Remaining ops gates:** (a) provision login credentials for `otn_insights_reader` (SELECT on
+`registry_public`) and `otn_insights_writer` (INSERT/UPDATE on `registry_partner`) — one
+credential may hold both memberships — and set Insights' `REGISTRY_DATABASE_URL`; until then
+link/generate/export all report visible "skipped" states. (b) Seed `registry_trade_taxonomy`
+registry-side — until then the loader skips trade evidence as `skipped:unknown_trade_code`.
+(c) Registry operator runs `ingest-otn-insights.mjs` after exports (batch pull-based, same as
+every registry stage). Once co-located (Part E) the reads/writes become local.
 
 > Original framing retained below as the plan of record for connecting the two systems.
 

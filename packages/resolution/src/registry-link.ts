@@ -27,7 +27,25 @@ export interface RegistryIdentityRow {
   ubi: string | null;
   contractorNumbers: string[] | null;
   canonicalName: string | null;
+  /** The registry's own normalized form (upper, suffix-stripped, &→AND). */
+  canonicalNameNormalized: string | null;
   phone: string | null;
+  cityToken: string | null;
+  stateCode: string | null;
+}
+
+/** Public identity snapshot cached on organizations.registry_identity_json. */
+export function identitySnapshot(row: RegistryIdentityRow): Record<string, unknown> {
+  return {
+    entity_id: row.entityId,
+    canonical_name: row.canonicalName,
+    ubi: row.ubi,
+    contractor_numbers: row.contractorNumbers ?? [],
+    phone: row.phone,
+    city: row.cityToken,
+    state: row.stateCode,
+    snapshot_at: new Date().toISOString(),
+  };
 }
 
 export type RegistryMatchMethod = "ubi_exact" | "contractor_number_exact";
@@ -137,7 +155,8 @@ export interface RegistryLinkOptions {
  */
 export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise<RegistryIdentityRow[]> {
   const res = await pool.query(
-    `SELECT entity_id, ubi, contractor_numbers, canonical_name, phone
+    `SELECT entity_id, ubi, contractor_numbers, canonical_name, canonical_name_normalized,
+            phone, city_token, state_code
        FROM registry_public.trades_identity_v1`,
   );
   return res.rows.map((r: Record<string, unknown>) => ({
@@ -145,7 +164,10 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     ubi: (r["ubi"] as string | null) ?? null,
     contractorNumbers: (r["contractor_numbers"] as string[] | null) ?? null,
     canonicalName: (r["canonical_name"] as string | null) ?? null,
+    canonicalNameNormalized: (r["canonical_name_normalized"] as string | null) ?? null,
     phone: (r["phone"] as string | null) ?? null,
+    cityToken: (r["city_token"] as string | null) ?? null,
+    stateCode: (r["state_code"] as string | null) ?? null,
   }));
 }
 
@@ -168,6 +190,7 @@ export async function linkRegistry(db: Db, opts: RegistryLinkOptions): Promise<R
   }
   summary.registryRows = rows.length;
   const index = buildRegistryIndex(rows);
+  const byEntity = new Map(rows.map((r) => [r.entityId, r]));
 
   const orgRes = await db.execute(sql`
     SELECT id, ubi, contractor_registration, registry_ref
@@ -194,9 +217,11 @@ export async function linkRegistry(db: Db, opts: RegistryLinkOptions): Promise<R
       continue;
     }
     // IS DISTINCT FROM guards the no-op write; only a genuine (re)bind touches the row.
+    const snapshot = byEntity.has(entityId) ? identitySnapshot(byEntity.get(entityId)!) : null;
     await db.execute(sql`
       UPDATE organizations
-      SET registry_ref = ${entityId}, registry_ref_method = ${method}, registry_linked_at = now()
+      SET registry_ref = ${entityId}, registry_ref_method = ${method}, registry_linked_at = now(),
+          registry_identity_json = ${snapshot ? JSON.stringify(snapshot) : null}::jsonb
       WHERE id = ${org.id} AND registry_ref IS DISTINCT FROM ${entityId}`);
     summary.bound += 1;
     byMethod[method] += 1;

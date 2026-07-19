@@ -8,7 +8,9 @@ import {
   buildDevelopments,
   computeCampusVelocity,
   computeClusterVelocity,
+  exportRegistryObservations,
   fetchRegistryIdentityRows,
+  generateRegistryObservations,
   geocodeProjects,
   linkRegistry,
   materializeProjectGeometry,
@@ -98,16 +100,20 @@ async function runMaintenance(logger: Logger): Promise<void> {
     const scored = await scoreAll(db, { logger });
     const tokenCleanup = await cleanupActionTokens(db);
 
-    // Registry identity seam: bind organizations to canonical One Trade Network
-    // entities by strong identifier. No REGISTRY_DATABASE_URL ⇒ visible skip
-    // (fetchRows returns null); never blocks the chain.
+    // Registry seam: bind by strong identifier, then regenerate the reviewed
+    // observation queue (binding candidates, phone adoption, alias/trade
+    // export) and push accepted export items + public project facts to
+    // registry_partner staging. No REGISTRY_DATABASE_URL ⇒ visible skips;
+    // never blocks the chain.
     const registryPool = createRegistryPool();
     let registryLink;
+    let registryObs;
+    let registryExport;
     try {
-      registryLink = await linkRegistry(db, {
-        fetchRows: async () => (registryPool ? fetchRegistryIdentityRows(registryPool) : null),
-        logger,
-      });
+      const registryRows = registryPool ? await fetchRegistryIdentityRows(registryPool) : null;
+      registryLink = await linkRegistry(db, { fetchRows: async () => registryRows, logger });
+      registryObs = await generateRegistryObservations(db, registryRows, { logger });
+      registryExport = await exportRegistryObservations(db, registryPool, { logger });
     } finally {
       await registryPool?.end();
     }
@@ -143,6 +149,18 @@ async function runMaintenance(logger: Logger): Promise<void> {
         registryLink: registryLink.skipped
           ? { skipped: true }
           : { bound: registryLink.bound, alreadyLinked: registryLink.alreadyLinked, conflicts: registryLink.conflicts },
+        registryObservations: registryObs.skipped
+          ? { skipped: true }
+          : {
+              bindingCandidates: registryObs.bindingCandidates,
+              phoneAdoptions: registryObs.phoneAdoptions,
+              aliasExports: registryObs.aliasExports,
+              tradeExports: registryObs.tradeExports,
+              autoAccepted: registryObs.autoAccepted,
+            },
+        registryExport: registryExport.skipped
+          ? { skipped: true }
+          : { observations: registryExport.observationsExported, projectFacts: registryExport.projectFactsExported },
         alerts: { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped },
       },
       "pipeline maintenance complete",

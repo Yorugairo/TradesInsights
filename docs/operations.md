@@ -79,7 +79,14 @@ The app boots **without** model keys; the worker logs `modelJobs: "blocked"` unt
 
 ### Registry link (One Trade Network seam)
 
-The nightly maintenance chain includes a **registry-link** step that binds `organizations.registry_ref` to the canonical One Trade Network `entity_id` by strong-identifier exact match (ubi → contractor_number), reading the registry's `registry_public.trades_identity_v1` contract view. It is gated on `REGISTRY_DATABASE_URL` (a read-only connection whose role is a member of `otn_insights_reader`, SELECT on `registry_public` only). **Unset ⇒ the step logs `registry-link skipped (no REGISTRY_DATABASE_URL)` and the chain continues** — same boots-without-keys discipline as the model jobs. Binding is idempotent and records provenance (`registry_ref_method`, `registry_linked_at`); a UBI and contractor number that disagree are a conflict and stay unbound. Design + rollout: `docs/integration-one-trade-network.md`.
+The nightly maintenance chain includes a **registry-link** step that binds `organizations.registry_ref` to the canonical One Trade Network `entity_id` by strong-identifier exact match (ubi → contractor_number), reading the registry's `registry_public.trades_identity_v1` contract view. It is gated on `REGISTRY_DATABASE_URL` (a connection whose role is a member of `otn_insights_reader` for the contract view and `otn_insights_writer` for `registry_partner` staging). **Unset ⇒ the steps log visible "skipped" states and the chain continues** — same boots-without-keys discipline as the model jobs. Binding is idempotent and records provenance (`registry_ref_method`, `registry_linked_at`); a UBI and contractor number that disagree are a conflict and stay unbound. Design + rollout: `docs/integration-one-trade-network.md`.
+
+**Registry review runbook (the human gate).** After `registry-link`, the chain regenerates the deterministic observation queue (`generateRegistryObservations`) and pushes accepted export items + public project facts to `registry_partner` staging (`exportRegistryObservations`). The operator workflow:
+
+1. Open `/app/admin/registry-review` (admin only). Top pending observations by trust; start with the top ~10.
+2. **Accept / Reject** each. Accept applies immediately: a `binding_name_match` stamps the org's registry identity (this is the gate that unlocks everything else for that org); a `phone_adoption` creates the GLOBAL public-business contact every paying account sees; `alias_export` / `trade_export` queue for the nightly push. Reject just teaches.
+3. Every decision updates that rule's accept history (Laplace-smoothed) — trust scores sharpen on the next nightly pass, and a non-binding rule with ≥10 decisions at ≥95% accept starts auto-accepting (`decided_by='auto:rule-history'`). Identity bindings are **never** auto-accepted.
+4. Registry side: the operator runs `node scripts/entity-resolution/ingest-otn-insights.mjs` (registry repo) to adjudicate staged rows into `registry_internal`; unknown entities/trade codes are skipped with reasons, never applied blind.
 
 ## Resolution (M2)
 

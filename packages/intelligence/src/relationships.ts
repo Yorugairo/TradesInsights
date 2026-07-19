@@ -97,7 +97,18 @@ export async function isAlertSuppressed(db: Db, accountProfileId: string, organi
 }
 
 export interface OrganizationView {
-  organization: { id: string; name: string; ubi: string | null; status: string | null; verifiedAt: string | null };
+  organization: {
+    id: string;
+    name: string;
+    ubi: string | null;
+    status: string | null;
+    verifiedAt: string | null;
+    /** One Trade Network canonical entity id when bound (registry seam). */
+    registryRef: string | null;
+    /** Cached PUBLIC registry identity snapshot (name/licenses/phone/locality),
+     * stamped at bind time — the CRM's verified-identity panel. */
+    registryIdentity: Record<string, unknown> | null;
+  };
   /** From the shared graph — public, not account-specific. */
   publicRoles: { projectId: string; projectName: string; role: string | null; confirmed: boolean }[];
   /** Account-specific relationship state (what the customer told us). */
@@ -155,9 +166,14 @@ export async function listAccountOrganizations(db: Db, accountProfileId: string)
 /** Assemble the account-scoped GC view (public roles vs relationship kept distinct). */
 export async function getOrganizationView(db: Db, organizationId: string, accountProfileId: string): Promise<OrganizationView | null> {
   const orgRes = await db.execute(sql`
-    SELECT id, canonical_name, ubi, status, verified_at FROM organizations WHERE id = ${organizationId}`);
+    SELECT id, canonical_name, ubi, status, verified_at, registry_ref, registry_identity_json
+    FROM organizations WHERE id = ${organizationId}`);
   const org = orgRes.rows[0] as
-    | { id: string; canonical_name: string; ubi: string | null; status: string | null; verified_at: string | null }
+    | {
+        id: string; canonical_name: string; ubi: string | null; status: string | null;
+        verified_at: string | null; registry_ref: string | null;
+        registry_identity_json: Record<string, unknown> | null;
+      }
     | undefined;
   if (!org) return null;
 
@@ -192,6 +208,7 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
   return {
     organization: {
       id: org.id, name: org.canonical_name, ubi: org.ubi, status: org.status, verifiedAt: org.verified_at,
+      registryRef: org.registry_ref, registryIdentity: org.registry_identity_json,
     },
     publicRoles: (roles.rows as Record<string, unknown>[]).map((r) => ({
       projectId: r["project_id"] as string,
