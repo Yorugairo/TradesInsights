@@ -85,6 +85,48 @@ export function normalizeAddressUS(raw: string | null | undefined): string | nul
   return key;
 }
 
+/**
+ * The street+zip5 match key shared by BOTH sides of the registry address match.
+ * The registry publishes a street-only address plus a separate postal code; an
+ * Insights org address identifier is a full mailing string with the zip inline.
+ * This reduces either form to `<street key> <zip5>`: it takes the street line
+ * (the text before the first comma — a full mailing string has one, a
+ * street-only registry value does not), folds it through `normalizeAddressUS`,
+ * and appends the 5-digit zip (from the explicit `zip` arg or found inline).
+ * Null when there is no usable street key or no zip5 — never guessed.
+ *
+ *   addressMatchKey("1210 HOMANN DR SE, LACEY WA 98503")      → "1210 HOMANN DR SE 98503"
+ *   addressMatchKey("1210 HOMANN DR SE", "98503")             → "1210 HOMANN DR SE 98503"
+ *
+ * So the registry's street-only row and an org's full mailing string collapse to
+ * the same key. A PO-BOX / mailing-only registered address simply never matches
+ * a permit SITE address — correct, not a bug.
+ */
+export function addressMatchKey(
+  address: string | null | undefined,
+  zip?: string | null | undefined,
+): string | null {
+  if (address == null) return null;
+  const raw = String(address);
+  // zip5 from the explicit arg, else the LAST 5-digit group inline — never the
+  // first, because a street NUMBER can be 5 digits ("33820 WEYERHAEUSER WAY").
+  const explicitZip = String(zip ?? "").match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] ?? null;
+  const inlineZips = raw.match(/\b\d{5}(?:-\d{4})?\b/g);
+  const zip5 = explicitZip ?? (inlineZips ? inlineZips[inlineZips.length - 1]!.slice(0, 5) : null);
+  if (!zip5) return null;
+  // Street line = text before the first comma (registry street-only has none).
+  let street = raw.split(",")[0]!;
+  // No comma → strip a trailing inline "<STATE> <ZIP>" so "… OLYMPIA WA 98501"
+  // still reduces toward the street (city, if inline and comma-less, is left —
+  // our sources are comma/street-only, so this is a graceful degrade, not a hit).
+  if (!raw.includes(",")) {
+    street = street.replace(/\s+[A-Za-z]{2}\s+\d{5}(?:-\d{4})?\s*$/, "");
+  }
+  const streetKey = normalizeAddressUS(street);
+  if (!streetKey) return null;
+  return `${streetKey} ${zip5}`;
+}
+
 /** Normalize a source-namespaced entity id. The adapter owns the namespace
  * prefix (e.g. "pierce_pals:462942"); here we only trim and require a
  * namespace separator so an unqualified bare id can never pollute the key
@@ -186,6 +228,29 @@ export async function loadOrganizationPhones(db: Db): Promise<Map<string, Set<st
   for (const r of res.rows as { organization_id: string; value_normalized: string }[]) {
     const set = map.get(r.organization_id) ?? new Set<string>();
     set.add(r.value_normalized);
+    map.set(r.organization_id, set);
+  }
+  return map;
+}
+
+/**
+ * Evidence-backed registry-address match keys per organization (input to the
+ * binding_address_match rule). Reads `value_raw` — the ORIGINAL mailing string
+ * with its comma — because `addressMatchKey` needs the comma to split the street
+ * line from the "CITY STATE ZIP" tail (the stored `value_normalized` has already
+ * had punctuation flattened, so its city can't be dropped). Keys that don't
+ * reduce to a street+zip5 are skipped, never guessed.
+ */
+export async function loadOrganizationAddresses(db: Db): Promise<Map<string, Set<string>>> {
+  const res = await db.execute(sql`
+    SELECT organization_id, value_raw FROM organization_identifiers
+    WHERE identifier_type = 'address'`);
+  const map = new Map<string, Set<string>>();
+  for (const r of res.rows as { organization_id: string; value_raw: string }[]) {
+    const key = addressMatchKey(r.value_raw);
+    if (!key) continue;
+    const set = map.get(r.organization_id) ?? new Set<string>();
+    set.add(key);
     map.set(r.organization_id, set);
   }
   return map;

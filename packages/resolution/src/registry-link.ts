@@ -32,6 +32,11 @@ export interface RegistryIdentityRow {
   phone: string | null;
   cityToken: string | null;
   stateCode: string | null;
+  /** L&I registered address, street-only + separate postal code (surfaced on
+   * the contract view 2026-07-19). The match key for parties with no phone/UBI
+   * whose name drifts — folded through `addressMatchKey` before comparison. */
+  registeredAddress: string | null;
+  registeredPostalCode: string | null;
 }
 
 /** Public identity snapshot cached on organizations.registry_identity_json. */
@@ -156,7 +161,7 @@ export interface RegistryLinkOptions {
 export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise<RegistryIdentityRow[]> {
   const res = await pool.query(
     `SELECT entity_id, ubi, contractor_numbers, canonical_name, canonical_name_normalized,
-            phone, city_token, state_code
+            phone, city_token, state_code, registered_address, registered_postal_code
        FROM registry_public.trades_identity_v1`,
   );
   return res.rows.map((r: Record<string, unknown>) => ({
@@ -168,6 +173,8 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     phone: (r["phone"] as string | null) ?? null,
     cityToken: (r["city_token"] as string | null) ?? null,
     stateCode: (r["state_code"] as string | null) ?? null,
+    registeredAddress: (r["registered_address"] as string | null) ?? null,
+    registeredPostalCode: (r["registered_postal_code"] as string | null) ?? null,
   }));
 }
 

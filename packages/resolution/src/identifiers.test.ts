@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAddressUS, normalizePhoneUS, normalizeSourceEntityId } from "./identifiers.js";
+import {
+  addressMatchKey,
+  normalizeAddressUS,
+  normalizePhoneUS,
+  normalizeSourceEntityId,
+} from "./identifiers.js";
 
 describe("normalizePhoneUS", () => {
   it("strips punctuation and a leading country code to bare 10 digits", () => {
@@ -57,5 +62,44 @@ describe("normalizeSourceEntityId", () => {
     expect(normalizeSourceEntityId("462942")).toBeNull(); // no namespace separator
     expect(normalizeSourceEntityId(":")).toBeNull(); // too short
     expect(normalizeSourceEntityId(null)).toBeNull();
+  });
+});
+
+describe("addressMatchKey (registry street+zip5 match key)", () => {
+  it("reduces a full org mailing string and a street-only registry address to ONE key", () => {
+    // Insights org identifier: full mailing string (Lacey Glass live value).
+    const orgKey = addressMatchKey("1210 HOMANN DR SE, LACEY WA 98503");
+    // Registry contract view: street-only address + separate postal code.
+    const registryKey = addressMatchKey("1210 HOMANN DR SE", "98503");
+    expect(orgKey).toBe("1210 HOMANN DR SE 98503");
+    expect(registryKey).toBe("1210 HOMANN DR SE 98503");
+    expect(orgKey).toBe(registryKey);
+  });
+
+  it("folds street-word variants so DRIVE and DR collapse to the same key", () => {
+    expect(addressMatchKey("1210 HOMANN DRIVE SE, LACEY WA 98503")).toBe(
+      addressMatchKey("1210 HOMANN DR SE", "98503"),
+    );
+  });
+
+  it("takes the zip from the END, not a 5-digit street number, and drops the unit", () => {
+    // 33820 is the street NUMBER; 98001 is the zip. UNIT is dropped as a suite.
+    expect(addressMatchKey("33820 WEYERHAEUSER WAY S UNIT, AUBURN, WA 98001")).toBe(
+      "33820 WEYERHAEUSER WAY S 98001",
+    );
+  });
+
+  it("returns null when there is no zip or no usable street (never guessed)", () => {
+    expect(addressMatchKey("1210 HOMANN DR SE")).toBeNull(); // no zip on either side
+    expect(addressMatchKey(null)).toBeNull();
+    expect(addressMatchKey("", "98503")).toBeNull();
+  });
+
+  it("keeps a PO-BOX key distinct so it never collides with a street address", () => {
+    // PO boxes are valid keys but structurally can't equal a site street key —
+    // the plan's intended 'PO-BOX registered address → no site match'.
+    const poBox = addressMatchKey("PO BOX 1234, OLYMPIA WA 98501");
+    const street = addressMatchKey("500 MAIN ST, OLYMPIA WA 98501");
+    expect(poBox).not.toBe(street);
   });
 });

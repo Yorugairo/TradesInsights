@@ -1,13 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTO_ACCEPT_MIN_RATE,
+  buildRegistryAddressIndex,
   computeTrust,
   crossNameKey,
   laplaceAcceptRate,
+  matchOrgByAddress,
+  PHONE_MATCH_MIN_NAME_SIMILARITY,
   TRADE_KEYWORDS,
   TRUST_WEIGHTS,
   type TrustComponents,
 } from "./registry-observations.js";
+import { addressMatchKey } from "./identifiers.js";
+import type { RegistryIdentityRow } from "./registry-link.js";
+
+function regRow(over: Partial<RegistryIdentityRow>): RegistryIdentityRow {
+  return {
+    entityId: "e", ubi: null, contractorNumbers: null, canonicalName: null,
+    canonicalNameNormalized: null, phone: null, cityToken: null, stateCode: "WA",
+    registeredAddress: null, registeredPostalCode: null, ...over,
+  };
+}
 
 describe("computeTrust", () => {
   const base: TrustComponents = { name: 1, identifier: 1, locality: 1, role: 1, corroboration: 1, ruleHistory: 1 };
@@ -69,5 +82,47 @@ describe("TRADE_KEYWORDS", () => {
     expect(Object.keys(TRADE_KEYWORDS).some((k) => generic.includes(k))).toBe(false);
     expect(TRADE_KEYWORDS["SPRINKLER"]).toBe("fire_sprinkler");
     expect(TRADE_KEYWORDS["MECHANICAL"]).toBe("mechanical");
+  });
+});
+
+describe("registry address match (binding_address_match, injected rows)", () => {
+  // Lacey Glass live values: street-only registered address + separate zip.
+  const LACEY = regRow({
+    entityId: "lacey-glass",
+    canonicalName: "Lacey Glass Inc",
+    registeredAddress: "1210 HOMANN DR SE",
+    registeredPostalCode: "98503",
+  });
+  // An org's address identifier is the FULL mailing string it published.
+  const ORG_KEY = addressMatchKey("1210 HOMANN DR SE, LACEY WA 98503")!;
+
+  it("matches a no-phone org to its L&I entity by street+zip when the name agrees", () => {
+    const byAddress = buildRegistryAddressIndex([LACEY]);
+    const hit = matchOrgByAddress("Lacey Glass Inc", new Set([ORG_KEY]), byAddress);
+    expect(hit?.row.entityId).toBe("lacey-glass");
+    expect(hit!.sim).toBeGreaterThanOrEqual(PHONE_MATCH_MIN_NAME_SIMILARITY);
+  });
+
+  it("drops a shared-building address (2+ entities) as a non-unique key", () => {
+    const suiteMate = regRow({
+      entityId: "other-tenant",
+      canonicalName: "Other Tenant LLC",
+      registeredAddress: "1210 HOMANN DR SE",
+      registeredPostalCode: "98503",
+    });
+    const byAddress = buildRegistryAddressIndex([LACEY, suiteMate]);
+    expect(byAddress.get(ORG_KEY)).toBeNull(); // collision → dropped
+    expect(matchOrgByAddress("Lacey Glass Inc", new Set([ORG_KEY]), byAddress)).toBeNull();
+  });
+
+  it("does NOT match a foreign name at the same address (below the name gate)", () => {
+    const byAddress = buildRegistryAddressIndex([LACEY]);
+    expect(matchOrgByAddress("Zephyr Plumbing And Rooter", new Set([ORG_KEY]), byAddress)).toBeNull();
+  });
+
+  it("ignores a registry row whose address can't form a key (no zip → not indexed)", () => {
+    const noZip = regRow({ entityId: "x", canonicalName: "X", registeredAddress: "1 A ST", registeredPostalCode: null });
+    const byAddress = buildRegistryAddressIndex([noZip]);
+    expect(byAddress.size).toBe(0);
   });
 });

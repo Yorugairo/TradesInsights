@@ -17,6 +17,8 @@ const SOLIS: RegistryIdentityRow = {
   phone: "3603508616",
   cityToken: "olympia",
   stateCode: "WA",
+  registeredAddress: null,
+  registeredPostalCode: null,
 };
 const OTHER: RegistryIdentityRow = {
   entityId: "11111111-1111-1111-1111-111111111111",
@@ -27,6 +29,8 @@ const OTHER: RegistryIdentityRow = {
   phone: null,
   cityToken: "tacoma",
   stateCode: "WA",
+  registeredAddress: null,
+  registeredPostalCode: null,
 };
 
 describe("normalizeIdentifier", () => {

@@ -24,7 +24,7 @@
  */
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
-import { loadOrganizationPhones } from "./identifiers.js";
+import { addressMatchKey, loadOrganizationAddresses, loadOrganizationPhones } from "./identifiers.js";
 import { nameSimilarity, orgNameKey } from "./normalize.js";
 import { identitySnapshot, type RegistryIdentityRow } from "./registry-link.js";
 
@@ -90,6 +90,48 @@ export function crossNameKey(raw: string): string {
     .replace(/[^A-Z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Registry address index: `addressMatchKey(street, zip5)` → row, UNIQUE keys
+ * only. A key shared by 2+ entities (a shared building or suite block) cannot
+ * disambiguate and is dropped to null — exactly the unique-phone guard at the
+ * `byPhone` build. Pure over rows so the matcher is unit-testable with injected
+ * `RegistryIdentityRow[]` (no DB), mirroring registry-link's pure matcher.
+ */
+export function buildRegistryAddressIndex(
+  rows: RegistryIdentityRow[],
+): Map<string, RegistryIdentityRow | null> {
+  const byAddress = new Map<string, RegistryIdentityRow | null>();
+  for (const row of rows) {
+    const key = addressMatchKey(row.registeredAddress, row.registeredPostalCode);
+    if (!key) continue;
+    byAddress.set(key, byAddress.has(key) ? null : row);
+  }
+  return byAddress;
+}
+
+/**
+ * Best UNIQUE-address hit for an org, gated on name agreement: registered
+ * addresses are shared among suite-mates, so a foreign name at the same address
+ * is noise (mirrors the phone-match name gate). Returns null when nothing clears
+ * the gate. Never binds on its own — the caller queues it for human review.
+ */
+export function matchOrgByAddress(
+  orgName: string,
+  addressKeys: Set<string>,
+  byAddress: Map<string, RegistryIdentityRow | null>,
+): { row: RegistryIdentityRow; sim: number } | null {
+  let best: { row: RegistryIdentityRow; sim: number } | null = null;
+  for (const key of addressKeys) {
+    const row = byAddress.get(key);
+    if (!row) continue; // absent, or a shared (non-unique) address key
+    const sim = nameSimilarity(orgName, row.canonicalName ?? "");
+    if (sim >= PHONE_MATCH_MIN_NAME_SIMILARITY && (best === null || sim > best.sim)) {
+      best = { row, sim };
+    }
+  }
+  return best;
 }
 
 /** Permit-type keyword → provisional registry trade code (loader validates
@@ -235,11 +277,16 @@ export async function generateRegistryObservations(
   }
   // Evidence-backed phones per org (organization_identifiers, migration 0023).
   const orgPhones = await loadOrganizationPhones(db);
+  // Registry address index (unique street+zip5 keys) + evidence-backed org
+  // addresses (migration 0024) — the no-phone/no-UBI match path.
+  const byAddress = buildRegistryAddressIndex(registryRows);
+  const orgAddresses = await loadOrganizationAddresses(db);
 
   // ── binding_name_match: unbound orgs vs registry (name key, phone-aware) ──
   const unbound = (await loadOrgFacts(db)).filter((o) => o.registry_ref === null);
   for (const org of unbound) {
     const phones = orgPhones.get(org.id) ?? new Set<string>();
+    const addresses = orgAddresses.get(org.id) ?? new Set<string>();
     const key = crossNameKey(org.canonical_name);
     const nameHits = key && key.split(" ").length >= 2 ? byNameKey.get(key) : undefined;
 
@@ -280,6 +327,18 @@ export async function generateRegistryObservations(
         ruleKey = "binding_phone_match";
       }
     }
+    // No name/phone hit — try the registered-address match (no-phone owners /
+    // developers whose name drifts). Gated on name agreement + a UNIQUE registry
+    // address; NEVER auto-binds (binding_name_match is excluded from auto-accept).
+    if (!hit && addresses.size > 0) {
+      const addrHit = matchOrgByAddress(org.canonical_name, addresses, byAddress);
+      if (addrHit) {
+        hit = addrHit.row;
+        nameComponent = addrHit.sim;
+        identifier = 1; // the registered address IS the matched L&I identifier
+        ruleKey = "binding_address_match";
+      }
+    }
     if (!hit || !ruleKey) continue;
 
     const locality = hit.cityToken && org.localities.some((l) => l.includes(hit.cityToken!)) ? 1 : 0.3;
@@ -302,7 +361,12 @@ export async function generateRegistryObservations(
         name_similarity: nameSimilarity(org.canonical_name, hit.canonicalName ?? ""),
         phone_evidence: phones.size > 0 ? [...phones] : [],
         registry_phone: hit.phone,
-        phone_agrees: identifier === 1,
+        phone_agrees: hit.phone !== null && phones.has(hit.phone),
+        address_evidence: addresses.size > 0 ? [...addresses] : [],
+        registry_address:
+          ruleKey === "binding_address_match"
+            ? [hit.registeredAddress, hit.registeredPostalCode].filter(Boolean).join(" ")
+            : null,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
         role_records: org.record_count,

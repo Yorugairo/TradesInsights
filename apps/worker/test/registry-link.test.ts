@@ -29,11 +29,13 @@ const REGISTRY_ROWS: RegistryIdentityRow[] = [
     entityId: SOLIS_ENTITY, ubi: "604837560", contractorNumbers: ["SOLISIL785NT"],
     canonicalName: "Solis Interiors LLC", canonicalNameNormalized: "SOLIS INTERIORS",
     phone: "3603508616", cityToken: "olympia", stateCode: "WA",
+    registeredAddress: null, registeredPostalCode: null,
   },
   {
     entityId: OTHER_ENTITY, ubi: "601000001", contractorNumbers: ["OTHERCO999XX"],
     canonicalName: "Other Trades LLC", canonicalNameNormalized: "OTHER TRADES",
     phone: null, cityToken: "tacoma", stateCode: "WA",
+    registeredAddress: null, registeredPostalCode: null,
   },
 ];
 

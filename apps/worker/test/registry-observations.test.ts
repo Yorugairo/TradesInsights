@@ -42,6 +42,8 @@ const REGISTRY_ROWS: RegistryIdentityRow[] = [
     phone: "3605550142",
     cityToken: "olympia",
     stateCode: "WA",
+    registeredAddress: null,
+    registeredPostalCode: null,
   },
 ];
 
@@ -298,6 +300,7 @@ describe("registry observation loop", () => {
         entityId: ENTITY2, ubi: "601777666", contractorNumbers: [`NWDRY${RUN.slice(0, 5)}`],
         canonicalName: `NW Drywall ${RUN} LLC`, canonicalNameNormalized: `NW DRYWALL ${RUN}`,
         phone: "2535550177", cityToken: "puyallup", stateCode: "WA",
+        registeredAddress: null, registeredPostalCode: null,
       },
     ];
     const summary = await generateRegistryObservations(db, rowsWithPhone);
