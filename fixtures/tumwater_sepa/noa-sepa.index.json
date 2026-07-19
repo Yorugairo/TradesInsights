@@ -1,0 +1,36 @@
+{
+  "surface": "Tumwater Notice of Applications and SEPA Determinations",
+  "source_url": "https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/notice-of-applications-sepa-determinations",
+  "capture": {
+    "captured_at": "2026-07-19",
+    "captured_via": "Ordinary-visitor page load in a normal browser, in-region Tacoma IP (AS14677 City of Tacoma). No bot/WAF bypass. NOTE: docs/source-policy.md previously recorded ci.tumwater.wa.us as Akamai edge-denied (403 for all clients) FROM THE DATACENTER; from this in-region residential/municipal IP the same page returns normal content. The block was network-origin-specific, not a challenge that was bypassed.",
+    "sample_note": "59 rows total in the source table; this fixture stores the 14 most-recent rows verbatim as a representative golden sample. Full set is same shape."
+  },
+  "dom": {
+    "content_selector": "main table",
+    "columns": ["PROJECT", "NOTICE OF APPLICATION", "SEPA DETERMINATION", "NOTICE OF DECISION"],
+    "row_count": 59,
+    "link_kinds": {
+      "local_pdf": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/<docId>/<versionTicks>",
+      "ecology_sepa_record": "external via ...?splash=<url-encoded apps.ecology.wa.gov/separ/.../Record.aspx?SEPANumber=...>&____isexternal=true",
+      "ecology_sepa_submittal": "external via ...?splash=<secureaccess.wa.gov/ecy/sepasubmittal/...>&____isexternal=true"
+    },
+    "project_cell_carries_case_number": "e.g. 'TUM-26-0115', 'TUM-25-1421' embedded in the project text"
+  },
+  "rows": [
+    {"project": "Tumwater Ordinance 2026-016, TUM-26-0754", "sepa_determination": [{"date": "06/12/2026", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202602453&____isexternal=true"}]},
+    {"project": "Southeast Reservoir Project, TUM-25-0425", "sepa_determination": [{"date": "05/29/2026", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202602211&____isexternal=true"}]},
+    {"project": "Tumwater Ordinance 2026-008, TUM-26-0663", "sepa_determination": [{"date": "05/22/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27734/639148650926970000"}]},
+    {"project": "5th Ave Townhomes Preliminary Plat, TUM-26-0115", "notice_of_application": [{"date": "05/08/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27728/639136719234330000"}]},
+    {"project": "Littlerock Rd Daycare, TUM-25-1421", "notice_of_application": [{"date": "04/03/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27676/639106424908200000"}], "sepa_determination": [{"date": "04/24/2026", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202601653&____isexternal=true"}], "notice_of_decision": [{"date": "05/22/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27732/639148637273270000"}]},
+    {"project": "Tumwater Ordinance O2026-002, TUM-26-0178", "notice_of_decision": [{"date": "03/06/2026", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202600744&____isexternal=true"}]},
+    {"project": "Tumwater NG Vehicle Maintenance Shop, TUM-25-0974", "notice_of_application": [{"date": "01/02/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27506/639026896272670000"}]},
+    {"project": "Michels Laydown Yard, TUM-25-0730", "notice_of_application": [{"date": "01/02/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27502/639026880377970000"}]},
+    {"project": "Thurston Hindu Temple & Cultural Center Conditional Use Permit", "notice_of_application": [{"date": "12/26/2025", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27430/639021032963930000"}], "notice_of_decision": [{"date": "02/25/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27646/639111664966600000"}]},
+    {"project": "Anderson Place Preliminary Plat", "notice_of_application": [{"date": "12/26/2025", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27428/639021024607070000"}], "sepa_determination": [{"date": "05/08/2026", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202601885&____isexternal=true"}, {"date": "05/26/2026", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27742/639153893812700000"}, {"date": "07/01/2026", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fsecureaccess.wa.gov%2fecy%2fsepasubmittal%2fSepaRecord%2fSepaRecordDetails%2f195285&____isexternal=true"}]},
+    {"project": "I-5 Commerce Plat Vacation", "notice_of_application": [{"date": "11/28/2025", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27348/638997478202430000"}], "notice_of_decision": [{"date": "12/26/2025", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27432/639021757344670000"}]},
+    {"project": "City Of Tumwater 2025 Comprehensive Plan Amendments O2025-010 & O2025-011", "sepa_determination": [{"date": "10/17/2025", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202504350&____isexternal=true"}]},
+    {"project": "City Of Tumwater 2025 Comprehensive Plan Amendments O2025-009", "sepa_determination": [{"date": "09/26/2025", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202503978&____isexternal=true"}]},
+    {"project": "Oak Harbor Freight Lines TUM-25-0483", "notice_of_application": [{"date": "08/18/2025", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27159/638911234442630000"}], "sepa_determination": [{"date": "09/24/2025", "url": "https://www.ci.tumwater.wa.us/?splash=https%3a%2f%2fapps.ecology.wa.gov%2fsepar%2fMain%2fSEPA%2fRecord.aspx%3fSEPANumber%3d202503900&____isexternal=true"}], "notice_of_decision": [{"date": "12/12/2025", "url": "https://www.ci.tumwater.wa.us/home/showpublisheddocument/27408/639009667486830000"}]}
+  ]
+}

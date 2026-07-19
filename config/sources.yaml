@@ -266,6 +266,33 @@ sources:
       flagged). Parser reconciles each category count + Grand Total against the
       report's own printed totals.
 
+  - key: tumwater_planning_notices
+    name: City of Tumwater Notice of Applications & SEPA Determinations
+    authority: City of Tumwater
+    priority: P1
+    landing_url: https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/notice-of-applications-sepa-determinations
+    access_url: https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/notice-of-applications-sepa-determinations
+    format: html_docs
+    access_class: html
+    cadence: on_demand
+    county: Thurston
+    permitting_jurisdiction: City of Tumwater
+    enabled: false
+    terms_reviewed_at: "2026-07-19"
+    robots_reviewed_at: "2026-07-19"
+    notes: >-
+      Thurston-metro land-use notices board (Lacey\Tumwater home turf): one row
+      per project with its TUM-YY-NNNN case number and dated Notice of
+      Application / SEPA Determination / Notice of Decision document links.
+      Genuine-visitor capture-fed and DISABLED — ci.tumwater.wa.us sits behind an
+      Akamai edge policy that 403s automated/datacenter clients (no bot bypass);
+      fetch() dead-letters and the parser runs over the captured index
+      (fixtures/tumwater_sepa/noa-sepa.index.json). The index carries NO party
+      data (applicant/owner names live inside the linked PDFs, which we do not
+      fetch — keeps homeowner PII out of the registry bridge), so organizations[]
+      is empty and normalizedStage stays unknown (decision outcome is not visible
+      in the index). Parser reconciles record count against the index rows.
+
   - key: puyallup_permits_arcgis
     name: City of Puyallup Permits (Permit Viewer layer, ArcGIS)
     authority: City of Puyallup
