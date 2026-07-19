@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NormalizedSourceRecordSchema } from "@otn/domain";
 import type { RawArtifact } from "@otn/source-sdk";
-import { KingPermitReportsAdapter, reportInfoFromUrl } from "./king-permit-reports.js";
+import { KingPermitReportsAdapter, reportInfoFromUrl, splitNameAddress } from "./king-permit-reports.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
 
 function rawArtifact(body: Buffer, url: string, meta: Record<string, unknown>): RawArtifact {
@@ -111,6 +111,64 @@ describe("king_permit_reports issued-permits xlsx (golden fixture)", () => {
         ctx,
       ),
     ).rejects.toThrow(/no permit rows/);
+  });
+});
+
+describe("king_permit_reports WS3a — name/address split", () => {
+  it("splits both cell layouts into a clean name + address", () => {
+    // Owner layout: comma after the name, newline before city.
+    expect(splitNameAddress("M & T Partners Inc, 15350 Sw Sequoia Pkwy  300\nPortland, OR 97224")).toEqual({
+      name: "M & T Partners Inc",
+      address: "15350 Sw Sequoia Pkwy 300, Portland, OR 97224",
+    });
+    // Applicant layout: no comma; address begins at the first house number.
+    expect(splitNameAddress("Brandon Keller 302 Johnson St   Enumclaw WA 98022")).toEqual({
+      name: "Brandon Keller",
+      address: "302 Johnson St Enumclaw WA 98022",
+    });
+    // PO box is treated as the address start, not part of the name.
+    expect(splitNameAddress("Clint Nohavec PO Box 362   Hobart WA 98025")).toEqual({
+      name: "Clint Nohavec",
+      address: "PO Box 362 Hobart WA 98025",
+    });
+  });
+
+  it("promotes a business mailing address but leaves homeowners name-only, on the golden fixture", async () => {
+    const adapter = new KingPermitReportsAdapter();
+    const body = await readFile(
+      join(FIXTURES_DIR, "king_permit_reports/kingcounty-issued-permits-2026-06.xlsx"),
+    );
+    const parsed = await adapter.parse(
+      rawArtifact(body, "https://cdn.kingcounty.gov/x/kingcounty-issued-permits-2026-06.xlsx", {
+        kind: "issued_permits",
+        month: "2026-06",
+      }),
+      testContext(adapter.key),
+    );
+
+    // The named homeowner rows are cleaned: a "First Last" applicant no longer
+    // carries its street/city/zip tail (the split unit test above proves the
+    // logic; a few genuinely name-less cells are address-only and out of scope).
+    const keller = parsed.find((p) =>
+      p.record.organizations.some((o) => o.role === "applicant" && o.name === "Brandon Keller"),
+    );
+    expect(keller, "cleaned homeowner name present").toBeDefined();
+
+    // A business owner keeps a clean name AND gets its mailing address promoted.
+    const bizRec = parsed.find((p) =>
+      p.record.organizations.some((o) => o.role === "owner" && /partners inc/i.test(o.name)),
+    );
+    expect(bizRec, "business owner present").toBeDefined();
+    const bizOwner = bizRec!.record.organizations.find((o) => o.role === "owner")!;
+    expect(bizOwner.name).toBe("M & T Partners Inc");
+    expect(bizOwner.address).toContain("15350");
+
+    // An individual applicant → clean name, NO promoted address (homeowner PII).
+    const personRec = parsed.find((p) =>
+      p.record.organizations.some((o) => o.role === "applicant" && o.name === "Brandon Keller"),
+    );
+    expect(personRec, "individual applicant present").toBeDefined();
+    expect(personRec!.record.organizations.find((o) => o.role === "applicant")!.address).toBeUndefined();
   });
 });
 

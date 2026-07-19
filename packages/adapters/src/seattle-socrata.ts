@@ -35,8 +35,10 @@ const SocrataRowSchema = z
     housingunits: z.string().optional(),
     estprojectcost: z.string().optional(),
     statuscurrent: z.string().optional(),
+    contractorcompanyname: z.string().optional(),
     applieddate: z.string().optional(),
     issueddate: z.string().optional(),
+    decisiondate: z.string().optional(),
     completeddate: z.string().optional(),
     expiresdate: z.string().optional(),
     originaladdress1: z.string().optional(),
@@ -53,6 +55,11 @@ export interface SeattleSocrataConfig {
   key: string;
   datasetId: string;
   recordType: string;
+  /** Column carrying the issued/decision date that drives `issueDate` and the
+   * issued stage. Building permits publish `issueddate`; land-use (master use)
+   * permits publish `decisiondate` and NEVER `issueddate` — keying this off the
+   * config (not a global read) keeps the building behavior untouched. */
+  issuedDateField: "issueddate" | "decisiondate";
   /** Deterministic stage from explicit dates (documented in the ledger). */
   stageFor(row: { issued: boolean; completed: boolean }): NormalizedSourceRecord["normalizedStage"];
 }
@@ -61,6 +68,7 @@ export const SEATTLE_BUILDING_CONFIG: SeattleSocrataConfig = {
   key: "seattle_building_permits",
   datasetId: "76t5-zqzr",
   recordType: "building_permit",
+  issuedDateField: "issueddate",
   stageFor: ({ issued, completed }) =>
     completed ? "complete" : issued ? "permit_issued" : "permit_applied",
 };
@@ -69,6 +77,8 @@ export const SEATTLE_LAND_USE_CONFIG: SeattleSocrataConfig = {
   key: "seattle_land_use_permits",
   datasetId: "ht3q-kdvx",
   recordType: "land_use_permit",
+  // Land-use publishes the decision as `decisiondate`, never `issueddate`.
+  issuedDateField: "decisiondate",
   // A land-use (master use) permit is the entitlement instrument: issued
   // decision → approved; application pending → entitlement.
   stageFor: ({ issued }) => (issued ? "approved" : "entitlement"),
@@ -163,11 +173,27 @@ export class SeattleSocrataAdapter implements SourceAdapter {
       const lng = r.longitude ? Number(r.longitude) : NaN;
       const geometry: { type: "Point"; coordinates: [number, number] } | null =
         Number.isFinite(lat) && Number.isFinite(lng) ? { type: "Point", coordinates: [lng, lat] } : null;
-      const issued = Boolean(r.issueddate);
+      // WS3c: land-use publishes decisiondate, never issueddate — pick per config
+      // so the issued stage + issueDate fire for decided land-use permits without
+      // touching building (which keeps using issueddate).
+      const issuedDateRaw =
+        this.cfg.issuedDateField === "decisiondate" ? (r.decisiondate ?? null) : (r.issueddate ?? null);
+      const issued = Boolean(issuedDateRaw);
       const completed = Boolean(r.completeddate);
       const address = [r.originaladdress1, r.originalcity, r.originalzip]
         .filter(Boolean)
         .join(", ");
+
+      // WS3b: the contractor of record (building dataset only; sparse). A
+      // contractor company name is business identity — emitted as-is.
+      const organizations: NormalizedSourceRecord["organizations"] = [];
+      if (r.contractorcompanyname) {
+        organizations.push({
+          name: r.contractorcompanyname,
+          role: "primary_contractor",
+          evidenceText: `contractorcompanyname: ${r.contractorcompanyname}`,
+        });
+      }
 
       out.push({
         rawFields: parsed.data as Record<string, unknown>,
@@ -189,13 +215,13 @@ export class SeattleSocrataAdapter implements SourceAdapter {
           statusRaw: r.statuscurrent ?? null,
           normalizedStage: this.cfg.stageFor({ issued, completed }),
           applicationDate: r.applieddate ?? null,
-          issueDate: r.issueddate ?? null,
+          issueDate: issuedDateRaw,
           sourceUpdatedAt: null,
           valuationUsd: Number.isFinite(cost) && cost > 0 ? cost : null,
           units: Number.isFinite(units) && units > 0 ? Math.round(units) : null,
           lots: null,
           squareFeet: null,
-          organizations: [],
+          organizations,
           sourceUrl:
             r.link?.url ??
             `https://data.seattle.gov/resource/${this.cfg.datasetId}.json?permitnum=${encodeURIComponent(r.permitnum)}`,
@@ -214,12 +240,21 @@ export class SeattleSocrataAdapter implements SourceAdapter {
                   },
                 ]
               : []),
-            ...(r.issueddate
+            ...(issuedDateRaw
               ? [
                   {
                     factPath: "issueDate",
-                    text: `issueddate: ${r.issueddate}`,
-                    pageOrSection: "issueddate",
+                    text: `${this.cfg.issuedDateField}: ${issuedDateRaw}`,
+                    pageOrSection: this.cfg.issuedDateField,
+                  },
+                ]
+              : []),
+            ...(r.contractorcompanyname
+              ? [
+                  {
+                    factPath: "organizations",
+                    text: `contractorcompanyname: ${r.contractorcompanyname}`,
+                    pageOrSection: "contractorcompanyname",
                   },
                 ]
               : []),

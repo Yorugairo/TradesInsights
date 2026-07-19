@@ -132,6 +132,52 @@ describe("seattle_land_use_permits parse (golden fixture)", () => {
   });
 });
 
+describe("seattle WS3 — contractor org + land-use decisiondate", () => {
+  const buildingUrl = "https://data.seattle.gov/resource/76t5-zqzr.json?x";
+  const landUseUrl = "https://data.seattle.gov/resource/ht3q-kdvx.json?x";
+
+  it("emits the contractor company as a primary_contractor org (building only, sparse)", async () => {
+    const adapter = new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "seattle_building_permits/window-2026-06.json"));
+    const parsed = await adapter.parse(rawArtifact(body, buildingUrl), testContext(adapter.key));
+
+    const cn = parsed.find((p) => p.record.externalId === "7145069-CN")!;
+    expect(cn.record.organizations).toEqual([
+      {
+        name: "Steffen Deetjen",
+        role: "primary_contractor",
+        evidenceText: "contractorcompanyname: Steffen Deetjen",
+      },
+    ]);
+    // Only the rows publishing a contractor carry one (sparse ~4/514).
+    expect(parsed.filter((p) => p.record.organizations.length > 0).length).toBe(4);
+  });
+
+  it("drives land-use issueDate + approved stage off decisiondate, not issueddate", async () => {
+    const adapter = new SeattleSocrataAdapter(SEATTLE_LAND_USE_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "seattle_land_use_permits/window-90d.json"));
+    const parsed = await adapter.parse(rawArtifact(body, landUseUrl), testContext(adapter.key));
+
+    const decided = parsed.find((p) => p.record.externalId === "3044068-LU")!;
+    expect(decided.record.issueDate).toBe("2026-07-02");
+    expect(decided.record.normalizedStage).toBe("approved");
+    // Undecided land-use rows stay entitlement with a null issueDate.
+    const pending = parsed.filter((p) => p.record.externalId !== "3044068-LU");
+    expect(
+      pending.every((p) => p.record.normalizedStage === "entitlement" && p.record.issueDate === null),
+    ).toBe(true);
+  });
+
+  it("keeps building issueDate on issueddate (decisiondate change does not leak)", async () => {
+    const adapter = new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "seattle_building_permits/window-2026-06.json"));
+    const parsed = await adapter.parse(rawArtifact(body, buildingUrl), testContext(adapter.key));
+    const issuedRec = parsed.find((p) => (p.rawFields as { issueddate?: string }).issueddate)!;
+    expect(issuedRec.record.issueDate).toBe((issuedRec.rawFields as { issueddate: string }).issueddate);
+    expect(issuedRec.record.normalizedStage).toBe("permit_issued");
+  });
+});
+
 describe("seattle_source_canary (golden fixture)", () => {
   it("finds both dataset links on the research page", async () => {
     const adapter = new SeattleSourceCanaryAdapter();

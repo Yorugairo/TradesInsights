@@ -11,6 +11,7 @@ import {
   type RunContext,
   type SourceAdapter,
 } from "@otn/source-sdk";
+import type { NormalizedSourceRecord } from "@otn/domain";
 
 export const KING_REPORTS_URL =
   "https://kingcounty.gov/en/dept/local-services/certificates-permits-licenses/permits/permits-inspections-codes-buildings-land-use/permit-forms-application-materials/reports";
@@ -42,6 +43,53 @@ function monthShift(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(y!, m! - 1 + delta, 1));
   return d.toISOString().slice(0, 7);
+}
+
+/** Business / agency markers on a party name. A party without any of these is a
+ * private individual (homeowner) — its mailing address is NOT promoted to a
+ * matchable identifier (PII stays out of the bridge). The name is still emitted. */
+const BUSINESS_RE =
+  /\b(LLC|L\.L\.C|INC|CORP|CO|COMPANY|LTD|LP|LLP|PLLC|ROOFING|CONSTRUCTION|CONTRACTING|ENGINEERING|ELECTRIC(AL)?|PLUMBING|MECHANICAL|BUILDERS?|DEVELOPMENT|HOMES?|SERVICES?|SYSTEMS?|GROUP|ASSOCIATES|ENTERPRISES?|PARTNERS?|PROPERTIES|MANAGEMENT|HOLDINGS?|INVESTMENTS?|CAPITAL|REALTY|CITY|COUNTY|STATE|DISTRICT|DEPT|DEPARTMENT|PORT|UNIVERSITY|COLLEGE|SCHOOL|AUTHORITY|AGENCY|CHURCH|TRUST|FOUNDATION)\b/i;
+function isBusinessName(name: string): boolean {
+  return BUSINESS_RE.test(name);
+}
+
+/**
+ * Split King's fused "name & address" cell into a clean party name and its
+ * mailing address. Two layouts appear in the reports:
+ *   owner:      "<name>, <street>\n<city>, ST ZIP"   (comma after the name)
+ *   applicant:  "<name> <street>   <city> ST ZIP"    (no comma; address starts
+ *                                                     at the first house number)
+ * The clean name always replaces the fused blob (so name-matching isn't
+ * degraded); the address is returned separately and only PROMOTED for a business
+ * (the caller gates on isBusinessName). Returns address: null when none detected.
+ */
+export function splitNameAddress(cell: string): { name: string; address: string | null } {
+  const flat = cell.replace(/\s*\n\s*/g, ", ").replace(/[ \t]+/g, " ").trim();
+  // Owner layout: name is the text before the first comma, IF what follows looks
+  // like a street (house number or PO box).
+  const commaIdx = flat.indexOf(",");
+  if (commaIdx > 0) {
+    const after = flat.slice(commaIdx + 1).trim();
+    if (/^(\d|P\.?\s*O\.?\b|PO\b)/i.test(after)) {
+      return { name: flat.slice(0, commaIdx).trim(), address: after || null };
+    }
+  }
+  // Applicant layout: address begins at the first house-number token (or a PO
+  // box marker); everything before it is the name.
+  const tokens = flat.split(" ");
+  let start = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (/^\d/.test(t) || /^P\.?O\.?$/i.test(t)) {
+      start = i;
+      break;
+    }
+  }
+  if (start > 0) {
+    return { name: tokens.slice(0, start).join(" "), address: tokens.slice(start).join(" ") };
+  }
+  return { name: flat, address: null };
 }
 
 type HeaderMap = Map<string, number>;
@@ -170,19 +218,21 @@ export class KingPermitReportsAdapter implements SourceAdapter {
         const address = text(cells, "SITE ADDRESS/LOCATION") ?? text(cells, "PRIMARY ADDRESS");
         const projectName = text(cells, "PROJECT NAME");
 
-        const organizations: { name: string; role: string | null; evidenceText: string }[] = [];
-        if (applicant) {
+        // WS3a: split the fused "name & address" cells → clean name always; the
+        // mailing address promoted only for a business (homeowner → name only).
+        const organizations: NormalizedSourceRecord["organizations"] = [];
+        for (const [raw, role, label] of [
+          [applicant, "applicant", "APPLICANT NAME & ADDRESS"],
+          [owner, "owner", "OWNER NAME & ADDRESS"],
+        ] as const) {
+          if (!raw) continue;
+          const { name, address } = splitNameAddress(raw);
+          const promoted = address && isBusinessName(name) ? address : null;
           organizations.push({
-            name: applicant,
-            role: "applicant",
-            evidenceText: `APPLICANT NAME & ADDRESS: ${applicant}`,
-          });
-        }
-        if (owner) {
-          organizations.push({
-            name: owner,
-            role: "owner",
-            evidenceText: `OWNER NAME & ADDRESS: ${owner}`,
+            name,
+            role,
+            evidenceText: `${label}: ${raw}`,
+            ...(promoted ? { address: promoted } : {}),
           });
         }
 
