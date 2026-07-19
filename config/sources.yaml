@@ -208,6 +208,38 @@ sources:
       Pierce; SEPA Review rows add substitute coverage for the blocked
       pierce_environmental_determinations.
 
+  - key: pierce_pals_contractor
+    name: Pierce PALS Permit Contact Enrichment (webApplPermitStatusHeader)
+    authority: Pierce County
+    priority: lookup
+    landing_url: https://pals.piercecountywa.gov/palsonline/
+    access_url: https://pals.piercecountywa.gov/public/api/webApplPermitStatusHeader?applPermitId=1067557
+    format: pals_json
+    access_class: dynamic_lookup
+    cadence: on_demand
+    county: Pierce
+    permitting_jurisdiction: Pierce County
+    enabled: false
+    terms_reviewed_at: "2026-07-19"
+    robots_reviewed_at: "2026-07-19"
+    notes: >-
+      Lookup-class ENRICHMENT ONLY (spec §5): fills organizations[] (applicant +
+      owner, with phone/contractor-licence identifiers) on Pierce permits already
+      held from pierce_permits_arcgis, keyed by the SAME applPermitId. Feeds
+      organization_identifiers (migration 0023) so a permit's business phone can
+      be corroborated against the L&I registration phone. Never an alert source
+      on its own. Access reality (fixtures/pierce_pals_contractor/metadata.json):
+      PALS Online is gated by reCAPTCHA Enterprise v3 — the token is minted by
+      the app's own $http interceptor for a genuine visitor; bare/headless
+      fetches get 403. Bulk token minting would be a prohibited bot-control
+      bypass, so this source is genuine-visitor capture-fed and stays disabled;
+      the parser runs over captured header artifacts. Terms of Use: PALS requires
+      accepting a ToU modal citing RCW 42.56.070(8) (no commercial list use) —
+      accepted 2026-07-19 under owner authorization; reconcile commercial-use
+      scope before scaling. contrLicNum is often null (owner-pulled) or
+      **-masked by PALS; the parser drops masked/null licences (never forges a
+      key).
+
   - key: puyallup_permits_arcgis
     name: City of Puyallup Permits (Permit Viewer layer, ArcGIS)
     authority: City of Puyallup

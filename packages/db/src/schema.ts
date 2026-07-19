@@ -922,7 +922,7 @@ export const organizationIdentifiers = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
     organizationId: uuid("organization_id").notNull().references(() => organizations.id),
-    /** phone | ubi | contractor_number | email */
+    /** phone | ubi | contractor_number | email | address | source_entity_id */
     identifierType: text("identifier_type").notNull(),
     valueRaw: text("value_raw"),
     valueNormalized: text("value_normalized").notNull(),

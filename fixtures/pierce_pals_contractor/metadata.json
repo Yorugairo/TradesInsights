@@ -1,0 +1,98 @@
+{
+  "source": "pierce_pals",
+  "host": "pals.piercecountywa.gov",
+  "captured_at": "2026-07-19",
+  "captured_via": "Genuine PALS Online SPA as an ordinary visitor, in-region Tacoma IP (AS14677 City of Tacoma). Flow: accept Terms of Use -> Permit Search -> type applPermitId -> click Search -> the app loads the permit department-status view and fetches webApplPermitStatusHeader itself; the header object is then read back from the app's own in-scope data. No bot/WAF/reCAPTCHA bypass: the reCAPTCHA Enterprise token is minted by the app's own $http interceptor per request, exactly as when a human clicks Search. Low-volume genuine-visitor capture only.",
+  "terms_of_use": {
+    "gate": "PALS shows a blocking 'Terms of Use' modal (buttons Yes=yes() / No=no() / x=no()) before any permit search. Acceptance is required to view any permit data.",
+    "verbatim_key_clause": "RCW 42.56.070(8) prohibits the release of lists of individuals requested for commercial purposes, and requestor expressly represents that no such use of any such list will be made by user or its transferee(s) or vendee(s). \"Commercial purposes\" means contacting or in some way personally affecting the individuals identified on the list with the purpose of facilitating commercial activities.",
+    "intended_use_note": "The modal also states the system is 'intended for use by Planning and Public Works staff in conjunction with permit processing' and that information 'should only be used in conjunction with the official County file or after confirmation by County staff.'",
+    "acceptance": "Accepted 2026-07-19 with explicit owner authorization; the owner owns the RCW representation.",
+    "compliance_flag": "Reconcile the RCW 42.56.070(8) commercial-purpose prohibition with any downstream commercial/contact use before scaling PALS usage. Current intended use is single business-entity corroboration of a phone already held independently from L&I, not building a contact list of individuals."
+  },
+  "endpoint_correction": {
+    "handoff_named": "GET /public/api/contractorInfo/:id  (WRONG for permit->contractor supply)",
+    "contractorInfo_reality": ":id is the contractor LICENSE number (contrLicNum), not applPermitId. Sole consumers are the online-APPLICATION form (getContractorInfo(applicantInfo.contrLicNum)) validating a license the applicant types. It cannot map our permit IDs to contractors.",
+    "correct_endpoint": "GET /public/api/webApplPermitStatusHeader?applPermitId=<applPermitId>  -> JSON array, one row per permit, keyed by the SAME applPermitId we already hold from pierce_permits_arcgis."
+  },
+  "auth": "reCAPTCHA Enterprise v3 (invisible, score-based). The AngularJS $http interceptor mints a token via grecaptcha.enterprise.execute(siteKey,{action}) for the server-supplied protectedUrls list (from /public/api/recaptchaUtil). Bare curl AND in-page fetch() both return 403/0-bytes (no token). Static assets (index.html, app5.1.3-001.js) return 200. => NOT an IP block; a bot control. Bulk/headless harvesting would require minting tokens at scale = prohibited. Non-bulk genuine-visitor capture only.",
+  "id_meaning": "applPermitId (integer) = the Pierce permit id already held from pierce_permits_arcgis",
+  "response_shape": "array[ { applPermitId:int, applicantNm:str, applicantPhoneAreaCd:str, applicantPhone:str, contrLicNum:str|null, ownerNm:str, ownerPhone:str|null, parcelNum:str, siteAddressSt:str, applStatusCd/Desc:str, applTypeCd/Desc:str, projApplIssuedDt:ISO8601Z, ... } ]",
+  "fields_for_supply": {
+    "business_match": ["applicantNm", "contrLicNum", "applicantAddress1", "applicantAddress2", "applicantZip"],
+    "phone_corroboration": ["applicantPhoneAreaCd", "applicantPhone"],
+    "owner": ["ownerNm", "ownerPhone", "ownerAddress1", "ownerAddress2", "ownerZip"]
+  },
+  "caveat": "The phone/name field is the APPLICANT of record, and there is a separate contrLicNum. Concrete instances in this golden set: 1067557 applicant IS the contractor (Lennar Northwest LLC., license LENNANL783JO, unmasked); 1067558 and 1067549 applicant is the builder D.R. Horton but contrLicNum is PARTIALLY MASKED by PALS as 'DRHOR**963CS'; 1067513 applicant is the OWNER (Sunrise Church) doing its own stair replacement and contrLicNum is NULL. Rules for the parser: never assume applicant==contractor; contrLicNum is the authoritative contractor key when present, but may be null or **-masked; on owner-pulled permits the applicant phone belongs to the owner, not a contractor.",
+  "golden_set": [
+    {
+      "file": "1067557.json",
+      "applPermitId": 1067557,
+      "applicantNm": "Lennar Northwest LLC.",
+      "phone": "253-882-8570",
+      "contrLicNum": "LENNANL783JO",
+      "ownerNm": "UPLANDS 320 LLC",
+      "parcelNum": "6027950290",
+      "siteAddressSt": "14007 179TH STCT E",
+      "applTypeDesc": "Construction Residential, Tier 1",
+      "applStatusDesc": "Issued",
+      "note": "applicant IS the contractor; license unmasked"
+    },
+    {
+      "file": "1067558.json",
+      "applPermitId": 1067558,
+      "applicantNm": "D.R. Horton",
+      "phone": "425-823-7407",
+      "contrLicNum": "DRHOR**963CS",
+      "ownerNm": "SSHI LLC",
+      "parcelNum": "7003261580",
+      "siteAddressSt": "16308 204TH AVE E",
+      "applTypeDesc": "Construction Residential, Tier 1",
+      "applStatusDesc": "Issued",
+      "note": "builder applicant; contrLicNum **-masked by PALS"
+    },
+    {
+      "file": "1067549.json",
+      "applPermitId": 1067549,
+      "applicantNm": "D.R. Horton",
+      "phone": "425-823-7407",
+      "contrLicNum": "DRHOR**963CS",
+      "ownerNm": "SSHI LLC",
+      "parcelNum": "7003260250",
+      "siteAddressSt": "20310 161ST ST E",
+      "applTypeDesc": "Construction Residential, Tier 1",
+      "applStatusDesc": "Issued",
+      "note": "builder applicant; contrLicNum **-masked by PALS"
+    },
+    {
+      "file": "1067513.json",
+      "applPermitId": 1067513,
+      "applicantNm": "Sunrise Church",
+      "phone": "253-848-8910",
+      "contrLicNum": null,
+      "ownerNm": "SUNRISE BAPTIST CHURCH OF PUYALLUP",
+      "parcelNum": "0419114006",
+      "siteAddressSt": "12115 SHAW RD E",
+      "applTypeDesc": "Construction Commercial, Tier 1",
+      "applStatusDesc": "Final",
+      "note": "APPLICANT == OWNER (church, self-performed); contrLicNum NULL; commercial + Final edge case"
+    }
+  ],
+  "spot_check_verbatim": {
+    "applPermitId": 1067557,
+    "applicantNm": "Lennar Northwest LLC.",
+    "phone": "253-882-8570 (areaCd 253 + applicantPhone 882-8570)",
+    "contrLicNum": "LENNANL783JO",
+    "ownerNm": "UPLANDS 320 LLC",
+    "parcelNum": "6027950290",
+    "siteAddressSt": "14007 179TH STCT E",
+    "applStatusDesc": "Issued",
+    "projApplIssuedDt": "2026-04-09T15:30:34.000Z"
+  },
+  "companion_endpoints_seen_200_same_flow": [
+    "webPermitSearchList?applPermitId=<id>",
+    "permitDeptStatus?applPermitId=<id>",
+    "webApplPermitStatusInsp?applPermitId=<id>",
+    "webApplFeeAndEventDetail?applPermitId=<id>&projSysId=<projSysId>"
+  ]
+}

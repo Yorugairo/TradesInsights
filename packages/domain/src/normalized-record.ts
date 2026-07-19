@@ -59,6 +59,17 @@ export const NormalizedSourceRecordSchema = z
         phone: z.string().min(7).optional(),
         ubi: z.string().min(7).optional(),
         contractorLicense: z.string().min(4).optional(),
+        // Postal (mailing/business) address exactly as the source published it —
+        // a match key against the registry's L&I registered address, and the
+        // ONLY identifier available for parties with no phone/licence (owners,
+        // developers). Normalized at persist time; never fabricated.
+        address: z.string().min(5).optional(),
+        // A source-internal, source-namespaced entity id (e.g.
+        // "pierce_pals:462942" from PALS' applCustSysId). Exact same-source
+        // clustering key: two records sharing it are the same party by the
+        // publisher's own authority, immune to name-string drift. Not a
+        // cross-registry key — the adapter owns the namespace prefix.
+        sourceEntityId: z.string().min(1).optional(),
       }),
     ),
     sourceUrl: z.string().url(),

@@ -21,7 +21,7 @@ import {
   type MatchFeatures,
 } from "./normalize.js";
 import { evaluateFuzzy } from "./fuzzy.js";
-import { persistOrganizationIdentifiers } from "./identifiers.js";
+import { findOrganizationBySourceEntityId, persistOrganizationIdentifiers } from "./identifiers.js";
 
 export const RESOLVER_VERSION = "0.3.0"; // M2.2 passes 1–3 + M2.3 passes 4–5
 
@@ -108,12 +108,18 @@ async function upsertOrganizationsAndRoles(
 ): Promise<void> {
   for (const org of row.normalized.organizations) {
     const norm = normalizeOrgName(org.name);
-    const [existing] = await db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(eq(organizations.canonicalName, norm.canonical))
-      .limit(1);
-    let orgId = existing?.id;
+    // Exact same-source clustering first: if a prior record already tied this
+    // source entity id (e.g. Pierce applCustSysId) to an organization, reuse
+    // it — stronger than a name-key match and immune to name-string drift.
+    let orgId = (await findOrganizationBySourceEntityId(db, org.sourceEntityId)) ?? undefined;
+    if (!orgId) {
+      const [existing] = await db
+        .select({ id: organizations.id })
+        .from(organizations)
+        .where(eq(organizations.canonicalName, norm.canonical))
+        .limit(1);
+      orgId = existing?.id;
+    }
     if (!orgId) {
       const [inserted] = await db
         .insert(organizations)
@@ -121,10 +127,11 @@ async function upsertOrganizationsAndRoles(
         .returning({ id: organizations.id });
       orgId = inserted!.id;
     }
-    // Persist any contractor identifiers the source published for this org
-    // (phone/ubi/license — optional, additive) with this record as evidence;
-    // strong keys backfeed onto the organization for the registry link.
-    if (org.phone || org.ubi || org.contractorLicense) {
+    // Persist any identifiers the source published for this org (phone / ubi /
+    // licence / mailing address / source entity id — optional, additive) with
+    // this record as evidence; strong keys backfeed onto the organization for
+    // the registry link.
+    if (org.phone || org.ubi || org.contractorLicense || org.address || org.sourceEntityId) {
       await persistOrganizationIdentifiers(db, orgId, row.id, org);
     }
     const [existingRole] = await db
