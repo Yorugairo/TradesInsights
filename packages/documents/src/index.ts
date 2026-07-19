@@ -2,5 +2,6 @@
 // PDF with M1.3 (Lewis permit PDF); Excel/Word with M1.6 (King reports).
 export * from "./html.js";
 export * from "./pdf.js";
+export * from "./pdf-markdown.js";
 export * from "./xlsx.js";
 export * from "./email.js";
