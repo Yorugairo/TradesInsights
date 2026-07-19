@@ -272,10 +272,86 @@ teams want shared release cadence.
   permit fact.
 - Don't put registry connection strings or service keys in the repo — environment config only.
 
+## Part H — Durability & schema evolution
+
+The registry is under active development (e.g. `google_places_id` and website URLs are being
+added). The integration must survive those changes without breaking or silently binding stale
+data. The durability is a **contract decision made before building**, not cleverness in the
+sync code.
+
+### H.1 — Integrate against a contract the registry owns, not its physical tables
+
+The single most important rule: **Insights must not read `registry_internal` physical tables
+directly.** Bind instead to a stable, versioned contract the registry publishes and owns:
+
+- **A registry-owned VIEW** — e.g. `registry_public.trades_identity_v1` — is the lightweight
+  option (no service to build). The registry maps its physical tables to the view; column
+  adds/renames/refactors are absorbed *on their side*.
+- **The thin API** (`v1`) is the same idea over HTTP, and additionally enforces the
+  public/private boundary (Part C) and versions the contract across two teams.
+
+Either way, **`v1` is a promise; internal columns are not.** One Trade Network can restructure
+`registry_business_entities` freely as long as the `v1` contract still resolves — Insights
+never notices.
+
+### H.2 — Tolerant reader + raw-blob capture (the pattern Insights already runs)
+
+The identity sync mirrors the `source_records` split Insights already uses
+(`raw_fields_json` vs `normalized_json`):
+
+- **Select named fields, never `SELECT *`** — a new column never changes the shape Insights
+  parses.
+- **Also stash the whole contract row as `raw jsonb`** on `registry_business_mirror`. When
+  `google_places_id`/URLs appear in the contract, they are already sitting in the raw blob;
+  **promoting one to a typed Insights column is a one-line migration when Insights actually
+  needs it**, and nothing breaks in the interim.
+
+### H.3 — Drift fingerprint (reuse D3), additive vs breaking
+
+Apply Insights' existing **schema-fingerprint drift** health check (D3) to the registry
+contract — hash the set of contract field names and act on change:
+
+- **Additive drift** (a new field like `google_places_id`) → info/amber; safe, captured in
+  the raw blob, no break.
+- **A field Insights depends on disappears or changes type** → **red: fail the sync**, do not
+  bind stale or mis-typed identity. A schema change becomes a visible signal, never a silent
+  corruption or a crash.
+- **Contract versioning:** additive is non-breaking; a breaking change is an explicit `v1` →
+  `v2` bump (same discipline as the §13 AI contract and parser versions already in the repo).
+
+### H.4 — Prefer ROWS over COLUMNS for new attributes (often, no wait at all)
+
+The registry already models identity **row-shaped**, which is inherently extensible:
+
+- **`registry_entity_identifiers(identifier_type, value_normalized, is_strong)`** — if
+  `google_places_id` lands here as `identifier_type='google_places_id'`, the sync (which
+  already pulls the identifiers table/contract) picks it up **for free**, and the
+  `registry_ref` resolver ladder (Part B) simply gains a rank — **zero integration change**.
+- **`registry_entity_websites`** already exists — URLs belong there as rows, same story.
+
+So the real pre-build decision is **rows vs columns for the new attributes**: modeled as
+identifier/website *rows* (the way UBI and contractor_number already are), the connection is
+durable to the change *by construction*; modeled as new *columns*, the registry-owned view
+(H.1) is the thing to stand up. Recommendation: model `google_places_id` and URLs as rows.
+
+### H.5 — What to settle now vs build later
+
+- **Now (no code):** decide rows-vs-columns for the new attributes; agree the `v1` identity
+  contract (the field list Insights consumes, incl. places ID + URLs); the registry stands up
+  the view (or API stub).
+- **Later (build):** the sync reads the *contract*, mirrors typed fields + raw blob, and
+  drift-fingerprints it; the `registry_ref` resolver runs on the mirror. Column changes after
+  that are absorbed by the contract; additive fields ride the raw blob until promoted.
+
+Net: **wait on the build, not the design.** The wait is spent making the seam contract-shaped
+so the registry's column work never ripples into Insights.
+
 ## Recommended sequence (summary)
 
-1. **Identity match** — `registry_ref` resolver via read-only sync (Part D). **Next build**,
-   no DB migration; the spine both directions ride on.
+0. **Now, no code** — lock the `v1` identity contract (Part H): rows-vs-columns for
+   `google_places_id`/URLs, the field list, and the registry-owned view/API stub.
+1. **Identity match** — `registry_ref` resolver via read-only sync (Part D), reading the
+   contract from H.1. **First build**, no DB migration; the spine both directions ride on.
 2. **Thin trades link** (Insights → registry) — a read-only, public-only `projects-by-
    contractor` + contact/match API onto registry profiles. Lowest-risk, immediately enriches
    the registry, exposes no private data.
