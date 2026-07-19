@@ -72,6 +72,25 @@ registry_entity_locations(
 registry_trade_assignments(
   entity_id uuid, vertical_key text, trade_code text, assignment_rank text,
   confidence numeric, evidence jsonb, source text, created_at, updated_at)
+
+-- External profiles (Google Business Profile etc.) — a provider-agnostic
+-- SATELLITE table linked to entities. The Google Place ID is external_id with
+-- external_provider='google'. Being actively populated (added 2026-07).
+registry_entity_external_profiles(
+  external_profile_id uuid, vertical_key text, external_provider text, external_id text,
+  display_name text, profile_url text, canonical_url text, address_raw text, phone_raw text,
+  website_url text, category text, rating numeric, review_count int,
+  source_system text, source_run_id text, first_observed_at, last_observed_at,
+  profile_payload jsonb, created_at, updated_at)
+
+registry_entity_external_profile_links(          -- entity ↔ external profile match
+  profile_link_id bigint, vertical_key text, external_profile_id uuid, entity_id uuid,
+  source_record_id bigint, link_status text, relationship_type text, match_method text,
+  match_score numeric, match_confidence numeric,
+  public_surface_policy text, phone_write_policy text,   -- govern the REGISTRY's public surface
+  evidence jsonb, decision_provenance jsonb, decided_by text, decided_at,
+  superseded_by_link_id bigint, superseded_at, created_at, updated_at)
+-- plus registry_google_place_review_queue — the human-review workflow for place↔entity matches.
 ```
 
 **Data, verified live (`vertical_key='trades'`):**
@@ -82,6 +101,11 @@ registry_trade_assignments(
 - Locations carry `lat`/`lng` (numeric; PostGIS is *available but not installed* in the
   project — they use numeric lat/lng, so there is **no geospatial-model conflict** with
   Insights' PostGIS).
+- **External/Google profiles are landing (added 2026-07):** `registry_entity_external_profiles`
+  ×3,817, `registry_entity_external_profile_links` ×4,052 — an in-progress backfill (~15% of
+  entities linked so far). Google fields (place id, rating, review_count, website, phone,
+  address, category, raw payload) live here, **not** as identifier rows or entity columns.
+  `registry_entity_websites` is nearly empty (×1) — URLs come via `external_profiles.website_url`.
 - `registry_trade_taxonomy` active-row count returned null on inspection — **confirm the
   trade taxonomy/assignments are populated for `trades`** before relying on trade codes
   (identity join does not depend on this).
@@ -114,6 +138,17 @@ Rules (consistent with the governing invariants):
   withdrawn identifier.
 - Store provenance: which key hit, confidence, and `matched_at` — the binding is auditable
   and re-runnable, like every other resolution in the system.
+
+**Enrichment after the bind (not a match key):** once `registry_ref` → `entity_id` is set,
+Insights pulls the registry's enrichment for that entity — canonical identity, trade
+assignments, locations, and the **external/Google profile**: `entity_id →
+registry_entity_external_profile_links` (active/confirmed `link_status`) `→
+registry_entity_external_profiles` where `external_provider='google'`, yielding the Google
+Place ID (`external_id`), rating, review_count, website, phone, address, and category. Google
+data therefore evolves entirely inside that satellite table — it is never a match key and
+never touches the identity contract (see H.4). **The `public_surface_policy` /
+`phone_write_policy` link flags govern the REGISTRY's own public directory, not the Insights
+CRM** — see Part C's boundary note.
 
 ## Part C — Connection topology & mechanism
 
@@ -163,6 +198,25 @@ The thin link is therefore a **read-only, public-only** API keyed by `entity_id`
 organization bound to that entity — the public/private split is enforced in code (a dedicated
 query layer that never touches `opportunities`/`pursuits`/`model_runs`), not by convention.
 The CRM is a separate login-walled surface for paying accounts on the same spine.
+
+**Whose exposure policy applies where (important):** the registry's
+`registry_entity_external_profile_links.public_surface_policy` and `phone_write_policy` govern
+**the registry's OWN public directory** — what One Trade Network publishes to the world.
+
+- **Direction (a), the Insights CRM, does NOT gate on those flags.** The CRM is login-locked
+  to paying customers — a private, authenticated, paid tool, not a public surface — so it
+  **surfaces every piece of information it can obtain for that client** (registry contact,
+  phone, Google profile, rating, website, and all of Insights' own evidence). The registry's
+  public-surface/phone-write policies are about the registry's public pages, not about what a
+  paying Insights customer is allowed to see.
+- **Direction (b), the thin link,** lands data on the registry's public surface, so the
+  registry applies its own `public_surface_policy`/`phone_write_policy` there — that
+  enforcement is the registry's, and Insights only sends public project/permit facts anyway.
+
+So the split is: **Insights CRM = surface everything for the paying client; registry public
+directory = the registry's policy flags decide.** The one hard line that never moves is
+account-private intelligence (opportunities/scores/pursuits/briefs), which stays inside the
+login wall and never crosses to another account or to the registry.
 
 ### Mechanism per direction
 
@@ -319,26 +373,38 @@ contract — hash the set of contract field names and act on change:
 - **Contract versioning:** additive is non-breaking; a breaking change is an explicit `v1` →
   `v2` bump (same discipline as the §13 AI contract and parser versions already in the repo).
 
-### H.4 — Prefer ROWS over COLUMNS for new attributes (often, no wait at all)
+### H.4 — Rows / satellite tables over columns (the registry already does this)
 
-The registry already models identity **row-shaped**, which is inherently extensible:
+The registry models new attributes **not as columns on the entity** but as rows or linked
+satellite tables — inherently extensible:
 
-- **`registry_entity_identifiers(identifier_type, value_normalized, is_strong)`** — if
-  `google_places_id` lands here as `identifier_type='google_places_id'`, the sync (which
-  already pulls the identifiers table/contract) picks it up **for free**, and the
-  `registry_ref` resolver ladder (Part B) simply gains a rank — **zero integration change**.
-- **`registry_entity_websites`** already exists — URLs belong there as rows, same story.
+- **Identifiers as rows** — `registry_entity_identifiers(identifier_type, value_normalized,
+  is_strong)`. A new strong identifier is a new `identifier_type`; the sync picks it up for
+  free and the resolver ladder (Part B) simply gains a rank.
+- **External profiles as a linked satellite** — **this is the path they took for Google**
+  (confirmed live 2026-07): `registry_entity_external_profiles` (provider-agnostic; Google
+  Place ID = `external_id` with `external_provider='google'`; rating/review_count/website/
+  phone/address/`profile_payload`) linked via `registry_entity_external_profile_links`. Google
+  data evolves entirely inside that satellite + its jsonb payload — **it never touches the
+  entity row or the identity contract, and the sync just adds the join.** This is the most
+  durable shape of all.
 
-So the real pre-build decision is **rows vs columns for the new attributes**: modeled as
-identifier/website *rows* (the way UBI and contractor_number already are), the connection is
-durable to the change *by construction*; modeled as new *columns*, the registry-owned view
-(H.1) is the thing to stand up. Recommendation: model `google_places_id` and URLs as rows.
+So `google_places_id` and website URLs are **already handled by construction** — they live in
+the external-profiles satellite, not as entity columns and not (currently) as identifier rows.
+The `v1` contract's enrichment slice therefore includes the external-profile join
+(`external_provider`, `external_id`, `rating`, `review_count`, `website_url`, `phone_raw`,
+`category`) — and the sync reads whichever of these the registry exposes, tolerating additions
+via the raw blob (H.2). The only genuinely new *column* to watch for would be one added
+directly to `registry_business_entities`; that is what the registry-owned view (H.1) absorbs.
 
 ### H.5 — What to settle now vs build later
 
-- **Now (no code):** decide rows-vs-columns for the new attributes; agree the `v1` identity
-  contract (the field list Insights consumes, incl. places ID + URLs); the registry stands up
-  the view (or API stub).
+- **Now (no code):** the rows-vs-columns question is largely answered — Google/website data is
+  in the external-profiles satellite (H.4), so the remaining task is to agree the `v1` identity
+  + enrichment contract (identity fields + the external-profile join Insights consumes) and
+  have the registry stand up the view (or API stub). Confirm whether the Google backfill
+  (~15% linked today) is complete enough to rely on, or treat the profile as best-effort
+  enrichment until it is.
 - **Later (build):** the sync reads the *contract*, mirrors typed fields + raw blob, and
   drift-fingerprints it; the `registry_ref` resolver runs on the mirror. Column changes after
   that are absorbed by the contract; additive fields ride the raw blob until promoted.
@@ -348,8 +414,8 @@ so the registry's column work never ripples into Insights.
 
 ## Recommended sequence (summary)
 
-0. **Now, no code** — lock the `v1` identity contract (Part H): rows-vs-columns for
-   `google_places_id`/URLs, the field list, and the registry-owned view/API stub.
+0. **Now, no code** — lock the `v1` identity + enrichment contract (Part H): the field list
+   (identity + the external-profile/Google join, H.4) and the registry-owned view/API stub.
 1. **Identity match** — `registry_ref` resolver via read-only sync (Part D), reading the
    contract from H.1. **First build**, no DB migration; the spine both directions ride on.
 2. **Thin trades link** (Insights → registry) — a read-only, public-only `projects-by-
