@@ -5,6 +5,9 @@ import { NormalizedSourceRecordSchema } from "@otn/domain";
 import type { RawArtifact } from "@otn/source-sdk";
 import {
   ThurstonActiveNoticesAdapter,
+  acresFromText,
+  lotsFromText,
+  noticeDateFields,
   parseNoticeHeading,
 } from "./thurston-active-notices.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
@@ -87,5 +90,79 @@ describe("thurston_active_notices (golden fixture)", () => {
       projectName: null,
       noticeDate: "2026-01-15",
     });
+  });
+});
+
+describe("thurston_active_notices WS6 — lots, dates, business-gated org", () => {
+  it("lotsFromText extracts deterministic lot counts (null when absent)", () => {
+    expect(lotsFromText("an 11-lot residential plat")).toBe(11);
+    expect(lotsFromText("proposal to subdivide into 5 lots")).toBe(5);
+    expect(lotsFromText("18 single family residential lots")).toBe(18);
+    expect(lotsFromText("a new garage, no subdivision")).toBeNull();
+    expect(lotsFromText(null)).toBeNull();
+  });
+
+  it("acresFromText reads acreage for evidence", () => {
+    expect(acresFromText("on 4.5 acres of land")).toBe("4.5");
+    expect(acresFromText("a 40 acre parcel")).toBe("40");
+    expect(acresFromText("no acreage stated")).toBeNull();
+  });
+
+  it("noticeDateFields maps issuance/application dates, leaving hearings null", () => {
+    expect(noticeDateFields("Date of Issuance: 3/23/2026", "2026-03-23")).toEqual({
+      applicationDate: null,
+      issueDate: "2026-03-23",
+    });
+    expect(noticeDateFields("Notice of Application received", "2026-02-01")).toEqual({
+      applicationDate: "2026-02-01",
+      issueDate: null,
+    });
+    // A future hearing date is NOT a lifecycle date.
+    expect(noticeDateFields("Public Hearing - July 28, 2026", "2026-07-28")).toEqual({
+      applicationDate: null,
+      issueDate: null,
+    });
+  });
+
+  it("a homeowner RUE hearing gets null dates and no org (golden fixture)", async () => {
+    const adapter = new ThurstonActiveNoticesAdapter();
+    const body = await readFile(join(FIXTURES_DIR, "thurston_active_notices/landing.html"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+    const moore = parsed.find((p) => p.record.externalId === "2019101651")!;
+    expect(moore.record.issueDate).toBeNull(); // future hearing, not issuance
+    expect(moore.record.applicationDate).toBeNull();
+    expect(moore.record.organizations).toEqual([]); // "Moore Garage RUE" is a homeowner name
+  });
+
+  it("promotes lots + application date + a business project org (inline accordion)", async () => {
+    const adapter = new ThurstonActiveNoticesAdapter();
+    const html = `<html><body>
+      <h2>Projects with Active Notices</h2>
+      <div class="accordion-group">
+        <div class="accordion-item">
+          <button class="accordion-title" aria-controls="b1">Project Number: 2026100001 (Cascade Ridge Development LLC) Notice of Application received - February 1, 2026</button>
+        </div>
+        <div id="b1" class="accordion-text">
+          <p>Location: 100 Main St NE, Olympia, WA 98501</p>
+          <p>Preliminary plat proposal to subdivide into 11 lots on 4.5 acres of residential land.</p>
+        </div>
+      </div>
+    </body></html>`;
+    const parsed = await adapter.parse(rawArtifact(html), testContext(adapter.key));
+    const rec = parsed.find((p) => p.record.externalId === "2026100001")!.record;
+    expect(rec.lots).toBe(11);
+    expect(rec.applicationDate).toBe("2026-02-01");
+    expect(rec.issueDate).toBeNull();
+    expect(rec.sourceUpdatedAt).toBe("2026-02-01");
+    expect(rec.organizations).toEqual([
+      {
+        name: "Cascade Ridge Development LLC",
+        role: null,
+        evidenceText: "Project/development entity: Cascade Ridge Development LLC",
+      },
+    ]);
+    expect(rec.evidence.some((e) => e.factPath === "lots")).toBe(true);
+    expect(rec.evidence.some((e) => e.text.includes("4.5 acres"))).toBe(true);
+    expect(NormalizedSourceRecordSchema.safeParse(rec).success).toBe(true);
   });
 });

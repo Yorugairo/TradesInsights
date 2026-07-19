@@ -52,6 +52,47 @@ interface Notice {
   links: { url: string; text: string }[];
 }
 
+/** WS6: deterministic lot count from a notice's text ("11-lot", "into 5 lots",
+ * "18 single family residential lots"). Null when absent — never guessed. */
+export function lotsFromText(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const m =
+    /\b(\d{1,4})[-\s]lots?\b/i.exec(text) ??
+    /\binto\s+(\d{1,4})\s+lots\b/i.exec(text) ??
+    /\b(\d{1,4})\s+(?:new\s+|single[-\s]family\s+|residential\s+)*lots\b/i.exec(text);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** WS6: acreage from a notice's text (evidence only — not a schema field). */
+export function acresFromText(text: string | null | undefined): string | null {
+  if (!text) return null;
+  return /\b(\d+(?:\.\d+)?)\s*acres?\b/i.exec(text)?.[1] ?? null;
+}
+
+/** A project name that clearly denotes a business/development entity (not a
+ * homeowner surname). Only these are emitted as an organization — homeowner
+ * project names are PII and stay out of the bridge. */
+const BUSINESS_PROJECT_RE =
+  /\b(LLC|L\.L\.C|INC|CORP|CORPORATION|CO|COMPANY|LP|LLP|PLLC|DEVELOPMENT|DEVELOPERS?|HOMES?|BUILDERS?|CONSTRUCTION|CONTRACTING|PROPERTIES|PARTNERS?|GROUP|ENTERPRISES?|HOLDINGS?|INVESTMENTS?|ASSOCIATES|REALTY|CAPITAL|APARTMENTS?|MOBILE HOME PARK|MHP|RV PARK|QUARRY|MINE|LANDFILL)\b/i;
+
+/** WS6: split issue-vs-application date semantics from a notice heading. A
+ * hearing date is a FUTURE event, not a lifecycle date, so it stays null. */
+export function noticeDateFields(
+  heading: string,
+  noticeDate: string | null,
+): { applicationDate: string | null; issueDate: string | null } {
+  if (!noticeDate) return { applicationDate: null, issueDate: null };
+  if (/issuance|determination|decision|issued|\bmdns\b|\bdns\b|\bsepa\b/i.test(heading)) {
+    return { applicationDate: null, issueDate: noticeDate };
+  }
+  if (/notice of application|application received|comment period|\bnoa\b/i.test(heading)) {
+    return { applicationDate: noticeDate, issueDate: null };
+  }
+  return { applicationDate: null, issueDate: null }; // hearing / other → future or ambiguous
+}
+
 /**
  * M1.9 — Thurston County active notices (spec §6.1, P0). The Drupal
  * "Comment on a Project" page lists projects with active notices as
@@ -141,6 +182,22 @@ export class ThurstonActiveNoticesAdapter implements SourceAdapter {
         ctx.logger.warn({ heading: primary.heading }, "notice without a project number; skipping");
         continue;
       }
+      // WS6: promote deterministic lot count + date semantics, and emit an org
+      // ONLY for a clearly-business project name (homeowner surnames stay out).
+      const noticeText = `${primary.description ?? ""} ${primary.heading}`;
+      const lots = lotsFromText(noticeText);
+      const acres = acresFromText(noticeText);
+      const dates = noticeDateFields(primary.heading, primary.noticeDate);
+      const organizations =
+        primary.projectName && BUSINESS_PROJECT_RE.test(primary.projectName)
+          ? [
+              {
+                name: primary.projectName,
+                role: null,
+                evidenceText: `Project/development entity: ${primary.projectName}`,
+              },
+            ]
+          : [];
       out.push({
         rawFields: {
           projectNumber: primary.projectNumber,
@@ -168,14 +225,14 @@ export class ThurstonActiveNoticesAdapter implements SourceAdapter {
           documentType: null,
           statusRaw: "active notice",
           normalizedStage: "unknown",
-          applicationDate: null,
-          issueDate: null,
-          sourceUpdatedAt: null,
+          applicationDate: dates.applicationDate,
+          issueDate: dates.issueDate,
+          sourceUpdatedAt: dates.issueDate ?? dates.applicationDate,
           valuationUsd: null,
           units: null,
-          lots: null,
+          lots,
           squareFeet: null,
-          organizations: [],
+          organizations,
           sourceUrl: raw.discovered.canonicalUrl,
           evidence: [
             {
@@ -192,6 +249,17 @@ export class ThurstonActiveNoticesAdapter implements SourceAdapter {
                   },
                 ]
               : []),
+            ...(lots !== null
+              ? [{ factPath: "lots", text: `${lots} lots`, pageOrSection: "notice description" }]
+              : []),
+            ...(acres !== null
+              ? [{ factPath: "squareFeet", text: `${acres} acres`, pageOrSection: "notice description" }]
+              : []),
+            ...organizations.map((o) => ({
+              factPath: "organizations",
+              text: o.evidenceText,
+              pageOrSection: "project name",
+            })),
             {
               factPath: "statusRaw",
               text: "Listed under 'Projects with Active Notices'",
