@@ -529,15 +529,107 @@ sides.
 4. PALS API discovery (I.4.2) — the one portal probe worth doing next; Accela deferred;
    Puyallup public page confirmed party-less.
 
+## Part J — Registry codebase findings (Yorugairo/BJJRegistry @ release/trades-staging, verified 2026-07-19)
+
+Direct read of the registry repo (the Trades vertical is one vertical of a vertical-agnostic
+engine; the BJJ gym registries are the other). This confirms and sharpens the DB-only picture.
+
+### J.1 — Batch pull pipeline; NO ingest API and NO public contract exist yet
+
+- The engine is staged Node ESM scripts under `apps/registry/scripts/entity-resolution/`:
+  **ingest → normalize → mint (deterministic Tier A) → link (Tier B/C, review-only) → report** —
+  idempotent, replayable, "deterministic before fuzzy, precision before recall." Schema in
+  `db/baseline-v1.2/18_entity_resolution.sql`. **Core-vs-skin:** vertical-agnostic tables +
+  a `trades-config.mjs` skin holding the WA-L&I specifics.
+- Everything is `registry_internal`, **RLS-enabled and granted to `service_role` only** (no
+  anon/authenticated); Supabase auto-exposes only the `public` schema. **So Insights cannot
+  read the identity tables at all except via a service_role connection or a surface the
+  registry builds.** There is **no `registry_public` schema, no `trades_identity_v1` view, no
+  external/GraphQL API** — the H.1 contract is confirmed *unbuilt*. Its home is a new
+  `registry_public.trades_identity_v1` view (a migration under
+  `apps/registry/supabase/migrations/` mirrored into `db/baseline-v1.2/`) or a thin public
+  route in `apps/registry`.
+- The repo has two Next.js apps — `apps/registry` (the pSEO contractor directory,
+  `/contractor/{slug}`) and **`apps/crm`** — plus `packages/shared-routes`. (Worth noting given
+  the "Insights = the CRM" framing: a CRM app already exists here; clarify how they relate.)
+
+### J.2 — The engine auto-resolves on STRONG keys only; Insights has none — so Insights carries the entity_id
+
+- `mint-entities.mjs` clusters on **strong identifiers only** (`{ubi, contractor_number,
+  root_domain}`), union-find, exact. A record with no strong id → `status='unresolved'` (never
+  auto-matched, never minted). The name+state **fuzzy tier is defined but NOT built**;
+  `link-candidates.mjs` only writes the review queue, never auto-merges.
+- **Feed 1 consequence:** Insights runs its *own* name+county match on the synced identity
+  slice (Part D) — it cannot lean on the registry's matcher, which isn't built.
+- **Feed 2 consequence — the elegant fix for the whole asymmetry:** a name-only Insights
+  observation would land `unresolved` in the registry. But because Insights binds
+  `registry_ref` (entity_id) on its own side *first*, **its observations carry the resolved
+  `entity_id` + match evidence** — the registry attaches them as evidence-tagged candidates to
+  the *known* entity (respecting its precision-first, never-auto-merge invariant) instead of
+  re-matching a keyless record. Insights proposes the link; the registry adjudicates it. This
+  is how Insights teaches activity without ever needing a strong identifier of its own.
+
+### J.3 — Write targets exist but their loaders are dormant; Feed 2 needs registry-side code
+
+- `registry_source_records` has one writer, `ingest-source-records.mjs`, which **pulls** from
+  `public.tenants WHERE settings->>'source'=<system>`; one `source_system` exists today
+  (`wa_lni_g526_rd4x`). An Insights feed = a new sibling `ingest-otn-insights.mjs` writing
+  `source_records` with `source_system='otn_insights'`, `vertical_key='trades'`,
+  `tenant_id=NULL`, upsert on `(vertical_key, source_system, source_natural_key)`. There is no
+  push API — this is net-new registry code.
+- `registry_entity_aliases`, `registry_entity_locations`, `registry_trade_assignments` all
+  EXIST but have **no populator yet** (registry Phases 4-5). Feeding Insights' name variants /
+  project locations / trade evidence means the registry writes the first loader for each,
+  keyed by `entity_id` + `source_record_id` provenance.
+- **So Feed 2 is not unilateral** — it needs registry-side work (the new source_system, the
+  carry-`entity_id` adjudication path, and the dormant enrichment loaders).
+
+### J.4 — Google Place is schema-only; L&I is the phone/identity authority
+
+- The Google satellite (`20_google_external_profiles.sql` + the #6 `21_google_place_
+  productization.sql`) is a **schema-only release candidate**: no data import, no phone writes,
+  no publication yet; the enrichment column `registry_gym_page_bundle_current.
+  external_profile_enrichment` has zero UI references.
+- **L&I remains identity + phone authority.** `phone_write_policy` is DB-CHECK-pinned to the
+  single value `lni_phone_authoritative`; Google `phone_raw` is evidence-only and **never**
+  surfaces on the registry's public directory. `public_surface_policy` (free-text, computed
+  upstream) is public-safe only for `profile_enrichment_ready` / `primary_only`. The
+  entity↔profile link is **identity-anchored** (re-resolved requiring strong
+  contractor_number AND ubi), so Google enrichment only ever attaches to an entity with
+  confirmed L&I identity.
+- **For the Insights CRM** (login-locked, paid — surfaces everything for the client, Part C):
+  adopt the surfaceable Google fields (website, rating, review_count, category, maps_url) and
+  use the **L&I phone as the authoritative contact**; the Google `phone_raw` is supplementary
+  evidence, labeled as such. Because the Google data is unpopulated today, treat it as *future*
+  enrichment behind the identity bind.
+
+### J.5 — Updated dependency reality
+
+Both feeds have registry-side prerequisites that are *designed but unbuilt*:
+
+| Feed | Registry-side prerequisite | Data ready? |
+|---|---|---|
+| 1 — identity adoption (registry→Insights) | the `v1` contract view/API (J.1), or a service_role sync grant | **Yes** — 22k WA entities, strong UBIs populated |
+| 2 — observation feed (Insights→registry) | new `otn_insights` source_system + carry-`entity_id` adjudication + the dormant alias/location/trade loaders | n/a (Insights supplies) |
+| Google enrichment | run the import + publication pipeline (schema-only today) | Not yet — ~15% linked, unpublished |
+
+This makes the **"now, no code" contract step (H.5) the unambiguous first move**: the registry
+decides the `v1` view shape *and* whether it will accept Insights' carried `entity_id` as a
+reviewed candidate; both teams then build against that single agreement.
+
 ## Recommended sequence (summary)
 
-0. **Now, no code** — lock the `v1` identity + enrichment contract (Part H): the field list
-   (identity + the external-profile/Google join, H.4) and the registry-owned view/API stub.
+0. **Now, no code (both teams)** — one agreement (Parts H + J.5): the `v1` identity+enrichment
+   contract shape, the reachability (a registry-owned `registry_public.trades_identity_v1` view
+   or a service_role sync grant — J.1: nothing else is reachable), and whether the registry
+   will accept Insights' carried `entity_id` as a reviewed candidate (J.2).
 1. **Identity match + adoption** — `registry_ref` resolver via read-only sync (Part D),
-   reading the contract from H.1, adopting identity/contact per I.2 (the 0020 global-contact
-   migration is already in). **First build**; the spine both directions ride on.
-1b. **Observation feed** (I.3) — Insights starts teaching the registry
-   liveness/history/aliases/trade evidence; feeds the thin link's project history.
+   Insights-side name+county match (the registry's matcher is unbuilt — J.2), adopting
+   identity/contact per I.2 (the 0020 global-contact migration is already in). **First build**;
+   the spine both directions ride on. *Registry prerequisite: the `v1` view or a read grant.*
+1b. **Observation feed** (I.3) — Insights writes observations carrying the resolved `entity_id`;
+   the registry teaches itself liveness/history/aliases/trade evidence. *Registry prerequisite:
+   the `ingest-otn-insights.mjs` source_system + the dormant alias/location/trade loaders (J.3).*
 2. **Thin trades link** (Insights → registry) — a read-only, public-only `projects-by-
    contractor` + contact/match API onto registry profiles. Lowest-risk, immediately enriches
    the registry, exposes no private data.
