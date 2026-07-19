@@ -44,13 +44,55 @@ const SepaRowSchema = z
     leadagencyfilenumber: z.string().optional(),
     leadagencyissuedate: z.string().optional(),
     applicantname: z.string().optional(),
+    applicantcontactinfo: z.string().optional(),
     documenttypecode: z.string().optional(),
     countyname: z.string(),
     regionname: z.string().optional(),
     commentsduedate: z.string().optional(),
+    // Site location (WS2): promoted to addressRaw / parcelIds / geometry.
+    siteparcelnumber: z.string().optional(),
+    siteline1address: z.string().optional(),
+    siteline2address: z.string().optional(),
+    sitecityname: z.string().optional(),
+    sitezipcode: z.string().optional(),
+    sitelatitudedecimal: z.string().optional(),
+    sitelongitudedecimal: z.string().optional(),
     separegisterlink: z.object({ url: z.string() }).optional(),
   })
   .passthrough();
+
+/** Business / public-agency markers on an applicant name. A SEPA applicant with
+ * none of these is treated as a private individual — its contact address/phone
+ * are NOT promoted to matchable identifiers (homeowner PII stays out of the
+ * bridge). The name is still emitted. */
+const BUSINESS_OR_AGENCY_RE =
+  /\b(LLC|L\.L\.C|INC|CORP|CO|COMPANY|LTD|LP|LLP|PLLC|ROOFING|CONSTRUCTION|CONTRACTING|ENGINEERING|ELECTRIC(AL)?|PLUMBING|MECHANICAL|BUILDERS?|DEVELOPMENT|HOMES?|SERVICES?|SYSTEMS?|GROUP|ASSOCIATES|ENTERPRISES?|PARTNERS?|PROPERTIES|MANAGEMENT|HOLDINGS?|INVESTMENTS?|CAPITAL|REALTY|CITY|COUNTY|STATE|DISTRICT|DEPT|DEPARTMENT|PORT|UNIVERSITY|COLLEGE|SCHOOL|AUTHORITY|AGENCY|COMMISSION|ASSOCIATION|CHURCH|TRIBE|NATION|UTILITIES|WATER|SEWER|FIRE|HOSPITAL|MEDICAL|FOUNDATION|TRUST)\b/i;
+function isBusinessOrAgency(name: string): boolean {
+  return BUSINESS_OR_AGENCY_RE.test(name);
+}
+
+const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+const PHONE_RE = /\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/;
+
+/**
+ * Parse the newline-delimited `applicantcontactinfo` block into the applicant's
+ * mailing address (the line(s) carrying a street number + a 5-digit zip) and
+ * phone. The applicant NAME comes from `applicantname`, and the email — a
+ * govt-planner PII vector — is deliberately not promoted. Malformed / contactless
+ * blocks yield {address:null, phone:null} (never throw).
+ */
+function parseApplicantContact(block: string): { address: string | null; phone: string | null } {
+  const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let phone: string | null = null;
+  const addrLines: string[] = [];
+  for (const line of lines) {
+    if (EMAIL_RE.test(line)) continue; // email line — not a match key
+    const ph = PHONE_RE.exec(line);
+    if (ph && !phone) phone = ph[0];
+    if (/\d/.test(line) && /\b\d{5}\b/.test(line)) addrLines.push(line);
+  }
+  return { address: addrLines.length ? addrLines.join(", ") : null, phone };
+}
 
 export class WaSepaAdapter implements SourceAdapter {
   readonly key = "wa_sepa";
@@ -133,12 +175,35 @@ export class WaSepaAdapter implements SourceAdapter {
       const issue = r.leadagencyissuedate?.slice(0, 10) ?? null;
       if (issue && issue > this.maxIssue) this.maxIssue = issue;
 
-      const organizations: { name: string; role: string | null; evidenceText: string }[] = [];
+      // WS2: site location (clean separate fields) → addressRaw/parcelIds/geometry.
+      const parcelIds = (r.siteparcelnumber ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const siteCityZip = [r.sitecityname, r.sitezipcode].filter(Boolean).join(" ");
+      const addressRaw =
+        [r.siteline1address, r.siteline2address, siteCityZip].filter((s) => s && s.length).join(", ") ||
+        null;
+      const lat = r.sitelatitudedecimal != null ? Number(r.sitelatitudedecimal) : Number.NaN;
+      const lng = r.sitelongitudedecimal != null ? Number(r.sitelongitudedecimal) : Number.NaN;
+      // GeoJSON order is [lng, lat].
+      const geometry: NormalizedSourceRecord["geometry"] =
+        Number.isFinite(lat) && Number.isFinite(lng) ? { type: "Point", coordinates: [lng, lat] } : null;
+
+      // Applicant contact — promoted as identifiers ONLY for a business/agency.
+      const contact = r.applicantcontactinfo ? parseApplicantContact(r.applicantcontactinfo) : null;
+      const applicantAttach = isBusinessOrAgency(r.applicantname ?? "") ? contact : null;
+
+      const organizations: NormalizedSourceRecord["organizations"] = [];
       if (r.applicantname) {
         organizations.push({
           name: r.applicantname,
           role: "applicant",
-          evidenceText: `applicantname: ${r.applicantname}`,
+          evidenceText:
+            `applicantname: ${r.applicantname}` +
+            (applicantAttach?.address ? `, address ${applicantAttach.address}` : ""),
+          ...(applicantAttach?.address ? { address: applicantAttach.address } : {}),
+          ...(applicantAttach?.phone ? { phone: applicantAttach.phone } : {}),
         });
       }
       if (r.leadagencyname) {
@@ -159,10 +224,10 @@ export class WaSepaAdapter implements SourceAdapter {
           description: r.proposaldescription ?? null,
           permittingJurisdiction: r.leadagencyname ?? "unknown",
           county,
-          city: null,
-          addressRaw: null,
-          parcelIds: [],
-          geometry: null,
+          city: r.sitecityname ?? null,
+          addressRaw,
+          parcelIds,
+          geometry,
           applicationType: null,
           permitType: null,
           documentType: r.documenttypecode ?? null,
@@ -200,6 +265,32 @@ export class WaSepaAdapter implements SourceAdapter {
                     factPath: "issueDate",
                     text: `leadagencyissuedate: ${r.leadagencyissuedate}`,
                     pageOrSection: "leadagencyissuedate",
+                  },
+                ]
+              : []),
+            ...(r.leadagencyfilenumber
+              ? [
+                  {
+                    factPath: "externalRef",
+                    text: `leadagencyfilenumber: ${r.leadagencyfilenumber}`,
+                    pageOrSection: "leadagencyfilenumber",
+                  },
+                ]
+              : []),
+            ...(addressRaw
+              ? [{ factPath: "addressRaw", text: addressRaw, pageOrSection: "site address" }]
+              : []),
+            ...parcelIds.map((p) => ({
+              factPath: "parcelIds",
+              text: `parcel ${p}`,
+              pageOrSection: "siteparcelnumber",
+            })),
+            ...(geometry
+              ? [
+                  {
+                    factPath: "geometry",
+                    text: `site point ${lat},${lng}`,
+                    pageOrSection: "sitelatitudedecimal/sitelongitudedecimal",
                   },
                 ]
               : []),

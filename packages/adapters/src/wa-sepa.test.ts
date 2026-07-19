@@ -98,3 +98,73 @@ describe("wa_sepa parse (golden fixture, 90-day pilot-county window)", () => {
     expect(url).toContain("$limit=1000");
   });
 });
+
+describe("wa_sepa WS2 — applicant contact + site geo (business-gated)", () => {
+  it("promotes site parcels/geo and a business applicant's mailing address on the golden fixture", async () => {
+    const adapter = new WaSepaAdapter();
+    const body = await readFile(join(FIXTURES_DIR, "wa_sepa/window-90d.json"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+
+    expect(parsed.some((p) => p.record.parcelIds.length > 0)).toBe(true);
+    expect(parsed.some((p) => p.record.geometry?.type === "Point")).toBe(true);
+    expect(parsed.some((p) => p.record.addressRaw !== null)).toBe(true);
+    // At least one business/agency applicant carries a promoted mailing address.
+    expect(
+      parsed.some((p) => p.record.organizations.some((o) => o.role === "applicant" && o.address)),
+    ).toBe(true);
+    // All 407 still schema-validate with the added fields.
+    for (const p of parsed) {
+      expect(NormalizedSourceRecordSchema.safeParse(p.record).success).toBe(true);
+    }
+  });
+
+  it("attaches contact for a business, name-only for a person, never throws on garbled contact", async () => {
+    const adapter = new WaSepaAdapter();
+    const rows = [
+      {
+        separegisterid: "b1", sepanumber: "202600011", countyname: "THURSTON",
+        applicantname: "Cascade Development LLC",
+        applicantcontactinfo:
+          "Cascade Development LLC\nJane Doe, PM\n500 Union Ave SE, Olympia, WA 98501\n(360) 555-0199\njane@cascade.com",
+        siteparcelnumber: "12345, 67890",
+        siteline1address: "9 Elm St", sitecityname: "Olympia", sitezipcode: "98501",
+        sitelatitudedecimal: "47.04", sitelongitudedecimal: "-122.9",
+        leadagencyfilenumber: "LU-26-0001",
+      },
+      {
+        separegisterid: "p1", sepanumber: "202600012", countyname: "THURSTON",
+        applicantname: "John Smith",
+        applicantcontactinfo: "John Smith\n123 Main St, Olympia, WA 98501\njohn@gmail.com",
+      },
+      {
+        separegisterid: "m1", sepanumber: "202600013", countyname: "THURSTON",
+        applicantname: "Widget Builders LLC",
+        applicantcontactinfo: "garbled contact with no structure",
+      },
+    ];
+    const parsed = await adapter.parse(rawArtifact(JSON.stringify(rows)), testContext(adapter.key));
+    expect(parsed.length).toBe(3);
+
+    const biz = parsed[0]!.record;
+    const bizApplicant = biz.organizations.find((o) => o.role === "applicant")!;
+    expect(bizApplicant.address).toBe("500 Union Ave SE, Olympia, WA 98501");
+    expect(bizApplicant.phone).toBe("(360) 555-0199");
+    expect(biz.parcelIds).toEqual(["12345", "67890"]);
+    expect(biz.geometry).toEqual({ type: "Point", coordinates: [-122.9, 47.04] });
+    expect(biz.addressRaw).toBe("9 Elm St, Olympia 98501");
+    expect(biz.city).toBe("Olympia");
+    // The cross-source lead-agency file number rides in externalRef evidence.
+    expect(biz.evidence.some((e) => e.factPath === "externalRef" && e.text.includes("LU-26-0001"))).toBe(true);
+
+    // Private individual → name only; no PII identifiers attached.
+    const person = parsed[1]!.record.organizations.find((o) => o.role === "applicant")!;
+    expect(person.name).toBe("John Smith");
+    expect(person.address).toBeUndefined();
+    expect(person.phone).toBeUndefined();
+
+    // Business name but unparseable contact → name only, still schema-valid.
+    const garbled = parsed[2]!.record.organizations.find((o) => o.role === "applicant")!;
+    expect(garbled.address).toBeUndefined();
+    expect(NormalizedSourceRecordSchema.safeParse(parsed[2]!.record).success).toBe(true);
+  });
+});
