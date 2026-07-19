@@ -32,7 +32,7 @@
 | M1.7 Seattle Socrata ×2 + canary | ✅ 2026-07-15 | 2,117 building + 118 land-use (applieddate high-water; nightly-republish caveat), canary green, 90-day backfill green |
 | M1.8 WA SEPA register | ✅ 2026-07-15 | official data.wa.gov dataset mmcb-z6jf (separ UI robots-restricted); 564 pilot-county records, rerun + backfill green; Pierce mitigation live |
 | M1.9 Thurston active notices | ✅ 2026-07-15 | 63 project notices (accordion parser, migration-canary throw), idempotent rerun green |
-| M1.10 Tumwater ArcGIS + pages | ✅/⛔ 2026-07-15 | ArcGIS: 44 projects, official status-domain stage map, green. review/SEPA pages: Akamai-blocked (ledger + mitigations) |
+| M1.10 Tumwater ArcGIS + pages | ✅/⛔→🔓 2026-07-15; in-region 2026-07-19 | ArcGIS: 44 projects, official status-domain stage map, green. review/SEPA pages: Akamai bot-fingerprints the CLIENT — REACHABLE in-region 2026-07-19 for a GENUINE BROWSER (curl/automated still 403), so capture-fed; golden fixtures captured (parser/shadow pending) |
 | **M1 exit gate** | ✅ 2026-07-15 | 13 sources enabled all green, 5,555 records, 83/83 tests + E2E, backfills verified, blockers documented |
 | M2.1 resolution normalizers | ✅ 2026-07-15 | address/parcel/org/name/stage/geometry + extractFeatures; 13 unit tests |
 | M2.2 exact/lineage/parcel matching | ✅ 2026-07-15 | migration 0001_resolution; live corpus: 4,986 projects, 571 merges, 377 multi-record projects, 0 errors; cross-source merges verified (SEPA↔Seattle MUP, King notices↔reports, Thurston↔SEPA, Lewis↔SEPA, Lacey REST↔pages) |
@@ -111,7 +111,8 @@
 ## Open blockers
 
 - **M1.4 pierce_environmental_determinations:** piercecountywa.gov serves a site-wide Cloudflare browser challenge (403) to this execution environment regardless of user agent; solving it would mean bypassing an anti-bot control — prohibited. Source stays disabled; blocker + mitigation (Pierce SEPA coverage via M1.8 wa_sepa) recorded in the activation ledger. Re-verify from an unchallenged network (production runner / customer connection).
-- **M1.10 tumwater_development_review + tumwater_sepa:** ci.tumwater.wa.us is Akamai-edge-denied (403, all clients) from this environment — same policy class as Pierce. Both stay disabled; mitigations: tumwater_development_arcgis (projects + official status) and wa_sepa (Tumwater-lead-agency determinations). Re-verify from an unchallenged network.
+- **M1.10 tumwater_development_review + tumwater_sepa:** reachable in-region 2026-07-19 for a GENUINE BROWSER only. Akamai bot-fingerprints the CLIENT: a genuine browser passes from an in-region residential/municipal IP, but `curl`/automated fetchers still get 403 from the SAME IP — so the block was not purely datacenter-specific, and both sources are genuine-visitor capture-fed (no bypass; `fetch()` dead-letters against the live gate). Golden fixtures captured (`fixtures/tumwater_development_review/`, `fixtures/tumwater_sepa/`); parser build + shadow run pending. Mitigations (tumwater_development_arcgis, wa_sepa) remain until enabled.
+- **Olympia (`olympia_smartgov_reports`, P1 gap):** reachable in-region 2026-07-19 (genuine browser); **PDF-ONLY** — every non-PDF Exago `eit` returns HTTP 500, so the report catalog + the issued-permits PDF are fixtured (`fixtures/olympia_smartgov_reports/`) and parsed via positioned text. Positional parser (`olympia_smartgov_reports`) built 2026-07-19; capture-fed (session-bound `eid`); shadow run pending.
 
 ## Assumptions in force
 
