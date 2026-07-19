@@ -12,19 +12,21 @@ Insights, one vertical over** — it resolves construction *businesses* from sou
 the way Insights resolves construction *projects*. The two are literally two sides of one
 coin.
 
-**Recommendation (sequence, lowest-risk first):**
+**Recommendation (layers, lowest-risk first — they compose, they are not alternatives):**
 
-1. **Federate identity, don't co-locate the engine.** Resolve `organizations.registry_ref`
-   → `registry_business_entities.entity_id` on a **strong UBI key**, via a read-only sync
-   (or FDW) of the registry's identity slice. Zero DB migration; unlocks the GC-relationship
-   copilot. **Do this first.**
-2. **Defer full DB co-location.** Supabase is Postgres and PostGIS is available, but the
-   registry already runs its own heavy pipeline (`pg_cron`, refresh queues); adding the
-   Insights ingest firehose to one compute tier, plus adopting their RLS/tenant model, is a
-   deliberate migration — not a lift-and-shift. Checklist in Part E.
-3. **Repo convergence last.** Same author, same patterns — the long-term win is a shared
-   entity-resolution/normalization/evidence core across both verticals. Do it after the
-   identity seam is proven.
+1. **Build the identity match once.** Resolve `organizations.registry_ref` →
+   `registry_business_entities.entity_id` on a **strong UBI key**, via a read-only sync of the
+   registry's identity slice. Zero DB migration. This is the shared spine both integration
+   directions ride on (Part C). **Do this first.**
+2. **Ship the thin trades link next** (Insights → registry): a read-only, **public-only** API
+   that serves each contractor's project/permit history onto their registry profile, plus the
+   contact/company-match lookup. Lowest-risk, immediately makes the registry richer, exposes
+   no account-private data.
+3. **Then the login-walled CRM** (registry → Insights enrichment): the premium intelligence
+   product for paying accounts, consuming registry identity — where the account-isolation/RLS
+   work actually lives.
+4. **Defer full DB co-location** (Part E) and **repo convergence** (Part F) until the seam is
+   proven and load is measured.
 
 ## Part A — What we found (registry architecture)
 
@@ -113,26 +115,90 @@ Rules (consistent with the governing invariants):
 - Store provenance: which key hit, confidence, and `matched_at` — the binding is auditable
   and re-runnable, like every other resolution in the system.
 
-## Part C — Integration mechanism
+## Part C — Connection topology & mechanism
 
-Both systems are Postgres, so three options, in order of preference:
+### Two directions, one identity spine
 
-1. **Read-only nightly sync of the identity slice (recommended to start).** Pull
-   `vertical_key='trades'` rows (`registry_business_entities` + `_identifiers` +
-   `_trade_assignments` + `_locations`, WA-first) into an Insights-side table
-   (`registry_business_mirror`), then resolve `registry_ref` against the mirror. No live
-   cross-DB dependency in the ingest hot path; the registry is the system of record, Insights
-   holds a dated copy. Simple, isolated, easy to reason about failures.
-2. **`postgres_fdw` foreign tables (when a live read is wanted).** Both projects have
-   `postgres_fdw`/`wrappers` available; expose the four identity tables as foreign tables in
-   an Insights `registry` schema and resolve against them directly. Lower latency to fresh
-   data, but couples availability — keep it out of the ingest critical path.
-3. **Registry read API** if One Trade Network prefers not to expose Postgres directly — same
-   resolver, HTTP source instead of SQL.
+The integration is **not one-directional.** There are two data flows serving two audiences,
+and a single identity match underneath both:
 
-Start with (1); graduate to (2) if/when freshness matters. Either way the **resolver logic
-is identical** and lives in Insights (`packages/resolution`), so the mechanism can change
-without touching the binding rules.
+```
+                    ┌─────────────────────────────────────────────┐
+                    │   identity match (the spine, built once)     │
+                    │   organizations.registry_ref  ↔  entity_id   │
+                    │   resolved on strong UBI (Part B)            │
+                    └─────────────────────────────────────────────┘
+        (a) registry → Insights                 (b) Insights → registry
+   enrich the GC league / CRM with         serve public project/permit history
+   contractor identity, contact, trades    onto contractor registry profiles;
+   [Insights CONSUMES]                      answer "who is this company" for
+   → the login-walled premium CRM           contact + company matching
+                                            [registry CONSUMES]
+                                            → the thin "trades link"
+```
+
+- **(a) Registry → Insights** — the login-walled CRM. The registry is a data source *into*
+  Insights: resolve `registry_ref`, then surface verified identity, contact, and trade
+  assignments on the GC league / org pages. Powers the relationship copilot. Insights
+  consumes.
+- **(b) Insights → Registry** — the thin trades link. Insights is a data source *into* the
+  registry: every contractor profile shows its real project/permit history, and the registry
+  can ask Insights "who is this company / what's their contact / which Insights org is this"
+  for matching. Registry consumes.
+
+Neither system reaches into the other's private tables. Both ride the same
+`registry_ref ↔ entity_id` match.
+
+### The boundary that makes (b) safe: public evidence vs private intelligence
+
+Insights holds two very different data classes, and they map exactly onto the two surfaces:
+
+| Class | Examples | Exposure |
+|---|---|---|
+| **Public evidence** | permits, projects, org↔project roles, stated valuations/dates — all from public records | **Shareable.** "This contractor pulled these permits" is public fact → this is what the **thin trades link** serves onto registry profiles. |
+| **Account-private intelligence** | opportunities, scores, routes, pursuits, briefs, digests | **Never leaves the login wall.** One account never sees another's → this is the **CRM only.** |
+
+The thin link is therefore a **read-only, public-only** API keyed by `entity_id`/UBI (e.g.
+`GET /public/contractors/{ubi}/projects`) that serves *only* the public project graph for the
+organization bound to that entity — the public/private split is enforced in code (a dedicated
+query layer that never touches `opportunities`/`pursuits`/`model_runs`), not by convention.
+The CRM is a separate login-walled surface for paying accounts on the same spine.
+
+### Mechanism per direction
+
+Both systems are Postgres today, so the mechanism differs by access pattern, not by product:
+
+- **(a) Registry → Insights identity resolution — use SYNC.** Nightly pull the
+  `vertical_key='trades'` identity slice (`registry_business_entities` + `_identifiers` +
+  `_trade_assignments` + `_locations`, WA-first) into an Insights-side mirror
+  (`registry_business_mirror`); resolve `registry_ref` against the mirror. Identity is
+  slow-changing, the resolver runs in bulk over thousands of orgs, and the mirror keeps the
+  Insights ingest engine independent of registry availability. Isolation + local indexes win
+  here.
+- **(b) Insights → Registry project history — use an API** (registry pulls, or Insights
+  pushes a read model). A thin read-only endpoint lets Insights **enforce the public-only
+  boundary in code** and version the contract across two teams, which a raw DB grant cannot.
+- **Live single-entity reads** (e.g. an on-demand "current registry profile" panel in the
+  CRM) — reach for **`postgres_fdw`** (both projects have `postgres_fdw`/`wrappers`) or a
+  registry API for that one lookup; never put a live cross-DB call in the ingest critical
+  path.
+
+**Sync vs FDW, at a glance** (for direction (a) and any batch use):
+
+| | Sync (mirror + schedule) | FDW (live foreign tables) |
+|---|---|---|
+| Freshness | last run (nightly is plenty for UBI/license/name) | always live |
+| Failure coupling | none — registry down ≠ Insights down | coupled — a slow/down registry stalls queries |
+| Latency | local table + local indexes; fast in bulk | network round-trip; limited join push-down |
+| Security | one scoped read-only pull | credentials stored *inside* Postgres (user mapping) |
+| Schema drift | absorbed in one mapping | a column rename breaks the foreign table |
+| Point-in-time | dated snapshot (fits immutable-evidence ethos) | always "now" |
+
+**Decision:** sync for batch identity resolution/enrichment; API for the thin link; FDW/API
+only for a live single-entity lookup. The **resolver logic is identical** and lives in
+Insights (`packages/resolution`) regardless of mechanism — and if the DBs are ever co-located
+(Part E), the whole sync/FDW question collapses into a plain cross-schema join, so starting
+with sync locks you into nothing.
 
 ## Part D — First build: the `registry_ref` resolver (concrete spec)
 
@@ -208,7 +274,12 @@ teams want shared release cadence.
 
 ## Recommended sequence (summary)
 
-1. `registry_ref` resolver via read-only sync (Part D) — **next build**, no DB migration.
-2. Surface registry identity on the GC league → build the relationship copilot on it.
-3. Reassess DB co-location against Part E once the seam is live and load is measured.
-4. Repo convergence when shared-core velocity justifies it.
+1. **Identity match** — `registry_ref` resolver via read-only sync (Part D). **Next build**,
+   no DB migration; the spine both directions ride on.
+2. **Thin trades link** (Insights → registry) — a read-only, public-only `projects-by-
+   contractor` + contact/match API onto registry profiles. Lowest-risk, immediately enriches
+   the registry, exposes no private data.
+3. **Login-walled CRM** (registry → Insights) — surface registry identity on the GC league →
+   build the relationship copilot; this is where the account-isolation/RLS work lives.
+4. Reassess **DB co-location** against Part E once the seam is live and load is measured.
+5. **Repo convergence** (Part F) when a shared entity-resolution core justifies it.
