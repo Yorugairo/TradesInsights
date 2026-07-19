@@ -20,7 +20,7 @@ Non-negotiable invariants:
 
 ## Out of scope (do not build)
 
-Public market/trade pages; autonomous prospecting or outreach; bid submission, pricing, estimating, or legal commitments; cleaning-company intelligence (first release); bypassing authentication, CAPTCHA, MFA, paywalls, or access controls. Never scrape customer credentials.
+Public market/trade pages; autonomous prospecting or outreach; bid submission, pricing, estimating, or legal commitments; cleaning-company intelligence (first release);
 
 ## Stack
 
