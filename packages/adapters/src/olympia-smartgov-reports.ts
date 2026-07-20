@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { extractPdfTextItems, type PdfTextItem } from "@otn/documents";
 import {
   reconcileCount,
@@ -154,13 +156,38 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
   }
 
   async fetch(item: DiscoveredArtifact, _ctx: RunContext): Promise<RawArtifact> {
+    // Capture-fed: an operator-local run points OTN_CAPTURE_DIR at a directory of
+    // genuine-browser captures. Read <OTN_CAPTURE_DIR>/olympia_smartgov_reports/
+    // permits-issued-last-30-days.pdf when present. The golden fixtures dir is NOT
+    // consulted here, so tests still dead-letter.
+    const captureDir = process.env.OTN_CAPTURE_DIR;
+    if (captureDir) {
+      try {
+        const body = await readFile(
+          join(captureDir, this.key, "permits-issued-last-30-days.pdf"),
+        );
+        if (body.byteLength > 0) {
+          return {
+            discovered: item,
+            body,
+            contentType: "application/pdf",
+            httpStatus: 200,
+            headers: { "content-type": "application/pdf" },
+            retrievedAt: new Date(),
+          };
+        }
+      } catch {
+        // Capture dir set but file missing/unreadable — fall through to the dead-letter.
+      }
+    }
     // PDF-only + single-use session-bound `eid`: auto-fetch cannot mint the
     // session token and must not drive a headless bot. Reproduce the gate as a
     // dead-letter rather than passing an error page to the parser as data.
     throw new Error(
       `olympia_smartgov_reports: ${item.canonicalUrl} renders only through a session-bound ` +
-        "Exago `eid` (non-PDF export 500s). This source is genuine-visitor capture-fed; " +
-        "auto-fetch dead-letters here by design — the parser runs over captured PDF artifacts.",
+        "Exago `eid` (non-PDF export 500s). Genuine-visitor capture-fed; stage a captured report " +
+        "PDF at $OTN_CAPTURE_DIR/olympia_smartgov_reports/permits-issued-last-30-days.pdf " +
+        "(operator-local run) — auto-fetch dead-letters here by design.",
     );
   }
 

@@ -368,9 +368,9 @@ sources:
       Akamai fingerprints the automated CLIENT (not just egress IP), so the
       adapter's fetch() 403s even in-region — the operator-local run therefore
       parses an in-region GENUINE-BROWSER capture of the index staged into
-      fixtures/tumwater_development_review/ (drc-agendas.index.json). Cron `pnpm
-      source:run:operator-local` on the operator's machine after the daily capture;
-      never a bot/WAF bypass.
+      $OTN_CAPTURE_DIR/tumwater_development_review/drc-agendas.index.json. Cron
+      `OTN_CAPTURE_DIR=<dir> pnpm source:run:operator-local` on the operator's
+      machine after the daily capture; never a bot/WAF bypass.
       One record per meeting (date + agenda PDF link). The index carries NO party
       data (applicant/project names live inside the agenda PDFs, which we do not
       fetch — keeps homeowner PII out of the registry bridge), so organizations[]
@@ -402,8 +402,9 @@ sources:
       no bot bypass). Akamai fingerprints the automated CLIENT (not just egress IP),
       so the adapter's fetch() 403s even in-region — the operator-local run therefore
       parses an in-region GENUINE-BROWSER capture staged into
-      fixtures/tumwater_sepa/ (noa-sepa.index.json). Cron `pnpm source:run:operator-local`
-      on the operator's machine after the daily capture. The index carries NO party
+      $OTN_CAPTURE_DIR/tumwater_sepa/noa-sepa.index.json. Cron
+      `OTN_CAPTURE_DIR=<dir> pnpm source:run:operator-local` on the operator's
+      machine after the daily capture. The index carries NO party
       data (applicant/owner names live inside the linked PDFs, which we do not
       fetch — keeps homeowner PII out of the registry bridge), so organizations[]
       is empty and normalizedStage stays unknown (decision outcome is not visible

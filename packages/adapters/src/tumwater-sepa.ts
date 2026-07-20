@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   reconcileCount,
@@ -120,15 +122,36 @@ export class TumwaterSepaAdapter implements SourceAdapter {
   }
 
   async fetch(item: DiscoveredArtifact, _ctx: RunContext): Promise<RawArtifact> {
+    // Capture-fed: an operator-local run points OTN_CAPTURE_DIR at a directory of
+    // genuine-browser captures (never the datacenter, where Akamai 403s automated
+    // clients). Read <OTN_CAPTURE_DIR>/tumwater_sepa/noa-sepa.index.json when present.
+    // The golden fixtures dir is NOT consulted here, so tests still dead-letter.
+    const captureDir = process.env.OTN_CAPTURE_DIR;
+    if (captureDir) {
+      try {
+        const body = await readFile(join(captureDir, this.key, "noa-sepa.index.json"));
+        if (body.byteLength > 0) {
+          return {
+            discovered: item,
+            body,
+            contentType: "application/json",
+            httpStatus: 200,
+            headers: { "content-type": "application/json" },
+            retrievedAt: new Date(),
+          };
+        }
+      } catch {
+        // Capture dir set but file missing/unreadable — fall through to the dead-letter.
+      }
+    }
     // Akamai fingerprints the client: a genuine in-region browser sees the page,
     // but automated/datacenter clients get a 403 challenge we will not defeat.
-    // Reproduce the gate as a dead-letter rather than feeding a challenge page to
-    // the parser — this source is genuine-visitor capture-fed by design.
     throw new Error(
       `tumwater_sepa: ${item.canonicalUrl} is served behind an Akamai edge ` +
         "policy that 403s automated/datacenter clients (a genuine in-region browser is " +
-        "required; no bot bypass). This source is capture-fed; auto-fetch dead-letters " +
-        "here by design — the parser runs over the captured NOA/SEPA index.",
+        "required; no bot bypass). Capture-fed: stage a genuine-browser capture at " +
+        "$OTN_CAPTURE_DIR/tumwater_sepa/noa-sepa.index.json (operator-local run) — auto-fetch " +
+        "dead-letters here by design.",
     );
   }
 

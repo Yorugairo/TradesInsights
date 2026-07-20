@@ -24,7 +24,19 @@ async function main() {
     logger.info({}, "no enabled operator-local (on_demand) sources — nothing to run");
     return;
   }
-  logger.info({ keys }, `operator-local batch: ${keys.length} source(s)`);
+  // Each source's fetch() reads its staged genuine-browser capture from
+  // $OTN_CAPTURE_DIR/<key>/. Without it, every source dead-letters — warn loudly
+  // rather than silently producing nothing.
+  const captureDir = process.env.OTN_CAPTURE_DIR;
+  if (!captureDir) {
+    logger.warn(
+      { keys },
+      "OTN_CAPTURE_DIR is not set — every operator-local source will dead-letter. " +
+        "Stage genuine-browser captures under <dir>/<key>/ and set OTN_CAPTURE_DIR=<dir>.",
+    );
+  } else {
+    logger.info({ keys, captureDir }, `operator-local batch: ${keys.length} source(s)`);
+  }
 
   const pool = createPool();
   const db = createDb(pool);
