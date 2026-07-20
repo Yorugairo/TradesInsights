@@ -141,6 +141,12 @@ session. Standing counts are in `docs/calibration-prep-solis.md`.
 - **`warm_gc_active` — small positive weight.** A project whose GC is in Solis's warm
   set gets a **small** lift (relationship-first, per the philosophy above), not a large
   one. (Implement a small weight; keep it bounded so it nudges rather than reorders.)
+- **Easy-win radius — layered proximity bands, no floor.** Replace the single flat
+  radius with three concentric bands from the Lacey home point, **nearest first: ≤20 mi,
+  ≤35 mi, ≤50 mi** (the outer 50 mi widens the prior 60 km / ~37 mi cutoff). The "⚡
+  Winnable now" digest section presents easy-wins closest-band-first. **No valuation
+  floor — no job is too small** (customer directive stands); the $2M upper sanity cap is
+  unchanged. (Implement in `config/account-profiles.yaml → delivery.easy_win`.)
 
 ### ◻ Still open — bring to the session
 
@@ -149,8 +155,8 @@ session. Standing counts are in `docs/calibration-prep-solis.md`.
 2. **`verified_gc_on_project` weight** — `warm_gc_active` is decided (small); confirm
    whether "GC is a resolved registry entity" should add any lift on its own, or stay
    a trust annotation only.
-3. **Easy-win radius / age / floor** — unchanged questions from calibration-prep §2
-   (60 km vs 40 km practical crew radius; 30 d vs 60 d; any smallest-worthwhile job).
+3. **Easy-win age window** — radius (layered bands) and floor (none) are decided above;
+   the one remaining easy-win question is the last-change age window (≤30 d vs ≤60 d).
 
 ## 4. Acceptance criteria
 

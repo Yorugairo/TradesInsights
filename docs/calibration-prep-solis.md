@@ -85,6 +85,14 @@ What the data says (worth confirming against Solis's real capacity):
 - Age 30 → 60 days nearly doubles the pool. If Solis says GCs buy out interiors within
   ~6 weeks of permit issuance, 60 d is right; if sooner, tighten to 30 d.
 
+**DECIDED (owner, 2026-07-20):** the easy-win radius is **layered into concentric
+proximity bands** — **≤20 mi, ≤35 mi, ≤50 mi** from the Lacey home point, nearest band
+shown first (the 50 mi outer bound widens the prior flat 60 km / ~37 mi cutoff). **No
+valuation floor — no job is too small** (directive stands); the $2M upper sanity cap is
+unchanged. Still open: the last-change age window (≤30 d vs ≤60 d). A delivery-config
+follow-up in `config/account-profiles.yaml → delivery.easy_win`. See
+`docs/solis-requirements.md` §3.
+
 ## 3. Solis priority mix (context for the conversation)
 
 By county (score ≥ 80): **King 334, Pierce 148** — the priority pool is King-heavy
