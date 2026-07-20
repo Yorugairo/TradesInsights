@@ -1,7 +1,12 @@
 # Implementation Report: Registry ⇄ Insights dataflow for Solis inference
 
 ## Summary
-Implemented the **non-gated Insights-side subset** of the combined dataflow PRP — the highest-leverage inference win plus the read-widen and Solis bind-readiness. Registry identity now reaches the Solis scorer (it never did before), the contract read consumes the full 21-column view lineage-safely, the observation-loop trust is registry-corroborated, and Solis's own L&I identity is seeded bind-ready. The outward-facing merge (WS-C), the resolution-dedup design (WS-B.4), and the externally-gated items (WS-D, WS-E.2/E.3/E.4) are **not** implemented and are documented as remaining.
+Implemented the **non-gated Insights-side subset** of the combined dataflow PRP — the highest-leverage inference win plus the read-widen and Solis bind-readiness. Registry identity now reaches the Solis scorer (it never did before), the contract read consumes the full 21-column view lineage-safely, the observation-loop trust is registry-corroborated, and Solis's own L&I identity is seeded bind-ready. The externally-gated items (WS-D, WS-E.2/E.3/E.4) and the ops-credentialed steps (WS-C C.2/C.3) are **not** implemented and are documented as remaining.
+
+## Update — WS-B.4 and WS-C shipped (after the initial report)
+- **WS-B.4** (resolver dedup on `registry_ref`) — `findBoundOrganizationByStrongKey` collapses strong-key name-variants onto a registry-bound org; commit `220fb11` on `claude/tmux-install-320aiz`. Validated: typecheck + 7 resolution tests, rerun-safe.
+- **WS-C** (registry write-back seam → trunk) — the already-built seam on `origin/claude/insights-integration-seam` was **merged to `release/trades-staging`** (merge commit `6b72c81`, pushed). Baseline patch-slot-22 collided with trunk's `22_google_place_bundle_policy_contract`; resolved by renumbering the registry patches to `23_registry_public_contract` + `24_registry_partner_inbound` (both depend only on patch 18; README apply-order + census rows updated).
+- **Still owner/ops or gated:** C.2/C.3 (provision the `otn_insights` login role + `REGISTRY_DATABASE_URL` + run the loop — needs live registry creds; unblocks E.1b Solis bind), WS-D (seed `registry_trade_taxonomy`; the merged loader then assigns trades), WS-E.2 (warm-network scoring signal), WS-E.3/E.4 (source flips / Solis calibration).
 
 ## Assessment vs Reality
 | Metric | Predicted (Plan) | Actual |
