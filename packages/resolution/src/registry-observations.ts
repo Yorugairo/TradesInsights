@@ -80,6 +80,21 @@ export function laplaceAcceptRate(accepts: number, decisions: number): number {
 }
 
 /**
+ * A.4 — bounded corroboration bonus from the registry's OWN record count (a
+ * distinct dataset independently substantiating the entity). Capped so a
+ * well-established registry entity lifts a thin-Insights-evidence binding
+ * candidate WITHOUT flattening the corroboration signal — registry counts are
+ * large, so we add a small bounded term, never the raw count. Null/undefined
+ * (hand-built rows, or an unpopulated contract view) ⇒ no bonus.
+ */
+export function registryCorroborationBonus(recordCount: number | null | undefined): number {
+  if (recordCount == null) return 0;
+  if (recordCount >= 3) return 0.5;
+  if (recordCount >= 1) return 0.25;
+  return 0;
+}
+
+/**
  * Cross-system name key: both the Insights org name and the registry
  * canonical name fold through this before comparison, so neither side's
  * normalization quirks can break equality (Insights orgNameKey strips legal
@@ -347,7 +362,12 @@ export async function generateRegistryObservations(
       identifier,
       locality,
       role: org.role_weight,
-      corroboration: Math.min(1, org.record_count / 3),
+      // A.4 — lift by the registry's own corroboration of the entity (bounded;
+      // absent on hand-built rows / unpopulated view ⇒ unchanged).
+      corroboration: Math.min(
+        1,
+        org.record_count / 3 + registryCorroborationBonus(hit.recordCount),
+      ),
       ruleHistory: rate(ruleKey),
     };
     inserts.push({

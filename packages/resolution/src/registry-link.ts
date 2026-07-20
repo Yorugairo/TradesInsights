@@ -37,6 +37,20 @@ export interface RegistryIdentityRow {
    * whose name drifts — folded through `addressMatchKey` before comparison. */
   registeredAddress: string | null;
   registeredPostalCode: string | null;
+  /** Entity lifecycle status. The contract view pre-filters to 'active'; we read
+   * and guard on it (buildRegistryIndex) as defense-in-depth if the view ever
+   * widens to expose merged/archived rows. Optional: absent on hand-built test
+   * rows, always populated by the live fetch. */
+  status?: string | null;
+  /** Registry corroboration — source-record count backing this entity (a trust
+   * signal folded into the observation-loop corroboration component). */
+  recordCount?: number | null;
+  /** Registered website root domain (identifier_type 'root_domain'). Surfaced for
+   * a future match key; dormant until the registry website lane (Phase 4, Codex)
+   * populates domains, so no binding rule reads it yet. */
+  rootDomain?: string | null;
+  /** When the registry first minted this entity — an age/stability trust signal. */
+  firstMintedAt?: string | null;
 }
 
 /** Public identity snapshot cached on organizations.registry_identity_json. */
@@ -80,6 +94,11 @@ export function buildRegistryIndex(rows: RegistryIdentityRow[]): RegistryIndex {
   const byUbi = new Map<string, RegistryIdentityRow>();
   const byContractorNumber = new Map<string, RegistryIdentityRow>();
   for (const row of rows) {
+    // Lineage safety (A.2): the contract view pre-filters to active entities, but
+    // if it ever surfaces merged/archived rows, never index a superseded entity.
+    // Only skip on an explicit non-active status; absent status ⇒ treat as active
+    // (backward-compatible with hand-built rows and the pre-filtered view).
+    if (row.status != null && row.status !== "active") continue;
     const ubi = normalizeIdentifier(row.ubi);
     if (ubi && !byUbi.has(ubi)) byUbi.set(ubi, row);
     for (const cn of row.contractorNumbers ?? []) {
@@ -161,7 +180,8 @@ export interface RegistryLinkOptions {
 export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise<RegistryIdentityRow[]> {
   const res = await pool.query(
     `SELECT entity_id, ubi, contractor_numbers, canonical_name, canonical_name_normalized,
-            phone, city_token, state_code, registered_address, registered_postal_code
+            phone, city_token, state_code, registered_address, registered_postal_code,
+            status, record_count, root_domain, first_minted_at
        FROM registry_public.trades_identity_v1`,
   );
   return res.rows.map((r: Record<string, unknown>) => ({
@@ -175,6 +195,10 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     stateCode: (r["state_code"] as string | null) ?? null,
     registeredAddress: (r["registered_address"] as string | null) ?? null,
     registeredPostalCode: (r["registered_postal_code"] as string | null) ?? null,
+    status: (r["status"] as string | null) ?? null,
+    recordCount: r["record_count"] == null ? null : Number(r["record_count"]),
+    rootDomain: (r["root_domain"] as string | null) ?? null,
+    firstMintedAt: (r["first_minted_at"] as string | null) ?? null,
   }));
 }
 

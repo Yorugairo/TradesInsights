@@ -7,6 +7,7 @@ import {
   laplaceAcceptRate,
   matchOrgByAddress,
   PHONE_MATCH_MIN_NAME_SIMILARITY,
+  registryCorroborationBonus,
   TRADE_KEYWORDS,
   TRUST_WEIGHTS,
   type TrustComponents,
@@ -48,6 +49,30 @@ describe("computeTrust", () => {
   it("clamps out-of-range components", () => {
     expect(computeTrust({ ...base, name: 2 })).toBe(1);
     expect(computeTrust({ ...base, name: -1 })).toBeCloseTo(0.7);
+  });
+});
+
+describe("registryCorroborationBonus (A.4 — bounded registry corroboration)", () => {
+  it("is 0 when the registry record count is absent (hand-built rows / unpopulated view)", () => {
+    expect(registryCorroborationBonus(null)).toBe(0);
+    expect(registryCorroborationBonus(undefined)).toBe(0);
+    expect(registryCorroborationBonus(0)).toBe(0);
+  });
+
+  it("lifts by a bounded amount, monotonic but capped (large registry counts never dominate)", () => {
+    expect(registryCorroborationBonus(1)).toBe(0.25);
+    expect(registryCorroborationBonus(2)).toBe(0.25);
+    expect(registryCorroborationBonus(3)).toBe(0.5);
+    expect(registryCorroborationBonus(500)).toBe(0.5);
+  });
+
+  it("raises a thin-Insights-evidence candidate's corroboration when the registry substantiates it", () => {
+    // Insights alone: 1 distinct source record ⇒ corroboration 1/3. The registry
+    // independently substantiating the entity adds a bounded lift.
+    const insightsOnly = Math.min(1, 1 / 3 + registryCorroborationBonus(null));
+    const withRegistry = Math.min(1, 1 / 3 + registryCorroborationBonus(9));
+    expect(withRegistry).toBeGreaterThan(insightsOnly);
+    expect(withRegistry).toBeCloseTo(1 / 3 + 0.5);
   });
 });
 
