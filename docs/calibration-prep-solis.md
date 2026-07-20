@@ -88,13 +88,26 @@ What the data says (worth confirming against Solis's real capacity):
 ## 3. Solis priority mix (context for the conversation)
 
 By county (score ≥ 80): **King 334, Pierce 148** — the priority pool is King-heavy
-(Seattle commercial/TI volume). Worth asking whether Solis actually wants King work or
-whether Pierce/Thurston should be up-weighted (a routing-rule change, versioned in
-`config/account-profiles.yaml`).
+(Seattle commercial/TI volume).
+
+**DECIDED (owner, 2026-07-20):** up-weight **Thurston / home-metro relative to King
+commercial**; **Pierce commercial sits roughly equal**; King commercial is the
+relatively down-weighted bucket. It's Solis's home turf and relationship radius, not
+distant Seattle TI volume — but King still surfaces (a geographic routing weight, not a
+hard filter), versioned in `config/account-profiles.yaml`. This is a routing/scorer
+follow-up, not yet implemented. See `docs/solis-requirements.md` §3.
 
 By stage (score ≥ 80): permit_issued 295, permit_applied 178, complete 6, near_final 2,
 unknown 1 — the pool is concentrated exactly where an interior sub wants it
 (issued/applied), which supports the easy-win framing.
+
+**DECIDED (owner, 2026-07-20):** application-stage vs issued is **NEUTRAL** — an equal
+opportunity is equal regardless of stage; a small team makes residential just as good
+as commercial, and surfacing the opportunity + building the relationship matters more
+than out-ranking one stage. The pre-permit bid window is still *surfaced* (informational
+bid line) but gets no scoring boost. Also decided: a **small** positive weight for
+`warm_gc_active` (relationship-first). Both are `account-profiles.yaml` + scorer
+follow-ups.
 
 ## 4. Also bring to the session
 

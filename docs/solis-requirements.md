@@ -115,22 +115,43 @@ priority threshold is **80** (~13 changed/week; reviewable). See
 
 ---
 
-## 3. Calibration gate — decisions the Solis session still owns
+## 3. Calibration gate — decisions for the Solis session
 
-These are **not** implemented as weights yet (R5.1); the session decides them. The new
-surface adds two questions to the existing list in `docs/calibration-prep-solis.md`:
+Signals ship score-neutral (R5.1); weights are set deliberately here. Below, ✅ items
+carry **owner direction (2026-07-20)** and become implementation tasks (versioned in
+`config/account-profiles.yaml` + a scorer bump); ◻ items are still open for the
+session. Standing counts are in `docs/calibration-prep-solis.md`.
+
+### ✅ Decided (owner, 2026-07-20) — implement, then confirm with Solis
+
+- **Geographic weighting — up-weight the home metro, not King commercial.**
+  Thurston / home-metro is up-weighted **relative to King commercial**; **Pierce
+  commercial sits roughly equal**; King commercial is the relatively down-weighted
+  bucket. Rationale: Solis's home turf and relationship radius, not distant Seattle TI
+  volume. (Implement as a routing/geographic component, not a hard filter — King work
+  still surfaces, it just doesn't dominate the priority pool. Versioned in
+  `account-profiles.yaml`.)
+- **Application-stage vs issued — NEUTRAL.** An equal opportunity is equal regardless
+  of `permit_applied` vs `permit_issued`; the team is small enough that residential is
+  just as good as commercial. **Surfacing the opportunity and building the
+  relationship matters more than out-ranking one stage over another.** So the
+  pre-permit bid window is still *surfaced* (the R4 bid-window line, informational) but
+  carries **no scoring boost** over an equivalent issued job. (No change — confirms the
+  current timing-neutral behavior; keeps the core `domain-bid-timing.md` inversion as a
+  surfaced line, not a ranking lever.)
+- **`warm_gc_active` — small positive weight.** A project whose GC is in Solis's warm
+  set gets a **small** lift (relationship-first, per the philosophy above), not a large
+  one. (Implement a small weight; keep it bounded so it nudges rather than reorders.)
+
+### ◻ Still open — bring to the session
 
 1. **Priority threshold** (currently 80) — re-check now that Olympia application-stage
-   volume is flowing (the standing counts in calibration-prep predate this feed).
-2. **County / stage mix** — the old priority pool was King-heavy (King 334 / Pierce
-   148 at ≥80; stage permit_issued 295 / permit_applied 178). With home-metro
-   application-stage records now flowing, confirm whether Thurston/home-metro should be
-   up-weighted vs King commercial.
-3. **Application-stage weight** — should a `permit_applied` commercial project (live
-   pre-permit bid window) rank *above* an equivalent issued residential one? This is
-   the core inversion from `domain-bid-timing.md`; it is currently timing-neutral.
-4. **`verified_gc_on_project` / `warm_gc_active` weights** — how much lift, if any.
-5. Easy-win radius/age/floor (unchanged questions from calibration-prep §2).
+   volume is flowing (the standing counts predate this feed; ~13 changed/week at 80).
+2. **`verified_gc_on_project` weight** — `warm_gc_active` is decided (small); confirm
+   whether "GC is a resolved registry entity" should add any lift on its own, or stay
+   a trust annotation only.
+3. **Easy-win radius / age / floor** — unchanged questions from calibration-prep §2
+   (60 km vs 40 km practical crew radius; 30 d vs 60 d; any smallest-worthwhile job).
 
 ## 4. Acceptance criteria
 
