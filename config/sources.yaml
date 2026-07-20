@@ -347,12 +347,27 @@ sources:
     authority: City of Tumwater
     priority: P0
     landing_url: https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/development-review
+    access_url: https://www.ci.tumwater.wa.us/departments/community-development-department/permitting-building/development-review
     format: html_docs
     access_class: html
-    cadence: weekly
+    cadence: on_demand
     county: Thurston
     permitting_jurisdiction: City of Tumwater
     enabled: false
+    terms_reviewed_at: "2026-07-19"
+    robots_reviewed_at: "2026-07-19"
+    notes: >-
+      Development Review Committee (DRC) weekly meeting agendas (Date / Meeting
+      Type / Agenda table). Adapter: TumwaterDevelopmentReviewAdapter (key
+      tumwater_development_review). Genuine-visitor capture-fed and DISABLED —
+      ci.tumwater.wa.us sits behind an Akamai edge policy that 403s automated/
+      datacenter clients (no bot bypass); fetch() dead-letters and the parser runs
+      over the captured index (fixtures/tumwater_development_review/drc-agendas.index.json).
+      One record per meeting (date + agenda PDF link). The index carries NO party
+      data (applicant/project names live inside the agenda PDFs, which we do not
+      fetch — keeps homeowner PII out of the registry bridge), so organizations[]
+      is empty and normalizedStage stays unknown. Parser reconciles record count
+      against the dated agenda rows.
 
   - key: tumwater_sepa
     name: Tumwater NOA / SEPA determinations

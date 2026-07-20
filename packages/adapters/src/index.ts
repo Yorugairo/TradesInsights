@@ -26,6 +26,7 @@ import { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 import { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
 import { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
 import { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
+import { TumwaterDevelopmentReviewAdapter } from "./tumwater-development-review.js";
 import { WaSepaAdapter } from "./wa-sepa.js";
 
 export { FakeSourceAdapter };
@@ -48,6 +49,7 @@ export { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 export { WaSepaAdapter } from "./wa-sepa.js";
 export { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
 export { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
+export { TumwaterDevelopmentReviewAdapter } from "./tumwater-development-review.js";
 
 const REGISTRY: Record<string, () => SourceAdapter> = {
   fake_source: () => new FakeSourceAdapter(),
@@ -67,6 +69,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   wa_sepa: () => new WaSepaAdapter(),
   thurston_active_notices: () => new ThurstonActiveNoticesAdapter(),
   tumwater_development_arcgis: () => new TumwaterDevelopmentArcgisAdapter(),
+  tumwater_development_review: () => new TumwaterDevelopmentReviewAdapter(),
   pierce_permits_arcgis: () => new PiercePermitsArcgisAdapter(),
   pierce_pals_contractor: () => new PiercePalsContractorAdapter(),
   puyallup_permits_arcgis: () => new PuyallupPermitsArcgisAdapter(),
