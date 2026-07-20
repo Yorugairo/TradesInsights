@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx src/main.ts",
     "source:run": "tsx src/cli/source-run.ts",
+    "source:run:operator-local": "tsx src/cli/source-run-operator-local.ts",
     "source:backfill": "tsx src/cli/source-backfill.ts",
     "source:replay": "tsx src/cli/source-replay.ts",
     "resolve:run": "tsx src/cli/resolve-run.ts",

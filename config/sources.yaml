@@ -355,16 +355,22 @@ sources:
     cadence: on_demand
     county: Thurston
     permitting_jurisdiction: City of Tumwater
-    enabled: false
+    enabled: true
     terms_reviewed_at: "2026-07-19"
     robots_reviewed_at: "2026-07-19"
     notes: >-
       Development Review Committee (DRC) weekly meeting agendas (Date / Meeting
       Type / Agenda table). Adapter: TumwaterDevelopmentReviewAdapter (key
-      tumwater_development_review). Genuine-visitor capture-fed and DISABLED —
-      ci.tumwater.wa.us sits behind an Akamai edge policy that 403s automated/
-      datacenter clients (no bot bypass); fetch() dead-letters and the parser runs
-      over the captured index (fixtures/tumwater_development_review/drc-agendas.index.json).
+      tumwater_development_review). Genuine-visitor capture-fed; ENABLED for
+      OPERATOR-LOCAL runs (2026-07-20). cadence on_demand ⇒ schedulableSources
+      NEVER schedules it in the datacenter (where ci.tumwater.wa.us's Akamai edge
+      policy 403s automated/datacenter clients — no bot bypass, fetch() dead-letters).
+      Akamai fingerprints the automated CLIENT (not just egress IP), so the
+      adapter's fetch() 403s even in-region — the operator-local run therefore
+      parses an in-region GENUINE-BROWSER capture of the index staged into
+      fixtures/tumwater_development_review/ (drc-agendas.index.json). Cron `pnpm
+      source:run:operator-local` on the operator's machine after the daily capture;
+      never a bot/WAF bypass.
       One record per meeting (date + agenda PDF link). The index carries NO party
       data (applicant/project names live inside the agenda PDFs, which we do not
       fetch — keeps homeowner PII out of the registry bridge), so organizations[]
@@ -382,7 +388,7 @@ sources:
     cadence: on_demand
     county: Thurston
     permitting_jurisdiction: City of Tumwater
-    enabled: false
+    enabled: true
     terms_reviewed_at: "2026-07-19"
     robots_reviewed_at: "2026-07-19"
     notes: >-
@@ -390,10 +396,14 @@ sources:
       per project with its TUM-YY-NNNN case number and dated Notice of
       Application / SEPA Determination / Notice of Decision document links.
       Adapter: TumwaterSepaAdapter (key tumwater_sepa). Genuine-visitor
-      capture-fed and DISABLED — ci.tumwater.wa.us sits behind an Akamai edge
-      policy that 403s automated/datacenter clients (no bot bypass); fetch()
-      dead-letters and the parser runs over the captured index
-      (fixtures/tumwater_sepa/noa-sepa.index.json). The index carries NO party
+      capture-fed; ENABLED for OPERATOR-LOCAL runs (2026-07-20). cadence on_demand
+      ⇒ schedulableSources NEVER schedules it in the datacenter (where
+      ci.tumwater.wa.us's Akamai edge policy 403s automated/datacenter clients —
+      no bot bypass). Akamai fingerprints the automated CLIENT (not just egress IP),
+      so the adapter's fetch() 403s even in-region — the operator-local run therefore
+      parses an in-region GENUINE-BROWSER capture staged into
+      fixtures/tumwater_sepa/ (noa-sepa.index.json). Cron `pnpm source:run:operator-local`
+      on the operator's machine after the daily capture. The index carries NO party
       data (applicant/owner names live inside the linked PDFs, which we do not
       fetch — keeps homeowner PII out of the registry bridge), so organizations[]
       is empty and normalizedStage stays unknown (decision outcome is not visible

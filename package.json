@@ -18,6 +18,7 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r run typecheck",
     "source:run": "pnpm --filter @otn/worker source:run",
+    "source:run:operator-local": "pnpm --filter @otn/worker source:run:operator-local",
     "source:backfill": "pnpm --filter @otn/worker source:backfill",
     "map": "sigmap",
     "map:ask": "sigmap ask",

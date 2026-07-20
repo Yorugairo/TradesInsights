@@ -86,6 +86,25 @@ export function schedulableSources(sources: SourceConfig[]): SourceConfig[] {
   );
 }
 
+/**
+ * OPERATOR-LOCAL sources — the mirror of schedulableSources: enabled but
+ * `on_demand`, so the datacenter scheduler never touches them. These are the
+ * genuine-visitor capture-fed sources (e.g. Olympia/Tumwater behind an Akamai
+ * edge block that 403s datacenter egress) that must be run from a non-datacenter,
+ * in-region connection where an ordinary-visitor fetch() succeeds. The operator
+ * crons `pnpm source:run:operator-local` (runs exactly this set). Private
+ * authorized inboxes are excluded — they have their own delivery path.
+ */
+export function operatorLocalSources(sources: SourceConfig[]): SourceConfig[] {
+  return sources.filter(
+    (s) =>
+      s.enabled &&
+      s.cadence === "on_demand" &&
+      s.access_class !== "private_authorized" && // authorized inbox — own path
+      s.access_class !== "fixture", // offline test harness (fake_source)
+  );
+}
+
 async function runMaintenance(logger: Logger): Promise<void> {
   const pool = createPool();
   const db = createDb(pool);
