@@ -167,4 +167,23 @@ describe("wa_sepa WS2 — applicant contact + site geo (business-gated)", () => 
     expect(garbled.address).toBeUndefined();
     expect(NormalizedSourceRecordSchema.safeParse(parsed[2]!.record).success).toBe(true);
   });
+
+  it("does not promote an address/phone for a family trust (M2 PII gate)", async () => {
+    const adapter = new WaSepaAdapter();
+    const rows = [
+      {
+        separegisterid: "t1",
+        sepanumber: "202600021",
+        countyname: "THURSTON",
+        applicantname: "Smith Family Trust",
+        applicantcontactinfo: "Smith Family Trust\n742 Evergreen Ter, Olympia, WA 98501\n(360) 555-0100",
+      },
+    ];
+    const parsed = await adapter.parse(rawArtifact(JSON.stringify(rows)), testContext(adapter.key));
+    const applicant = parsed[0]!.record.organizations.find((o) => o.role === "applicant")!;
+    // "TRUST" is no longer a business marker → name only, no promoted PII.
+    expect(applicant.name).toBe("Smith Family Trust");
+    expect(applicant.address).toBeUndefined();
+    expect(applicant.phone).toBeUndefined();
+  });
 });

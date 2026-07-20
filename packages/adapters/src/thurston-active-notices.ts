@@ -75,7 +75,7 @@ export function acresFromText(text: string | null | undefined): string | null {
  * homeowner surname). Only these are emitted as an organization — homeowner
  * project names are PII and stay out of the bridge. */
 const BUSINESS_PROJECT_RE =
-  /\b(LLC|L\.L\.C|INC|CORP|CORPORATION|CO|COMPANY|LP|LLP|PLLC|DEVELOPMENT|DEVELOPERS?|HOMES?|BUILDERS?|CONSTRUCTION|CONTRACTING|PROPERTIES|PARTNERS?|GROUP|ENTERPRISES?|HOLDINGS?|INVESTMENTS?|ASSOCIATES|REALTY|CAPITAL|APARTMENTS?|MOBILE HOME PARK|MHP|RV PARK|QUARRY|MINE|LANDFILL)\b/i;
+  /\b(LLC|L\.L\.C|INC|CORP|CORPORATION|COMPANY|LP|LLP|PLLC|DEVELOPMENT|DEVELOPERS?|HOMES?|BUILDERS?|CONSTRUCTION|CONTRACTING|PROPERTIES|PARTNERS?|GROUP|ENTERPRISES?|HOLDINGS?|INVESTMENTS?|ASSOCIATES|REALTY|CAPITAL|APARTMENTS?|MOBILE HOME PARK|MHP|RV PARK|QUARRY|MINE|LANDFILL)\b/i;
 
 /** WS6: split issue-vs-application date semantics from a notice heading. A
  * hearing date is a FUTURE event, not a lifecycle date, so it stays null. */
@@ -253,7 +253,7 @@ export class ThurstonActiveNoticesAdapter implements SourceAdapter {
               ? [{ factPath: "lots", text: `${lots} lots`, pageOrSection: "notice description" }]
               : []),
             ...(acres !== null
-              ? [{ factPath: "squareFeet", text: `${acres} acres`, pageOrSection: "notice description" }]
+              ? [{ factPath: "description", text: `${acres} acres`, pageOrSection: "notice description" }]
               : []),
             ...organizations.map((o) => ({
               factPath: "organizations",

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NormalizedSourceRecordSchema } from "@otn/domain";
 import type { DiscoveredArtifact, RawArtifact } from "@otn/source-sdk";
-import { TumwaterPlanningNoticesAdapter } from "./tumwater-planning-notices.js";
+import { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
 
 const INDEX = join(FIXTURES_DIR, "tumwater_sepa", "noa-sepa.index.json");
@@ -27,9 +27,9 @@ function rawIndex(body: Buffer): RawArtifact {
   };
 }
 
-describe("tumwater_planning_notices — parses the captured NOA/SEPA index", () => {
+describe("tumwater_sepa — parses the captured NOA/SEPA index", () => {
   it("emits one record per notice row and self-reconciles against the index", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     const raw = rawIndex(await readFile(INDEX));
     const parsed = await adapter.parse(raw, testContext(adapter.key));
 
@@ -52,7 +52,7 @@ describe("tumwater_planning_notices — parses the captured NOA/SEPA index", () 
   });
 
   it("maps a single-stage NOA row (5th Ave Townhomes, TUM-26-0115)", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     const parsed = await adapter.parse(rawIndex(await readFile(INDEX)), testContext(adapter.key));
 
     const rec = parsed.find((p) => p.record.externalId === "TUM-26-0115");
@@ -68,7 +68,7 @@ describe("tumwater_planning_notices — parses the captured NOA/SEPA index", () 
   });
 
   it("promotes the most-advanced stage and flags the external Ecology SEPA link (TUM-25-1421)", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     const parsed = await adapter.parse(rawIndex(await readFile(INDEX)), testContext(adapter.key));
 
     const rec = parsed.find((p) => p.record.externalId === "TUM-25-1421");
@@ -84,7 +84,7 @@ describe("tumwater_planning_notices — parses the captured NOA/SEPA index", () 
   });
 
   it("slugs a stable externalId for a row with no TUM case number", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     const parsed = await adapter.parse(rawIndex(await readFile(INDEX)), testContext(adapter.key));
 
     const rec = parsed.find((p) => p.record.externalId === "notice-i-5-commerce-plat-vacation");
@@ -94,36 +94,36 @@ describe("tumwater_planning_notices — parses the captured NOA/SEPA index", () 
   });
 });
 
-describe("tumwater_planning_notices — discovery & capture-fed gate", () => {
+describe("tumwater_sepa — discovery & capture-fed gate", () => {
   it("discovers the single NOA/SEPA index artifact", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     const arts = await adapter.discover(testContext(adapter.key));
     expect(arts).toHaveLength(1);
-    expect(arts[0]!.idempotencyKey).toBe("tumwater_planning_notices:noa_sepa_index");
+    expect(arts[0]!.idempotencyKey).toBe("tumwater_sepa:noa_sepa_index");
   });
 
   it("fetch dead-letters (Akamai edge gate) rather than driving a bot", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     const [art] = await adapter.discover(testContext(adapter.key));
     await expect(adapter.fetch(art!, testContext(adapter.key))).rejects.toThrow(/capture-fed|akamai/i);
   });
 
   it("an empty body throws instead of emitting nothing silently", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     await expect(
       adapter.parse(rawIndex(Buffer.alloc(0)), testContext(adapter.key)),
     ).rejects.toThrow(/empty artifact/i);
   });
 
   it("malformed JSON throws rather than silently parsing to nothing", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     await expect(
       adapter.parse(rawIndex(Buffer.from("{not json", "utf8")), testContext(adapter.key)),
     ).rejects.toThrow(/not valid JSON/i);
   });
 
   it("a shape-changed index (no rows) throws the schema guard", async () => {
-    const adapter = new TumwaterPlanningNoticesAdapter();
+    const adapter = new TumwaterSepaAdapter();
     await expect(
       adapter.parse(rawIndex(Buffer.from(JSON.stringify({ surface: "x" }), "utf8")), testContext(adapter.key)),
     ).rejects.toThrow(/shape validation/i);

@@ -60,8 +60,14 @@ export interface SeattleSocrataConfig {
    * permits publish `decisiondate` and NEVER `issueddate` — keying this off the
    * config (not a global read) keeps the building behavior untouched. */
   issuedDateField: "issueddate" | "decisiondate";
-  /** Deterministic stage from explicit dates (documented in the ledger). */
-  stageFor(row: { issued: boolean; completed: boolean }): NormalizedSourceRecord["normalizedStage"];
+  /** Deterministic stage from explicit dates (documented in the ledger). `adverse`
+   * is set only for a land-use row whose decision date is paired with a
+   * withdrawn/denied statuscurrent — so a dated non-approval is never "approved". */
+  stageFor(row: {
+    issued: boolean;
+    completed: boolean;
+    adverse?: "withdrawn" | "denied" | null;
+  }): NormalizedSourceRecord["normalizedStage"];
 }
 
 export const SEATTLE_BUILDING_CONFIG: SeattleSocrataConfig = {
@@ -79,10 +85,23 @@ export const SEATTLE_LAND_USE_CONFIG: SeattleSocrataConfig = {
   recordType: "land_use_permit",
   // Land-use publishes the decision as `decisiondate`, never `issueddate`.
   issuedDateField: "decisiondate",
-  // A land-use (master use) permit is the entitlement instrument: issued
-  // decision → approved; application pending → entitlement.
-  stageFor: ({ issued }) => (issued ? "approved" : "entitlement"),
+  // A land-use (master use) permit is the entitlement instrument: a favorable
+  // decision → approved; application pending → entitlement. M3: a decision that
+  // was withdrawn/denied is NOT an approval — map it to withdrawn/unknown.
+  stageFor: ({ issued, adverse }) =>
+    adverse === "withdrawn"
+      ? "withdrawn"
+      : adverse === "denied"
+        ? "unknown"
+        : issued
+          ? "approved"
+          : "entitlement",
 };
+
+/** M3: a land-use decision date paired with one of these statuscurrent values
+ * is a NON-approval — its stage is never "approved" and its issueDate stays null. */
+const LAND_USE_WITHDRAWN_RE = /\b(withdrawn|cancel(?:l?ed)?|void(?:ed)?)\b/i;
+const LAND_USE_DENIED_RE = /\b(denied|deny|refus(?:ed)?|dismiss(?:ed)?|returned)\b/i;
 
 export class SeattleSocrataAdapter implements SourceAdapter {
   readonly key: string;
@@ -178,7 +197,20 @@ export class SeattleSocrataAdapter implements SourceAdapter {
       // touching building (which keeps using issueddate).
       const issuedDateRaw =
         this.cfg.issuedDateField === "decisiondate" ? (r.decisiondate ?? null) : (r.issueddate ?? null);
-      const issued = Boolean(issuedDateRaw);
+      // M3: a land-use decision date whose statuscurrent says the outcome was NOT
+      // an approval (withdrawn/denied) must never read as "approved" — flag it so
+      // the stage becomes withdrawn/unknown and issueDate stays null. Building has
+      // no decisiondate, so `adverse` is always null there.
+      const statusText = r.statuscurrent ?? "";
+      const adverse: "withdrawn" | "denied" | null =
+        this.cfg.issuedDateField === "decisiondate" && issuedDateRaw
+          ? LAND_USE_WITHDRAWN_RE.test(statusText)
+            ? "withdrawn"
+            : LAND_USE_DENIED_RE.test(statusText)
+              ? "denied"
+              : null
+          : null;
+      const issued = Boolean(issuedDateRaw) && adverse === null;
       const completed = Boolean(r.completeddate);
       const address = [r.originaladdress1, r.originalcity, r.originalzip]
         .filter(Boolean)
@@ -213,9 +245,9 @@ export class SeattleSocrataAdapter implements SourceAdapter {
           permitType: r.permittypemapped ?? null,
           documentType: null,
           statusRaw: r.statuscurrent ?? null,
-          normalizedStage: this.cfg.stageFor({ issued, completed }),
+          normalizedStage: this.cfg.stageFor({ issued, completed, adverse }),
           applicationDate: r.applieddate ?? null,
-          issueDate: issuedDateRaw,
+          issueDate: issued ? issuedDateRaw : null,
           sourceUpdatedAt: null,
           valuationUsd: Number.isFinite(cost) && cost > 0 ? cost : null,
           units: Number.isFinite(units) && units > 0 ? Math.round(units) : null,
@@ -240,12 +272,21 @@ export class SeattleSocrataAdapter implements SourceAdapter {
                   },
                 ]
               : []),
-            ...(issuedDateRaw
+            ...(issued
               ? [
                   {
                     factPath: "issueDate",
                     text: `${this.cfg.issuedDateField}: ${issuedDateRaw}`,
                     pageOrSection: this.cfg.issuedDateField,
+                  },
+                ]
+              : []),
+            ...(adverse
+              ? [
+                  {
+                    factPath: "normalizedStage",
+                    text: `${this.cfg.issuedDateField} ${issuedDateRaw} but statuscurrent="${statusText}" → ${adverse}, not approved`,
+                    pageOrSection: "statuscurrent",
                   },
                 ]
               : []),

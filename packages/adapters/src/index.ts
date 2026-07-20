@@ -20,7 +20,7 @@ import { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 import { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
 import { CentraliaPermitReportsAdapter } from "./centralia-permit-reports.js";
 import { OlympiaSmartgovReportsAdapter } from "./olympia-smartgov-reports.js";
-import { TumwaterPlanningNoticesAdapter } from "./tumwater-planning-notices.js";
+import { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 import { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 import { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
@@ -72,7 +72,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   puyallup_permits_arcgis: () => new PuyallupPermitsArcgisAdapter(),
   centralia_permit_reports: () => new CentraliaPermitReportsAdapter(),
   olympia_smartgov_reports: () => new OlympiaSmartgovReportsAdapter(),
-  tumwater_planning_notices: () => new TumwaterPlanningNoticesAdapter(),
+  tumwater_sepa: () => new TumwaterSepaAdapter(),
   tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
   tacoma_solicitations: () => new TacomaSolicitationsAdapter(),
 };
@@ -81,7 +81,7 @@ export { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 export { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
 export { CentraliaPermitReportsAdapter } from "./centralia-permit-reports.js";
 export { OlympiaSmartgovReportsAdapter } from "./olympia-smartgov-reports.js";
-export { TumwaterPlanningNoticesAdapter } from "./tumwater-planning-notices.js";
+export { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 export { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 export { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
 

@@ -47,9 +47,12 @@ function monthShift(month: string, delta: number): string {
 
 /** Business / agency markers on a party name. A party without any of these is a
  * private individual (homeowner) — its mailing address is NOT promoted to a
- * matchable identifier (PII stays out of the bridge). The name is still emitted. */
+ * matchable identifier (PII stays out of the bridge). The name is still emitted.
+ * Deliberately excludes a bare "CO" (ambiguous token) and "TRUST" (family trusts
+ * are a residence-ownership vehicle, not a contractor) so an individual is never
+ * misgated to a business and given a promoted home address. */
 const BUSINESS_RE =
-  /\b(LLC|L\.L\.C|INC|CORP|CO|COMPANY|LTD|LP|LLP|PLLC|ROOFING|CONSTRUCTION|CONTRACTING|ENGINEERING|ELECTRIC(AL)?|PLUMBING|MECHANICAL|BUILDERS?|DEVELOPMENT|HOMES?|SERVICES?|SYSTEMS?|GROUP|ASSOCIATES|ENTERPRISES?|PARTNERS?|PROPERTIES|MANAGEMENT|HOLDINGS?|INVESTMENTS?|CAPITAL|REALTY|CITY|COUNTY|STATE|DISTRICT|DEPT|DEPARTMENT|PORT|UNIVERSITY|COLLEGE|SCHOOL|AUTHORITY|AGENCY|CHURCH|TRUST|FOUNDATION)\b/i;
+  /\b(LLC|L\.L\.C|INC|CORP|COMPANY|LTD|LP|LLP|PLLC|ROOFING|CONSTRUCTION|CONTRACTING|ENGINEERING|ELECTRIC(AL)?|PLUMBING|MECHANICAL|BUILDERS?|DEVELOPMENT|HOMES?|SERVICES?|SYSTEMS?|GROUP|ASSOCIATES|ENTERPRISES?|PARTNERS?|PROPERTIES|MANAGEMENT|HOLDINGS?|INVESTMENTS?|CAPITAL|REALTY|CITY|COUNTY|STATE|DISTRICT|DEPT|DEPARTMENT|PORT|UNIVERSITY|COLLEGE|SCHOOL|AUTHORITY|AGENCY|CHURCH|FOUNDATION)\b/i;
 function isBusinessName(name: string): boolean {
   return BUSINESS_RE.test(name);
 }

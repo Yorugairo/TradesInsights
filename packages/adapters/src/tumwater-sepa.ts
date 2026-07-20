@@ -103,8 +103,8 @@ interface FlatNotice {
   external: boolean;
 }
 
-export class TumwaterPlanningNoticesAdapter implements SourceAdapter {
-  readonly key = "tumwater_planning_notices";
+export class TumwaterSepaAdapter implements SourceAdapter {
+  readonly key = "tumwater_sepa";
   readonly parserVersion = "1.0.0";
 
   async discover(_ctx: RunContext): Promise<DiscoveredArtifact[]> {
@@ -125,7 +125,7 @@ export class TumwaterPlanningNoticesAdapter implements SourceAdapter {
     // Reproduce the gate as a dead-letter rather than feeding a challenge page to
     // the parser — this source is genuine-visitor capture-fed by design.
     throw new Error(
-      `tumwater_planning_notices: ${item.canonicalUrl} is served behind an Akamai edge ` +
+      `tumwater_sepa: ${item.canonicalUrl} is served behind an Akamai edge ` +
         "policy that 403s automated/datacenter clients (a genuine in-region browser is " +
         "required; no bot bypass). This source is capture-fed; auto-fetch dead-letters " +
         "here by design — the parser runs over the captured NOA/SEPA index.",
@@ -134,7 +134,7 @@ export class TumwaterPlanningNoticesAdapter implements SourceAdapter {
 
   async parse(raw: RawArtifact, ctx: RunContext): Promise<ParsedSourceRecord[]> {
     if (!raw.body || raw.body.byteLength === 0) {
-      throw new Error("tumwater_planning_notices: empty artifact body — not a captured index");
+      throw new Error("tumwater_sepa: empty artifact body — not a captured index");
     }
 
     let json: unknown;
@@ -142,13 +142,13 @@ export class TumwaterPlanningNoticesAdapter implements SourceAdapter {
       json = JSON.parse(raw.body.toString("utf8"));
     } catch (err) {
       throw new Error(
-        `tumwater_planning_notices: artifact body is not valid JSON — ${(err as Error).message}`,
+        `tumwater_sepa: artifact body is not valid JSON — ${(err as Error).message}`,
       );
     }
     const parsed = IndexSchema.safeParse(json);
     if (!parsed.success) {
       throw new Error(
-        `tumwater_planning_notices: captured index failed shape validation — ${parsed.error.issues
+        `tumwater_sepa: captured index failed shape validation — ${parsed.error.issues
           .map((i) => `${i.path.join(".")}: ${i.message}`)
           .join("; ")}`,
       );
@@ -246,10 +246,10 @@ export class TumwaterPlanningNoticesAdapter implements SourceAdapter {
 
     if (out.length === 0) {
       throw new Error(
-        `tumwater_planning_notices: zero records from ${sourceUrl} — index shape changed?`,
+        `tumwater_sepa: zero records from ${sourceUrl} — index shape changed?`,
       );
     }
-    ctx.logger.info({ records: out.length, rows: rows.length }, "tumwater_planning_notices parsed");
+    ctx.logger.info({ records: out.length, rows: rows.length }, "tumwater_sepa parsed");
     return out;
   }
 
@@ -291,7 +291,7 @@ export class TumwaterPlanningNoticesAdapter implements SourceAdapter {
     if (!index.success) return violations;
 
     const expected = index.data.rows.filter((r) => this.flattenNotices(r).length > 0).length;
-    const v = reconcileCount("tumwater_planning_notices:rows_with_notices", expected, parsed.length);
+    const v = reconcileCount("tumwater_sepa:rows_with_notices", expected, parsed.length);
     if (v) violations.push(v);
     return violations;
   }

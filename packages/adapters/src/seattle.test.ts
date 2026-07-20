@@ -168,6 +168,25 @@ describe("seattle WS3 — contractor org + land-use decisiondate", () => {
     ).toBe(true);
   });
 
+  it("does not label a withdrawn/denied land-use decision as approved (M3)", async () => {
+    const adapter = new SeattleSocrataAdapter(SEATTLE_LAND_USE_CONFIG);
+    const rows = [
+      { permitnum: "9000001-LU", statuscurrent: "Withdrawn", decisiondate: "2026-07-01" },
+      { permitnum: "9000002-LU", statuscurrent: "Denied", decisiondate: "2026-07-01" },
+      { permitnum: "9000003-LU", statuscurrent: "Published", decisiondate: "2026-07-01" },
+    ];
+    const parsed = await adapter.parse(rawArtifact(JSON.stringify(rows), landUseUrl), testContext(adapter.key));
+    const rec = (id: string) => parsed.find((p) => p.record.externalId === id)!.record;
+    // A dated decision that was withdrawn/denied is NOT "approved"; issueDate stays null.
+    expect(rec("9000001-LU").normalizedStage).toBe("withdrawn");
+    expect(rec("9000001-LU").issueDate).toBeNull();
+    expect(rec("9000002-LU").normalizedStage).toBe("unknown");
+    expect(rec("9000002-LU").issueDate).toBeNull();
+    // A genuine published decision is still approved.
+    expect(rec("9000003-LU").normalizedStage).toBe("approved");
+    expect(rec("9000003-LU").issueDate).toBe("2026-07-01");
+  });
+
   it("keeps building issueDate on issueddate (decisiondate change does not leak)", async () => {
     const adapter = new SeattleSocrataAdapter(SEATTLE_BUILDING_CONFIG);
     const body = await readFile(join(FIXTURES_DIR, "seattle_building_permits/window-2026-06.json"));
