@@ -241,7 +241,7 @@ sources:
       key).
 
   - key: olympia_smartgov_reports
-    name: City of Olympia Permits Issued Last 30 Days (SmartGov Exago report)
+    name: City of Olympia SmartGov reports — Permits Issued + Permit Applications (Last 30 Days)
     authority: City of Olympia
     priority: P1
     landing_url: https://ci-olympia-wa.smartgovcommunity.com/Public/ReportsView
@@ -255,18 +255,25 @@ sources:
     terms_reviewed_at: "2026-07-19"
     robots_reviewed_at: "2026-07-19"
     notes: >-
-      "Permits Issued Last 30 Days" Exago report — fills the top P1 Thurston-metro
-      permit-stage gap (Lacey/Solis home turf). PDF-ONLY in practice: every non-PDF
-      eit (Excel/CSV/HTML) returns HTTP 500, and the report renders through a
+      TWO rolling 30-day Exago reports on one adapter — "Permits Issued Last 30
+      Days" (confirmed-work signal) and "Permit Applications Submitted Last 30 Days"
+      (the higher-lead-time APPLICATION-STAGE signal: submission precedes the GC's
+      finish-sub buyout, so a drywall/paint sub can still get in — see
+      docs/domain-bid-timing.md). Both fill the top P1 Thurston-metro permit-stage
+      gap (Lacey/Solis home turf). PDF-ONLY in practice: every non-PDF eit
+      (Excel/CSV/HTML) returns HTTP 500, and each report renders through a
       single-use session-bound eid, so this is genuine-visitor capture-fed (like
       pierce_pals_contractor). ENABLED for operator-triggered capture-fed runs
       (cadence on_demand — never auto-scheduled by schedulableSources; live fetch()
       still dead-letters, so a run consumes a staged genuine-visitor capture). The
-      positional parser runs over captured PDF artifacts
-      (fixtures/olympia_smartgov_reports/permits-issued-last-30-days.pdf). No
+      report-aware positional parser runs over captured PDF artifacts
+      (fixtures/olympia_smartgov_reports/permits-issued-last-30-days.pdf,
+      permit-applications-last-30-days.pdf) and maps applications to
+      applicationDate/permit_applied, issuances to issueDate/permit_issued. No
       phone/licence/valuation/parcel published — applicant name only (org-vs-person
-      flagged). Parser reconciles each category count + Grand Total against the
-      report's own printed totals.
+      flagged). Parser reconciles each category count + Grand Total against each
+      report's own printed totals (issued 572, applications 815; parserVersion
+      1.1.0).
 
   - key: puyallup_permits_arcgis
     name: City of Puyallup Permits (Permit Viewer layer, ArcGIS)
