@@ -251,7 +251,7 @@ sources:
     cadence: on_demand
     county: Thurston
     permitting_jurisdiction: City of Olympia
-    enabled: false
+    enabled: true
     terms_reviewed_at: "2026-07-19"
     robots_reviewed_at: "2026-07-19"
     notes: >-
@@ -259,7 +259,9 @@ sources:
       permit-stage gap (Lacey/Solis home turf). PDF-ONLY in practice: every non-PDF
       eit (Excel/CSV/HTML) returns HTTP 500, and the report renders through a
       single-use session-bound eid, so this is genuine-visitor capture-fed (like
-      pierce_pals_contractor) and stays disabled — fetch() dead-letters and the
+      pierce_pals_contractor). ENABLED for operator-triggered capture-fed runs
+      (cadence on_demand — never auto-scheduled by schedulableSources; live fetch()
+      still dead-letters, so a run consumes a staged genuine-visitor capture). The
       positional parser runs over captured PDF artifacts
       (fixtures/olympia_smartgov_reports/permits-issued-last-30-days.pdf). No
       phone/licence/valuation/parcel published — applicant name only (org-vs-person
