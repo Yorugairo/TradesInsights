@@ -33,10 +33,12 @@ const ISSUED_REPORT_GUID = "c7e5b4a5-9452-4861-a415-491cda5b44dc";
  * organizations[] is name-only (org-vs-person flagged in rawFields).
  */
 
-/** Column x-anchors observed in the DATA rows (viewport points); items are
- * assigned to the nearest anchor. The printed column-header row sits at slightly
- * different x's and is skipped by content. */
-const COLUMNS = [
+/** Column identities in left-to-right order, with the x-anchors observed in the
+ * DATA rows as a FALLBACK only. The live anchors are derived per-report from the
+ * header row (deriveColumns) so a margin/template shift moves the columns and the
+ * parser follows — the WS5 durability lesson: never anchor on absolute page
+ * coordinates. These defaults apply only when the header can't be located. */
+const DEFAULT_COLUMNS = [
   { name: "permitNumber", x: 38 },
   { name: "dateIssued", x: 106 },
   { name: "siteAddress", x: 157 },
@@ -44,12 +46,45 @@ const COLUMNS = [
   { name: "projectDescription", x: 340 },
   { name: "applicant", x: 456 },
 ] as const;
-type ColName = (typeof COLUMNS)[number]["name"];
+type ColName = (typeof DEFAULT_COLUMNS)[number]["name"];
+interface Column {
+  name: ColName;
+  x: number;
+}
 
-function nearestCol(x: number): ColName {
-  let best: (typeof COLUMNS)[number] = COLUMNS[0];
+/** Header label → column identity, in document order. */
+const HEADER_LABELS: { label: string; name: ColName }[] = [
+  { label: "Permit Number", name: "permitNumber" },
+  { label: "Date Issued", name: "dateIssued" },
+  { label: "Site Address", name: "siteAddress" },
+  { label: "Project Name", name: "projectName" },
+  { label: "Project Description", name: "projectDescription" },
+  { label: "Applicant", name: "applicant" },
+];
+
+/** Derive the column x-anchors from the report's own header row, so a reformat
+ * that shifts the margins moves the columns with it. Falls back to the observed
+ * defaults if the full header can't be located; the printed-total reconciliation
+ * in checkInvariants is the final backstop against a mis-derived layout. */
+export function deriveColumns(pages: { items: PdfTextItem[] }[]): Column[] {
+  for (const pg of pages) {
+    const hdr = pg.items.find((i) => i.text === "Permit Number");
+    if (!hdr) continue;
+    const rowItems = pg.items.filter((i) => Math.abs(i.y - hdr.y) <= 4);
+    const found: Column[] = [];
+    for (const { label, name } of HEADER_LABELS) {
+      const it = rowItems.find((i) => i.text === label);
+      if (it) found.push({ name, x: it.x });
+    }
+    if (found.length === HEADER_LABELS.length) return found.sort((a, b) => a.x - b.x);
+  }
+  return DEFAULT_COLUMNS.map((c) => ({ name: c.name, x: c.x }));
+}
+
+function nearestCol(x: number, columns: Column[]): ColName {
+  let best = columns[0]!;
   let bestD = Math.abs(x - best.x);
-  for (const c of COLUMNS) {
+  for (const c of columns) {
     const d = Math.abs(x - c.x);
     if (d < bestD) {
       best = c;
@@ -134,6 +169,8 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
       throw new Error("olympia_smartgov_reports: empty artifact body — not a captured report PDF");
     }
     const pages = await extractPdfTextItems(raw.body);
+    // Durable geometry: column x-anchors from the header, not baked-in coordinates.
+    const columns = deriveColumns(pages);
 
     const out: ParsedSourceRecord[] = [];
     let categoryRecords: ParsedSourceRecord[] = []; // emitted for the current category, awaiting its printed total
@@ -161,20 +198,21 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
         if (isFurniture(joined)) continue;
         if (first.text === "Permit Number") continue; // column-header row
 
-        const countItem = line.find((i) => i.x >= 242 && i.x <= 258 && /^\d+$/.test(i.text));
+        // The count on a total line is the RIGHTMOST bare integer — a category
+        // name may itself contain a number ("2 Family"), and the count comes last.
+        const countItem = [...line].reverse().find((i) => /^\d+$/.test(i.text.trim()));
 
         // Grand total closes the report.
         if (line.some((i) => /^Grand Total/i.test(i.text))) {
           finalizeOpen();
-          const g = line.find((i) => i.x >= 400 && /^\d+$/.test(i.text));
-          if (g) grandTotalPrinted = Number(g.text);
+          if (countItem) grandTotalPrinted = Number(countItem.text);
           awaitingTotalCount = false;
           continue;
         }
 
-        // Category total line (may wrap; the count sits at x≈250, possibly on a
-        // following line while the label continues).
-        if (line.some((i) => i.x < 120 && /^Total\b/.test(i.text))) {
+        // Category total line ("Total <Category> Permits: N"); the count may wrap
+        // onto a following line while the label continues.
+        if (/^Total\b/i.test(first.text)) {
           finalizeOpen();
           if (countItem) {
             this.closeCategoryTotal(currentCategory, Number(countItem.text), categoryRecords, categoryTotals);
@@ -194,18 +232,21 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
         }
         if (awaitingTotalCount) continue; // label continuation ("… Permits:") — ignore
 
-        // Record start: a permit number in its band AND a date in the date band.
-        const dateItem = line.find((i) => i.x >= 72 && i.x < 132 && isDate(i.text));
-        const permitItem = line.find((i) => i.x < 72 && i.text.trim().length > 0);
+        // Record start: a permit number in its column AND a date in the date column
+        // (columns derived from the header, so a margin shift moves them together).
+        const dateItem = line.find((i) => nearestCol(i.x, columns) === "dateIssued" && isDate(i.text));
+        const permitItem = line.find(
+          (i) => nearestCol(i.x, columns) === "permitNumber" && i.text.trim().length > 0,
+        );
         if (dateItem && permitItem) {
           finalizeOpen();
           open = { category: currentCategory ?? "Unknown", cells: new Map() };
-          this.assign(open, line);
+          this.assign(open, line, columns);
           continue;
         }
 
-        // Category section header: a lone item at the left margin.
-        if (line.length === 1 && first.x < 60) {
+        // Category section header: a lone item in the leftmost (permit) column.
+        if (line.length === 1 && nearestCol(first.x, columns) === "permitNumber") {
           finalizeOpen();
           categoryRecords = []; // safety: prior category should have closed on its Total
           currentCategory = first.text.trim();
@@ -213,7 +254,7 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
         }
 
         // Otherwise a wrapped continuation of the open record.
-        if (open) this.assign(open, line);
+        if (open) this.assign(open, line, columns);
       }
     }
     finalizeOpen();
@@ -244,9 +285,9 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
     for (const r of records) (r.rawFields as Record<string, unknown>)["categoryPrintedTotal"] = printed;
   }
 
-  private assign(open: OpenRecord, line: PdfTextItem[]): void {
+  private assign(open: OpenRecord, line: PdfTextItem[], columns: Column[]): void {
     for (const it of line) {
-      const col = nearestCol(it.x);
+      const col = nearestCol(it.x, columns);
       const arr = open.cells.get(col) ?? [];
       arr.push(it.text);
       open.cells.set(col, arr);

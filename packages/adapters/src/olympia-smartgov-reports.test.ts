@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NormalizedSourceRecordSchema } from "@otn/domain";
 import type { DiscoveredArtifact, RawArtifact } from "@otn/source-sdk";
-import { OlympiaSmartgovReportsAdapter } from "./olympia-smartgov-reports.js";
+import type { PdfTextItem } from "@otn/documents";
+import { OlympiaSmartgovReportsAdapter, deriveColumns } from "./olympia-smartgov-reports.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
 
 const PDF = join(FIXTURES_DIR, "olympia_smartgov_reports", "permits-issued-last-30-days.pdf");
@@ -96,5 +97,38 @@ describe("olympia_smartgov_reports — discovery & capture-fed gate", () => {
     await expect(adapter.parse(rawPdf(Buffer.alloc(0)), testContext(adapter.key))).rejects.toThrow(
       /empty artifact/i,
     );
+  });
+});
+
+describe("olympia_smartgov_reports — durable header-derived geometry", () => {
+  const hdr = (x: number, text: string): PdfTextItem => ({ x, y: 100, text }) as unknown as PdfTextItem;
+
+  it("deriveColumns follows a shifted header row instead of fixed coordinates", () => {
+    // A reformatted report whose columns are shifted right of the observed defaults.
+    const shifted = [
+      hdr(50, "Permit Number"),
+      hdr(120, "Date Issued"),
+      hdr(210, "Site Address"),
+      hdr(320, "Project Name"),
+      hdr(450, "Project Description"),
+      hdr(600, "Applicant"),
+    ];
+    const cols = deriveColumns([{ items: shifted }]);
+    expect(cols.map((c) => [c.name, c.x])).toEqual([
+      ["permitNumber", 50],
+      ["dateIssued", 120],
+      ["siteAddress", 210],
+      ["projectName", 320],
+      ["projectDescription", 450],
+      ["applicant", 600],
+    ]);
+  });
+
+  it("falls back to the observed defaults when the header is absent", () => {
+    const cols = deriveColumns([{ items: [hdr(0, "unrelated content")] }]);
+    // Graceful degrade: the Applicant default anchor is retained, and the
+    // printed-total reconciliation stays as the backstop if the layout truly moved.
+    expect(cols.find((c) => c.name === "applicant")!.x).toBe(456);
+    expect(cols).toHaveLength(6);
   });
 });
