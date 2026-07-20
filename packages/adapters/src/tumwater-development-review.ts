@@ -49,12 +49,26 @@ const IndexSchema = z.object({
   agenda_rows: z.array(AgendaRowSchema).min(1),
 });
 
-/** "MM-DD-YYYY" or "MM/DD/YYYY" → "YYYY-MM-DD"; null on anything else (never guessed).
- * Both separators appear live (recent rows use hyphens, pre-2025 rows use slashes). */
+const MONTH_NUM: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7,
+  august: 8, september: 9, october: 10, november: 11, december: 12,
+  jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/** Date → "YYYY-MM-DD"; null on anything else (never guessed). Handles the two
+ * numeric forms ("MM-DD-YYYY" / "MM/DD/YYYY" — hyphens on recent rows, slashes on
+ * pre-2025 rows) AND the "Month DD, YYYY" form the live DRC page renders in its
+ * Date column (so a verbatim browser capture parses without pre-normalization). */
 export function agendaDateIso(raw: string): string | null {
-  const m = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(raw.trim());
-  if (!m) return null;
-  return `${m[3]}-${m[1]!.padStart(2, "0")}-${m[2]!.padStart(2, "0")}`;
+  const s = raw.trim();
+  const num = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(s);
+  if (num) return `${num[3]}-${num[1]!.padStart(2, "0")}-${num[2]!.padStart(2, "0")}`;
+  const named = /^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/.exec(s);
+  if (named) {
+    const mm = MONTH_NUM[named[1]!.toLowerCase()];
+    if (mm) return `${named[3]}-${String(mm).padStart(2, "0")}-${named[2]!.padStart(2, "0")}`;
+  }
+  return null;
 }
 
 export class TumwaterDevelopmentReviewAdapter implements SourceAdapter {

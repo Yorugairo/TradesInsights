@@ -84,6 +84,8 @@ describe("tumwater_development_review — parses the captured DRC agendas index"
     expect(agendaDateIso("07-23-2026")).toBe("2026-07-23");
     expect(agendaDateIso("12/05/2024")).toBe("2024-12-05");
     expect(agendaDateIso("1/2/2025")).toBe("2025-01-02");
+    expect(agendaDateIso("July 23, 2026")).toBe("2026-07-23"); // live DRC display format
+    expect(agendaDateIso("Jul 9, 2026")).toBe("2026-07-09"); // abbreviated month
     expect(agendaDateIso("Special Meeting")).toBeNull();
     expect(agendaDateIso("2026-07-23")).toBeNull(); // ISO input is not the source format
   });
