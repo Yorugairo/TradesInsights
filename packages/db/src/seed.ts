@@ -124,6 +124,35 @@ async function main() {
         effectiveAt: new Date("2026-07-15"),
       })
       .onConflictDoNothing();
+
+    // E.1 — make the account's OWN L&I identity bind-ready: attach its strong
+    // keys (UBI / contractor registration) to an organizations row so the nightly
+    // registry-link binds it to its canonical registry entity BY STRONG KEY — the
+    // governed path; we never hardcode registry_ref here (that stays in the
+    // resolver). Only accounts that publish a strong key (e.g. Solis) get one.
+    // The excluded/closed UBIs are configured separately and never seeded here.
+    const orgUbi = a.organization.ubi ?? null;
+    const orgReg = a.organization.contractor_registration ?? null;
+    if (orgUbi || orgReg) {
+      const orgName = a.name.toUpperCase();
+      // Attach the strong keys to an existing same-name org (from permit data)
+      // without overwriting anything already set — COALESCE keeps existing values.
+      await db.execute(sql`
+        UPDATE organizations
+        SET ubi = COALESCE(ubi, ${orgUbi}),
+            contractor_registration = COALESCE(contractor_registration, ${orgReg})
+        WHERE canonical_name = ${orgName}`);
+      // Otherwise seed a fresh identity org, keyed so re-runs and any existing
+      // strong key never duplicate it (dedup of name variants is WS-B.4).
+      await db.execute(sql`
+        INSERT INTO organizations (canonical_name, ubi, contractor_registration)
+        SELECT ${orgName}, ${orgUbi}, ${orgReg}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM organizations
+          WHERE canonical_name = ${orgName}
+             OR (${orgUbi}::text IS NOT NULL AND ubi = ${orgUbi})
+             OR (${orgReg}::text IS NOT NULL AND contractor_registration = ${orgReg}))`);
+    }
   }
 
   // Link account-scoped private sources to their owning account (accounts are
