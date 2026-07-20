@@ -4,9 +4,10 @@
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type pg from "pg";
 import {
+  organizations,
   projectEvents,
   projectExternalIds,
   projects,
@@ -18,7 +19,13 @@ import {
   type Db,
 } from "@otn/db";
 import type { NormalizedSourceRecord } from "@otn/domain";
-import { RESOLVER_VERSION, resolveRecord, type ResolutionOutcome } from "@otn/resolution";
+import {
+  findBoundOrganizationByStrongKey,
+  persistOrganizationIdentifiers,
+  RESOLVER_VERSION,
+  resolveRecord,
+  type ResolutionOutcome,
+} from "@otn/resolution";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 let db: Db;
@@ -120,6 +127,46 @@ beforeAll(async () => {
 afterAll(async () => {
   await deleteTestProjects(db, [...createdProjects]);
   await pool.end();
+});
+
+describe("WS-B.4 — findBoundOrganizationByStrongKey (registry_ref dedup key)", () => {
+  it("returns a registry-bound org sharing a normalized strong key; null for unbound / no key", async () => {
+    const ubi = `7${RUN.replace(/[^0-9]/g, "0")}`; // run-unique test UBI (>= 7 chars)
+    const boundRef = `b4b4b4b4-0000-0000-0000-${RUN.toLowerCase().padEnd(12, "0").slice(0, 12)}`;
+    const unboundUbi = `8${RUN.replace(/[^0-9]/g, "0")}`;
+    // A source record to attribute the identifiers to (FK; never resolved).
+    const sr = await insertRecord(
+      record({ externalId: `B4SR-${RUN}` }),
+      {},
+      new Date("2026-07-02T00:00:00Z"),
+    );
+    const [bound] = await db
+      .insert(organizations)
+      .values({ canonicalName: `RIVERA BUILDERS ${RUN}`, registryRef: boundRef })
+      .returning({ id: organizations.id });
+    const [unbound] = await db
+      .insert(organizations)
+      .values({ canonicalName: `PAINTED WORKS ${RUN}` })
+      .returning({ id: organizations.id });
+    try {
+      // Persisted the real way so the finder is tested against the actual normalization.
+      await persistOrganizationIdentifiers(db, bound!.id, sr.id, { ubi });
+      await persistOrganizationIdentifiers(db, unbound!.id, sr.id, { ubi: unboundUbi });
+
+      // Matches the bound org by a shared strong key, normalized the same way (spaces stripped).
+      expect(await findBoundOrganizationByStrongKey(db, `  ${ubi}  `, null)).toBe(bound!.id);
+      // Gated to registry_ref IS NOT NULL — an unbound org sharing a key is never collapsed onto.
+      expect(await findBoundOrganizationByStrongKey(db, unboundUbi, null)).toBeNull();
+      // No strong key ⇒ null.
+      expect(await findBoundOrganizationByStrongKey(db, null, null)).toBeNull();
+    } finally {
+      await db.execute(
+        sql`DELETE FROM organization_identifiers WHERE organization_id IN (${bound!.id}, ${unbound!.id})`,
+      );
+      await db.delete(organizations).where(inArray(organizations.id, [bound!.id, unbound!.id]));
+      await db.execute(sql`DELETE FROM source_records WHERE id = ${sr.id}`);
+    }
+  });
 });
 
 describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () => {

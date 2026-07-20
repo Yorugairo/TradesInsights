@@ -21,7 +21,11 @@ import {
   type MatchFeatures,
 } from "./normalize.js";
 import { evaluateFuzzy } from "./fuzzy.js";
-import { findOrganizationBySourceEntityId, persistOrganizationIdentifiers } from "./identifiers.js";
+import {
+  findBoundOrganizationByStrongKey,
+  findOrganizationBySourceEntityId,
+  persistOrganizationIdentifiers,
+} from "./identifiers.js";
 
 export const RESOLVER_VERSION = "0.3.0"; // M2.2 passes 1–3 + M2.3 passes 4–5
 
@@ -112,6 +116,14 @@ async function upsertOrganizationsAndRoles(
     // source entity id (e.g. Pierce applCustSysId) to an organization, reuse
     // it — stronger than a name-key match and immune to name-string drift.
     let orgId = (await findOrganizationBySourceEntityId(db, org.sourceEntityId)) ?? undefined;
+    // WS-B.4 — collapse to an existing registry-BOUND org sharing this org's
+    // strong key (UBI / contractor number) before falling back to name equality,
+    // so name variants of one canonical entity don't spawn duplicates. Never
+    // creates a binding; only reuses one the registry already confirmed.
+    if (!orgId) {
+      orgId =
+        (await findBoundOrganizationByStrongKey(db, org.ubi, org.contractorLicense)) ?? undefined;
+    }
     if (!orgId) {
       const [existing] = await db
         .select({ id: organizations.id })

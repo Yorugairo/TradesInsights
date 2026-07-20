@@ -219,6 +219,41 @@ export async function findOrganizationBySourceEntityId(
   return row?.organization_id ?? null;
 }
 
+/**
+ * WS-B.4 — resolve an incoming org to an existing REGISTRY-BOUND organization
+ * that shares a strong identifier (UBI / contractor number), or null. Used as a
+ * resolver tier ABOVE the exact-name match so name variants of one bound entity
+ * collapse onto the registry-canonical org (accurate roles / velocity / league)
+ * instead of spawning a duplicate. Gated to `registry_ref IS NOT NULL`: it never
+ * CREATES a binding (that stays the registry-link's job) — it only reuses one the
+ * registry already confirmed. Strong identifiers are unique per entity, so a
+ * shared normalized key means the same entity. Normalizes the SAME way the
+ * persist path does (`alnumUpper`, UBI ≥ 7) so keys line up with the store.
+ */
+export async function findBoundOrganizationByStrongKey(
+  db: Db,
+  rawUbi: string | null | undefined,
+  rawLicense: string | null | undefined,
+): Promise<string | null> {
+  const ubi = alnumUpper(rawUbi ?? undefined);
+  const license = alnumUpper(rawLicense ?? undefined);
+  const hasUbi = !!ubi && ubi.length >= 7;
+  const hasLicense = !!license;
+  if (!hasUbi && !hasLicense) return null;
+  const res = await db.execute(sql`
+    SELECT oi.organization_id
+    FROM organization_identifiers oi
+    JOIN organizations o ON o.id = oi.organization_id
+    WHERE o.registry_ref IS NOT NULL
+      AND (
+        (${hasUbi} AND oi.identifier_type = 'ubi' AND oi.value_normalized = ${ubi ?? ""})
+        OR (${hasLicense} AND oi.identifier_type = 'contractor_number' AND oi.value_normalized = ${license ?? ""})
+      )
+    LIMIT 1`);
+  const row = res.rows[0] as { organization_id?: string } | undefined;
+  return row?.organization_id ?? null;
+}
+
 /** Evidence-backed phones per organization (input to the phone-match rules). */
 export async function loadOrganizationPhones(db: Db): Promise<Map<string, Set<string>>> {
   const res = await db.execute(sql`
