@@ -200,29 +200,25 @@ const joinCell = (parts: string[] | undefined): string | null => {
 
 export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
   readonly key = "olympia_smartgov_reports";
-  readonly parserVersion = "1.0.0";
+  readonly parserVersion = "1.1.0";
 
-  /** Report-class discovery. Only the ISSUED report is discovered in production.
-   * The APPLICATIONS report is fully scaffolded (REPORTS/resolveReport + a
-   * report-aware parse that maps submissions to applicationDate/permit_applied)
-   * and parses ~98% clean, but its printed-total reconciliation is not yet exact
-   * (a couple of category-boundary edge cases from the applications report's
-   * wrapped totals). Discovering it now would surface reconciliation violations
-   * that mark this shared source red and suppress the working issued report — so
-   * it stays gated until the parser reconciles. Flip in `REPORTS`-driven discovery
-   * once the applications parse is total-exact (see the applications parse test). */
+  /** Report-class discovery: BOTH rolling 30-day reports. The APPLICATIONS report
+   * is the higher-lead-time signal (submission precedes issuance, before the GC
+   * buys out its finish subs) and the ISSUED report is the confirmed-work signal.
+   * Both parse total-exact — each category's parsed count equals its printed
+   * "Total … Applications|Permits: N" and the whole report equals its Grand Total
+   * (see checkInvariants + the parse tests: 815 applications, 572 issued). They
+   * share one capture-fed source key, so a red on either would suppress the other;
+   * both are only discovered because both reconcile. */
   async discover(_ctx: RunContext): Promise<DiscoveredArtifact[]> {
-    const issued = REPORTS["permits_issued_last_30_days"]!;
-    return [
-      {
-        idempotencyKey: issued.idempotencyKey,
-        canonicalUrl: issued.canonicalUrl,
-        parentUrl: PORTAL,
-        expectedContentType: "application/pdf",
-        sourcePublishedAt: null,
-        meta: issued.meta,
-      },
-    ];
+    return Object.values(REPORTS).map((spec) => ({
+      idempotencyKey: spec.idempotencyKey,
+      canonicalUrl: spec.canonicalUrl,
+      parentUrl: PORTAL,
+      expectedContentType: "application/pdf",
+      sourcePublishedAt: null,
+      meta: spec.meta,
+    }));
   }
 
   async fetch(item: DiscoveredArtifact, _ctx: RunContext): Promise<RawArtifact> {
@@ -319,7 +315,15 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
         // count is the number after the noun (glued or separate), else the
         // rightmost bare integer (issued's separate-item form). It may also wrap
         // onto a following line while the label continues.
-        if (/^Total\b/i.test(first.text)) {
+        //
+        // Gate on the permit-number column: a real total label starts at the left
+        // margin (x≈42–51 → permitNumber), whereas a project-description line that
+        // merely begins with the word "TOTAL" (e.g. "TOTAL DUCT REPLACEMENT") sits
+        // in the description column (x≈340). Without this gate that fragment is
+        // mistaken for a category total, opening a spurious `awaitingTotalCount`
+        // that swallows every following record until the next lone integer — which
+        // then reads as a bogus 4-digit "count" off a wrapped permit/valuation.
+        if (/^Total\b/i.test(first.text) && nearestCol(first.x, columns) === "permitNumber") {
           finalizeOpen();
           const c = textCount ? Number(textCount[1]) : bareInt ? Number(bareInt.text) : null;
           if (c !== null) {
@@ -331,10 +335,19 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
           }
           continue;
         }
-        // Wrapped total continuation: close on "… : N" text, OR a LONE integer
-        // line (issued's wrapped count) — never a data row's integer (length > 1).
+        // Wrapped total continuation: close on the count. In a wrapped total block
+        // the printed count is the lone pure-integer ITEM in the count column
+        // (x≈249) — it may share its visual line with a trailing label fragment
+        // (e.g. "…Critical Area Confirmation, or Other" + "1"), so a strict
+        // length===1 gate would miss it and let `awaitingTotalCount` devour the
+        // next category header and its records. Embedded label numbers ("400",
+        // "(1-4)", "(5+)") stay inside their label string, never separate integer
+        // items, so `bareInt` cannot mistake them for the count. And because the
+        // Total-label gate now blocks description "TOTAL …" false positives,
+        // `awaitingTotalCount` only ever opens on a real total block whose count
+        // follows immediately — it can no longer bleed into a data row's integer.
         if (awaitingTotalCount) {
-          const c = textCount ? Number(textCount[1]) : bareInt && line.length === 1 ? Number(bareInt.text) : null;
+          const c = textCount ? Number(textCount[1]) : bareInt ? Number(bareInt.text) : null;
           if (c !== null) {
             this.closeCategoryTotal(currentCategory, c, categoryRecords, categoryTotals);
             categoryRecords = [];
@@ -356,8 +369,17 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
           continue;
         }
 
-        // Category section header: a lone item in the leftmost (permit) column.
-        if (line.length === 1 && nearestCol(first.x, columns) === "permitNumber") {
+        // Category section header: a lone item in the leftmost (permit) column
+        // that reads as TEXT. A permit number whose long prefix wraps (e.g.
+        // "REFERENCE-26-" then a lone "0399", or "…-26-" then "4304") drops its
+        // numeric suffix onto its own line in the same column; requiring a letter
+        // keeps that suffix a continuation of the open record instead of a bogus
+        // numeric "category" that splits records and steals the next printed total.
+        if (
+          line.length === 1 &&
+          nearestCol(first.x, columns) === "permitNumber" &&
+          /[A-Za-z]/.test(first.text)
+        ) {
           finalizeOpen();
           categoryRecords = []; // safety: prior category should have closed on its Total
           currentCategory = first.text.trim();

@@ -79,11 +79,13 @@ describe("olympia_smartgov_reports — positional parse reconciles with the repo
 });
 
 describe("olympia_smartgov_reports — discovery & capture-fed gate", () => {
-  it("discovers the issued-permits report (applications scaffolded but gated)", async () => {
+  it("discovers both rolling 30-day reports (issued + applications)", async () => {
     const adapter = new OlympiaSmartgovReportsAdapter();
     const arts = await adapter.discover(testContext(adapter.key));
-    expect(arts).toHaveLength(1);
-    expect(arts[0]!.idempotencyKey).toBe("olympia_smartgov_reports:permits_issued_last_30_days");
+    expect(arts.map((a) => a.idempotencyKey)).toEqual([
+      "olympia_smartgov_reports:permits_issued_last_30_days",
+      "olympia_smartgov_reports:permit_applications_last_30_days",
+    ]);
   });
 
   it("fetch dead-letters (session-bound eid gate) rather than fabricating", async () => {
@@ -122,17 +124,16 @@ describe("olympia_smartgov_reports — the Applications report (lead-time signal
     };
   }
 
-  it("parses submissions as permit_applied with applicationDate (report-aware parse)", async () => {
+  it("parses every submission and self-reconciles (per-category + Grand Total: 815)", async () => {
     const adapter = new OlympiaSmartgovReportsAdapter();
     const raw = rawApps(await readFile(APPS_PDF));
     const parsed = await adapter.parse(raw, testContext(adapter.key));
 
-    // Report-aware parse: applications map to the application stage. Full
-    // printed-total reconciliation (checkInvariants) is ~98% and NOT yet exact —
-    // the last few category-boundary edge cases from the applications report's
-    // wrapped totals are why it stays GATED out of discovery (see discover()).
-    // This locks the structural parse; the reconciliation is tracked separately.
-    expect(parsed.length).toBeGreaterThan(780); // ~799 of the report's printed 815
+    // The applications report prints Grand Total: 815; a correct report-aware
+    // parse yields exactly that, and every category count matches its printed
+    // "Total … Applications: N" — the same invariant the issued report holds.
+    expect(adapter.checkInvariants(raw, parsed)).toEqual([]);
+    expect(parsed.length).toBe(815);
 
     for (const p of parsed.slice(0, 40)) {
       const v = NormalizedSourceRecordSchema.safeParse(p.record);
