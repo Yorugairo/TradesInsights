@@ -503,3 +503,41 @@ describe("WS-B — registry identity as a Solis inference signal (score-neutral 
     expect(commercial(false).components["gc_developer_architect_known"]).toBe(0.5); // unchanged baseline
   });
 });
+
+describe("WS-W — warm-network signal (score-neutral under §12.3)", () => {
+  const WARM = "warm-entity-42";
+  // The Solis account, optionally carrying a warm set of bound-GC registry refs.
+  const solisWith = (warmGcRefs?: ReadonlySet<string>): AccountScoringInput => ({
+    ...ACCOUNTS[2]!, // solis_interiors
+    ...(warmGcRefs ? { warmGcRefs } : {}),
+  });
+  const solisTi = (orgs: ProjectFeatures["orgs"]): ProjectFeatures =>
+    features({
+      text: "tenant improvement interior remodel drywall and paint suite 200",
+      maxValuation: 250_000,
+      stage: "permit_issued",
+      orgs,
+    });
+  const route = (f: ProjectFeatures, acct: AccountScoringInput) =>
+    routeProject(f, [acct]).find((r) => r.accountKey === "solis_interiors")!;
+
+  it("fires warm_gc_active when a project GC is in the account's warm set", () => {
+    const f = solisTi([{ name: "acme builders llc", role: "primary_contractor", registryRef: WARM }]);
+    expect(route(f, solisWith(new Set([WARM]))).signals).toContain("warm_gc_active");
+  });
+
+  it("does not fire when the GC's ref is not in the warm set, or no warm set exists", () => {
+    const f = solisTi([{ name: "acme builders llc", role: "primary_contractor", registryRef: "other" }]);
+    expect(route(f, solisWith(new Set([WARM]))).signals).not.toContain("warm_gc_active");
+    // No warm set at all (accounts that don't compute it) ⇒ no signal, no crash.
+    const g = solisTi([{ name: "acme builders llc", role: "primary_contractor", registryRef: WARM }]);
+    expect(route(g, solisWith()).signals).not.toContain("warm_gc_active");
+  });
+
+  it("is SCORE-NEUTRAL (§12.3): the warm signal adds no weight ⇒ score unchanged", () => {
+    const f = solisTi([{ name: "acme builders llc", role: "primary_contractor", registryRef: WARM }]);
+    const withWarm = route(f, solisWith(new Set([WARM]))).score;
+    const without = route(f, solisWith()).score;
+    expect(withWarm).toBe(without);
+  });
+});

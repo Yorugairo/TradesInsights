@@ -232,6 +232,10 @@ export interface AccountScoringInput {
   territory: { counties_included?: string[]; counties_excluded?: string[] };
   weights: Record<string, number>;
   delivery: { priority_review_min?: number; weekly_digest_min?: number };
+  /** WS-W — registry refs of the account's active, bound GC warm network in
+   * territory (from the digest league table). Absent for accounts that don't
+   * compute it; used only to emit a score-neutral `warm_gc_active` signal. */
+  warmGcRefs?: ReadonlySet<string>;
 }
 
 /** Timing curves differ per trade: glass installs late; entitlement is early radar. */
@@ -449,6 +453,14 @@ export function routeSolis(
     )
   ) {
     signals.push("verified_gc_on_project");
+  }
+  // WS-W — a project whose GC/owner is a WARM, registry-bound relationship in the
+  // account's territory (from the digest league table). Score-neutral SIGNAL
+  // under §12.3 — the relationship-warmth lift lands at Solis calibration. Reads
+  // an already-governed binding (registry_ref), introduces no new auto-bind.
+  const warmSet = acct.warmGcRefs;
+  if (warmSet && warmSet.size > 0 && f.orgs.some((o) => o.registryRef && warmSet.has(o.registryRef))) {
+    signals.push("warm_gc_active");
   }
   // v1.7.0 — why an issued commercial project ranks lower (auditability).
   // bidding_confirmed sorts after issuance but is a CONFIRMED-open window.

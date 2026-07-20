@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import { getActiveAccounts, latestRules } from "./accounts.js";
+import { warmGcEntityIds } from "./warm-network.js";
 import {
   assessCapacity,
   effectiveCapacitySnapshot,
@@ -164,7 +165,10 @@ async function loadAccountInputs(
     // Raw §12 integer weights (sum 100); components are 0–1 → score 0–100.
     const weights: Record<string, number> = {};
     for (const w of weightRows) weights[w.component] = w.weight;
-    inputs.push({ key: a.key, territory: a.territory, weights, delivery: a.delivery });
+    // WS-W — the account's warm network of active, registry-bound GCs in
+    // territory (empty until orgs are bound; adds only a score-neutral signal).
+    const warmGcRefs = await warmGcEntityIds(db, a.id, a.territory);
+    inputs.push({ key: a.key, territory: a.territory, weights, delivery: a.delivery, warmGcRefs });
     ids.set(a.key, a.id);
     const versions: Record<string, number> = {};
     for (const [type, rule] of rules) versions[type] = rule.version;
