@@ -19,7 +19,21 @@ import { bidTrackFor, type BidTrack } from "./bid-window.js";
 // drywall + paint (trade_fit 0.7); clustered/subdivision new-builds route as
 // ONE production-builder relationship play (gc_relationship_radar, 0.45),
 // never per-house leads. Customer-approved 2026-07-17.
-export const SCORING_ALGORITHM_VERSION = "1.8.0";
+// 1.9.0 — four owner-directed, PROVISIONAL (§12.3) Solis-only tweaks
+// (2026-07-20), all scoped to routeSolis so the Lacey Glass profiles stay
+// byte-identical:
+//   (1) geography TIERS — home metro Thurston 1.0 > Pierce/Lewis 0.9 >
+//       other-in-territory 0.8 > distant King commercial 0.6 (was a flat 1.0).
+//   (2) application-stage timing weighted ABOVE issued on the RESIDENTIAL
+//       interior track (permit_applied 1.0, permit_issued 0.9) — earlier stage
+//       buys lead time to get in before the GC locks its subs. The per-track
+//       bid-window LINE (bid-window.ts) is unchanged and still reflects the
+//       true clock.
+//   (3) a SMALL (+3), clamped, additive warm-GC nudge when warm_gc_active
+//       fires — relationship-first, and leaves every frozen eval example
+//       (no warm set) byte-identical.
+//   (4) layered easy-win proximity bands live in config/delivery, not here.
+export const SCORING_ALGORITHM_VERSION = "1.9.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -201,6 +215,15 @@ function evidenceQuality(f: ProjectFeatures): number {
   return f.aGradeEvidence > 0 ? 1 : 0;
 }
 
+/** Solis geography fit (owner directive 2026-07-20, PROVISIONAL §12.3): up-weight the
+ * home metro over distant King commercial; Pierce/Lewis home counties sit ~equal. */
+function solisGeography(county: string): number {
+  if (county === "Thurston") return 1;                        // home metro (Lacey/Olympia)
+  if (county === "Pierce" || county === "Lewis") return 0.9;  // home counties, ~equal
+  if (county === "King") return 0.6;                          // distant secondary (Seattle commercial)
+  return 0.8;                                                 // other in-territory
+}
+
 function inCounties(f: ProjectFeatures, included: string[], excluded: string[]): boolean {
   return included.includes(f.county) && !excluded.includes(f.county);
 }
@@ -267,8 +290,12 @@ function timingInterior(stage: string, track: BidTrack): number {
     };
     return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
   }
+  // owner 2026-07-20 directive — earlier stage = more lead time to get in before
+  // the GC locks its subs, so permit_applied is weighted ABOVE permit_issued on
+  // the residential interior track. The per-track bid-window LINE (bid-window.ts)
+  // is unchanged and still reflects the true clock.
   const map: Record<string, number> = {
-    permit_issued: 1, construction: 1, bidding_confirmed: 1, permit_applied: 0.7,
+    permit_issued: 0.9, construction: 1, bidding_confirmed: 1, permit_applied: 1,
     approved: 0.6, construction_documents: 0.6, near_final: 0.5, entitlement: 0.4,
     preapplication: 0.2, concept: 0.2,
   };
@@ -506,7 +533,7 @@ export function routeSolis(
             ? 1
             : 0.3,
     timing: timingInterior(f.stage, track) * recencyFactor(f.lastMaterialChangeAt, now),
-    geography: 1,
+    geography: solisGeography(f.county),
     // Registry-backed GC/owner identification (spec §12.3 — SIGNAL-ONLY while
     // Solis is provisional: present here for auditability/rationale but absent
     // from Solis's account weights, so `weighted()` leaves the score unchanged
@@ -516,12 +543,19 @@ export function routeSolis(
     evidence_quality: evidenceQuality(f),
   };
   const score = weighted(components, acct.weights);
+  // Owner 2026-07-20 (PROVISIONAL §12.3): a SMALL relationship-first nudge when the GC is a
+  // warm, registry-bound relationship — additive + clamped so it nudges rather than reorders,
+  // and leaves the weight vector and every frozen eval example (no warm set) byte-identical.
+  const WARM_GC_BONUS = 3;
+  const finalScore = signals.includes("warm_gc_active")
+    ? Math.min(100, Math.round((score + WARM_GC_BONUS) * 10) / 10)
+    : score;
   return {
     accountKey: acct.key,
     route: overCapacity || productionCluster ? "gc_relationship_radar" : "interior_trades",
     components,
-    score,
-    state: band(score, acct.delivery),
+    score: finalScore,
+    state: band(finalScore, acct.delivery),
     signals,
   };
 }

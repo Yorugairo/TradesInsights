@@ -504,7 +504,7 @@ describe("WS-B — registry identity as a Solis inference signal (score-neutral 
   });
 });
 
-describe("WS-W — warm-network signal (score-neutral under §12.3)", () => {
+describe("WS-W — warm-network signal (fires as a signal; v1.9.0 bounded +3 nudge)", () => {
   const WARM = "warm-entity-42";
   // The Solis account, optionally carrying a warm set of bound-GC registry refs.
   const solisWith = (warmGcRefs?: ReadonlySet<string>): AccountScoringInput => ({
@@ -534,10 +534,89 @@ describe("WS-W — warm-network signal (score-neutral under §12.3)", () => {
     expect(route(g, solisWith()).signals).not.toContain("warm_gc_active");
   });
 
-  it("is SCORE-NEUTRAL (§12.3): the warm signal adds no weight ⇒ score unchanged", () => {
+  it("v1.9.0: the warm signal now adds a bounded +3 nudge (supersedes the prior score-neutral stance)", () => {
+    // Owner 2026-07-20 (§12.3): warm_gc_active is a SMALL additive, clamped at 100.
     const f = solisTi([{ name: "acme builders llc", role: "primary_contractor", registryRef: WARM }]);
     const withWarm = route(f, solisWith(new Set([WARM]))).score;
     const without = route(f, solisWith()).score;
-    expect(withWarm).toBe(without);
+    expect(withWarm).toBeGreaterThan(without);
+    expect(withWarm).toBe(Math.min(100, Math.round((without + 3) * 10) / 10));
+  });
+});
+
+describe("v1.9.0 — owner-directed provisional Solis tweaks (2026-07-20, §12.3)", () => {
+  const solisOf = (f: ProjectFeatures, acct: AccountScoringInput = ACCOUNTS[2]!) =>
+    routeProject(f, [acct]).find((r) => r.accountKey === "solis_interiors")!;
+  // A residential-track interior TI (no commercial/SFR keywords → residential
+  // bid track), the shared fixture for all four v1.9.0 tweaks.
+  const ti = (over: Partial<ProjectFeatures>): ProjectFeatures =>
+    features({
+      text: "tenant improvement interior remodel drywall and paint suite 200",
+      maxValuation: 250_000,
+      stage: "permit_issued",
+      ...over,
+    });
+
+  // CHANGE 1 — geography tiers (home metro > home counties > other > distant King).
+  it("up-weights the home metro: Thurston scores higher than an identical King project", () => {
+    const thurston = solisOf(ti({ county: "Thurston" }));
+    const king = solisOf(ti({ county: "King" }));
+    expect(thurston.components["geography"]).toBe(1);
+    expect(king.components["geography"]).toBe(0.6);
+    expect(thurston.score).toBeGreaterThan(king.score);
+  });
+
+  it("Pierce (home county, 0.9) sits above distant King (0.6)", () => {
+    const pierce = solisOf(ti({ county: "Pierce" }));
+    const king = solisOf(ti({ county: "King" }));
+    expect(pierce.components["geography"]).toBe(0.9);
+    expect(king.components["geography"]).toBe(0.6);
+    expect(pierce.score).toBeGreaterThan(king.score);
+  });
+
+  // CHANGE 2 — application stage weighted ABOVE issued on the residential track.
+  it("an identical residential-interior project scores strictly higher at permit_applied than permit_issued", () => {
+    const applied = solisOf(ti({ stage: "permit_applied" }));
+    const issued = solisOf(ti({ stage: "permit_issued" }));
+    expect(applied.components["timing"]).toBeGreaterThan(issued.components["timing"]!);
+    expect(applied.score).toBeGreaterThan(issued.score);
+  });
+
+  // CHANGE 3 — a small (+3), clamped, additive warm-GC nudge.
+  const WARM = "warm-entity-9";
+  const solisWarm = (refs?: ReadonlySet<string>): AccountScoringInput => ({
+    ...ACCOUNTS[2]!,
+    ...(refs ? { warmGcRefs: refs } : {}),
+  });
+  const warmOrg = { name: "acme builders llc", role: "primary_contractor", registryRef: WARM };
+
+  it("warm_gc_active adds exactly +3 when below the ceiling", () => {
+    const f = ti({ county: "Pierce", orgs: [warmOrg] }); // base 96.5 (Pierce geo 0.9)
+    const withWarm = solisOf(f, solisWarm(new Set([WARM])));
+    const without = solisOf(f, solisWarm());
+    expect(without.signals).not.toContain("warm_gc_active");
+    expect(withWarm.signals).toContain("warm_gc_active");
+    expect(without.score).toBe(96.5);
+    expect(withWarm.score).toBe(99.5); // exactly +3
+  });
+
+  it("the warm nudge is clamped at 100", () => {
+    const f = ti({ county: "Thurston", stage: "permit_applied", orgs: [warmOrg] }); // base 100
+    expect(solisOf(f, solisWarm()).score).toBe(100);
+    expect(solisOf(f, solisWarm(new Set([WARM]))).score).toBe(100); // +3 would be 103 → clamped
+  });
+
+  it("verified_gc_on_project alone does NOT change the score (only warm nudges)", () => {
+    const verifiedOrg = {
+      name: "pat rivera",
+      role: "primary_contractor",
+      registryRef: "bound-1",
+      registryVerified: true,
+    };
+    const withVerified = solisOf(ti({ orgs: [verifiedOrg] }), solisWarm());
+    const noOrg = solisOf(ti({ orgs: [] }), solisWarm());
+    expect(withVerified.signals).toContain("verified_gc_on_project");
+    expect(withVerified.signals).not.toContain("warm_gc_active");
+    expect(withVerified.score).toBe(noOrg.score); // registry identity stays score-neutral
   });
 });

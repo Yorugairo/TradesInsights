@@ -119,7 +119,7 @@ export interface DigestModel {
   candidateCount: number;
 }
 
-interface CandidateRow {
+export interface CandidateRow {
   id: string;
   project_id: string;
   canonical_name: string;
@@ -141,13 +141,36 @@ interface CandidateRow {
 }
 
 /** P2.1 easy-win config (delivery_config_json.easy_win; provisional pre-calibration). */
-interface EasyWinConfig {
+export interface EasyWinConfig {
   home_lon: number | null;
   home_lat: number | null;
   radius_km: number;
+  /** Owner 2026-07-20 — concentric proximity bands in miles (nearest-first).
+   * When present, the OUTER band is the geo cutoff and easy wins are ordered
+   * nearest-band-first; null/absent falls back to the flat radius_km. */
+  radius_bands_mi: number[] | null;
   max_age_days: number;
   min_valuation_usd: number | null;
   max_valuation_usd: number | null;
+}
+
+/** Meters per statute mile (owner 2026-07-20 easy-win bands are stated in miles). */
+const MILE_M = 1609.34;
+
+/**
+ * Owner 2026-07-20 — proximity band index for a candidate distance (meters):
+ * the index of the first band (miles, ascending) that covers the distance.
+ * Null distance, or a distance beyond the outer band, sorts last. With no
+ * bands configured every candidate shares index 0 → pure score order (the
+ * pre-band behavior).
+ */
+export function easyWinBandIndex(distM: number | null, bandsMi: number[] | null): number {
+  if (distM === null) return Number.MAX_SAFE_INTEGER;
+  if (!bandsMi || bandsMi.length === 0) return 0;
+  const miles = distM / MILE_M;
+  const sorted = [...bandsMi].sort((a, b) => a - b);
+  const idx = sorted.findIndex((b) => b >= miles);
+  return idx === -1 ? sorted.length : idx;
 }
 
 async function loadCandidates(
@@ -191,7 +214,7 @@ async function loadCandidates(
  * radius. Missing geometry or an unconfigured home fails the geo check
  * honestly — an easy win you can't locate isn't easy.
  */
-function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
+export function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
   if (!cfg) return false;
   if (!["permit_issued", "approved"].includes(c.current_stage)) return false;
   const lastAt = c.last_material_change_at ? new Date(c.last_material_change_at).getTime() : null;
@@ -201,7 +224,13 @@ function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
   if (cfg.min_valuation_usd !== null && (v === null || v < cfg.min_valuation_usd)) return false;
   if (cfg.max_valuation_usd !== null && v !== null && v > cfg.max_valuation_usd) return false;
   if (cfg.home_lon !== null && cfg.home_lat !== null) {
-    if (c.dist_m === null || Number(c.dist_m) > cfg.radius_km * 1000) return false;
+    // Owner 2026-07-20 — when concentric bands are configured the OUTER band is
+    // the qualification cutoff; otherwise the flat radius_km applies (unchanged).
+    const outerM =
+      cfg.radius_bands_mi && cfg.radius_bands_mi.length
+        ? Math.max(...cfg.radius_bands_mi) * MILE_M
+        : cfg.radius_km * 1000;
+    if (c.dist_m === null || Number(c.dist_m) > outerM) return false;
   }
   return true;
 }
@@ -555,7 +584,9 @@ export async function buildDigest(
     coverage,
   };
   const reviewQueue: DigestItem[] = [];
-  const easyWins: DigestItem[] = [];
+  // Owner 2026-07-20 — collect every qualifying easy win with its distance, then
+  // select nearest-band-first AFTER the pass (score order alone no longer decides).
+  const easyWinCandidates: { item: DigestItem; distM: number | null }[] = [];
   const radar: DigestItem[] = [];
   const suppressed = { gateFailed: 0, blockedOnVerifier: 0, customerSuppressed: 0 };
 
@@ -590,11 +621,15 @@ export async function buildDigest(
       continue;
     }
 
-    // P2.2 — the 10-minute top block (auto items only; candidates come
-    // score-ordered so caps keep the best). Items also keep their §18
-    // section below — the audit trail and spec sections are unchanged.
-    if (item.easyWin && easyWins.length < 3) easyWins.push(item);
-    else if (RADAR_STAGES.has(c.current_stage) && radar.length < 2) radar.push(item);
+    // P2.2 — the 10-minute top block (auto items only). Easy-win stages
+    // (permit_issued/approved) and radar stages (concept/preapplication/
+    // entitlement) are disjoint, so these two picks are independent. Easy wins
+    // are gathered here and ordered nearest-band-first after the pass (owner
+    // 2026-07-20); radar stays score-ordered and capped at 2.
+    if (item.easyWin) {
+      easyWinCandidates.push({ item, distM: c.dist_m === null ? null : Number(c.dist_m) });
+    }
+    if (RADAR_STAGES.has(c.current_stage) && radar.length < 2) radar.push(item);
 
     // Exclusive section order (spec §18): priority-new > stage change >
     // missing-fact queue > monitoring.
@@ -608,6 +643,20 @@ export async function buildDigest(
       sections.monitoring.push(item);
     }
   }
+
+  // Owner 2026-07-20 — nearest-band-first easy wins: order by proximity band,
+  // then score, then cap at 3, so the closest winnable jobs lead even when a
+  // farther project scored a touch higher. With no bands configured every
+  // candidate shares band 0 → pure score order (the pre-band behavior).
+  const bandsMi = account.easyWin?.radius_bands_mi ?? null;
+  const easyWins = easyWinCandidates
+    .sort(
+      (a, b) =>
+        easyWinBandIndex(a.distM, bandsMi) - easyWinBandIndex(b.distM, bandsMi) ||
+        (b.item.score ?? -Infinity) - (a.item.score ?? -Infinity),
+    )
+    .slice(0, 3)
+    .map((e) => e.item);
 
   return {
     accountProfileId,

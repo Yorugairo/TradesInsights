@@ -50,6 +50,10 @@ export const AccountProfileSchema = z
             home_lon: z.number().nullable().default(null),
             home_lat: z.number().nullable().default(null),
             radius_km: z.number().positive().default(60),
+            /** Owner 2026-07-20 — concentric proximity bands (miles, nearest-first)
+             * that layer the easy-win cut; the outer band supersedes the flat
+             * radius_km cutoff. Null keeps the flat radius. */
+            radius_bands_mi: z.array(z.number().positive()).nullable().default(null),
             max_age_days: z.number().int().positive().default(60),
             min_valuation_usd: z.number().nullable().default(null),
             max_valuation_usd: z.number().nullable().default(null),
