@@ -129,6 +129,12 @@ that inherits both.
 
 ## Step B1 — Provision the login role (registry DBA, one time)
 
+> **DONE 2026-07-20** — `otn_insights` LOGIN role created on the Trades DB
+> (`arbmeioglflvzoffgtii`), member of `otn_insights_reader` + `otn_insights_writer`.
+> Least-privilege verified: reads `registry_public.{trades_identity_v1,
+> trades_taxonomy_v1}`, can INSERT `registry_partner.*`, denied `registry_internal`.
+> The password lives only in the owner's secret store; not in this repo.
+
 Run as a registry superuser / migration owner against the Trades DB:
 
 ```sql
@@ -156,23 +162,37 @@ Rotate the password if it is ever exposed; revoke with `DROP ROLE otn_insights;`
 
 ## Step B2 — Seed the shared trade vocabulary (registry, before trade evidence)
 
-Trade evidence stays inert until the taxonomy is seeded (the loader skips unknown
-codes with `skipped:unknown_trade_code`, and Insights falls back to its built-in
-permitType-only vocabulary). Seed it from authoritative L&I license specialties:
+> **DONE 2026-07-20** — `registry_public.trades_taxonomy_v1` view published and the
+> curated 23-trade `TAXONOMY_SEED` seeded into `registry_internal.registry_trade_taxonomy`
+> (verified: 23 view rows, `otn_insights` can SELECT, `general_contractor` keywords=[]
+> so it's never text-inferred). Applied via the owner's direct DB connection because
+> the seed writes `registry_internal` (which the least-privilege `otn_insights` role
+> cannot). Insights' `fetchTradeTaxonomy` reads exactly `trade_code, label, keywords,
+> parent_code, active` — matches the view. No Insights redeploy needed; it derives the
+> matcher on the next run with `REGISTRY_DATABASE_URL` set, closing the drywall/
+> painting/glazing finish-trade gap.
+>
+> **⚠ Per-entity assignments NOT run (blocked, a real registry finding):** the
+> `assign-license-trades` normalizer expects descriptive specialty strings
+> ("drywall", "gypsum"), but `public.tenants.settings.license.specialty1/2` holds WA
+> L&I **2-char specialty CODES** (`01`, `3a`, `bk`, `sw`, `xx`, …) — so it maps **0 of
+> 80** distinct values and `registry_trade_assignments` stays empty. This does **not**
+> affect the Insights matcher (which reads the taxonomy, not the assignments). To turn
+> on authoritative per-entity L&I trades, add a code→trade_code map (the L&I specialty
+> codebook + the license `type`: EC⇒electrical, PC⇒plumbing, …) to
+> `trades-taxonomy-map.mjs`, then run `assign-license-trades.mjs`. Do **not** guess
+> what a 2-char code means — use the L&I codebook.
+
+The scripts below are the reproducible/registry-repo path (they need a privileged
+`DATABASE_URL`; the taxonomy seed above was applied equivalently). Re-runnable +
+idempotent:
 
 ```bash
 # In the registry repo (release/trades-staging), against the Trades DB:
 DATABASE_URL=…:5432/… node apps/registry/scripts/entity-resolution/seed-trade-taxonomy.mjs --dry-run  # inspect + unmapped report
-DATABASE_URL=…             node apps/registry/scripts/entity-resolution/seed-trade-taxonomy.mjs          # upsert registry_trade_taxonomy
-DATABASE_URL=…             node apps/registry/scripts/entity-resolution/assign-license-trades.mjs        # per-entity trades from L&I (specialty1 ⇒ primary)
-DATABASE_URL=…             node apps/registry/scripts/entity-resolution/report.mjs                       # observability
+DATABASE_URL=…             node apps/registry/scripts/entity-resolution/seed-trade-taxonomy.mjs          # upsert registry_trade_taxonomy (idempotent)
+DATABASE_URL=…             node apps/registry/scripts/entity-resolution/assign-license-trades.mjs        # per-entity trades — needs the code map first (see ⚠ above)
 ```
-
-`registry_public.trades_taxonomy_v1` is already published (baseline patch 25); confirm
-`otn_insights_reader` can `SELECT trade_code, keywords FROM
-registry_public.trades_taxonomy_v1`. Insights auto-derives its permit-text matcher
-from it on the next run — **no Insights redeploy** — closing the drywall/painting/
-glazing finish-trade gap that a permitType-only vocabulary misses.
 
 ## Step B3 — Point Insights at the registry (deploy env)
 

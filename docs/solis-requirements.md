@@ -118,11 +118,11 @@ priority threshold is **80** (~13 changed/week; reviewable). See
 ## 3. Calibration gate — decisions for the Solis session
 
 Signals ship score-neutral (R5.1); weights are set deliberately here. Below, ✅ items
-carry **owner direction (2026-07-20)** and become implementation tasks (versioned in
-`config/account-profiles.yaml` + a scorer bump); ◻ items are still open for the
-session. Standing counts are in `docs/calibration-prep-solis.md`.
+carry **owner direction (2026-07-20)** and are now **IMPLEMENTED (provisional §12.3)**
+in scorer **v1.9.0** (commit `1341216`), pending Solis confirming scope at the session;
+◻ items are still open. Standing counts are in `docs/calibration-prep-solis.md`.
 
-### ✅ Decided (owner, 2026-07-20) — implement, then confirm with Solis
+### ✅ Decided + IMPLEMENTED (owner 2026-07-20; scorer v1.9.0, provisional)
 
 - **Geographic weighting — up-weight the home metro, not King commercial.**
   Thurston / home-metro is up-weighted **relative to King commercial**; **Pierce
