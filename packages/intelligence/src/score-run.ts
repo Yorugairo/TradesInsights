@@ -104,7 +104,10 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       WHERE rr.project_id = p.id AND rr.status = 'active' AND ei.authority_grade = 'A'
     ) ev ON true
     LEFT JOIN LATERAL (
-      SELECT COALESCE(json_agg(json_build_object('name', o.canonical_name, 'role', pr.role)), '[]'::json) AS orgs
+      SELECT COALESCE(json_agg(json_build_object(
+        'name', o.canonical_name, 'role', pr.role,
+        'registryRef', o.registry_ref,
+        'registryVerified', (o.registry_ref IS NOT NULL))), '[]'::json) AS orgs
       FROM project_roles pr JOIN organizations o ON o.id = pr.organization_id
       WHERE pr.project_id = p.id
     ) orgs ON true
@@ -133,7 +136,13 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       // Derived active-campus membership (#1) — conditional spread keeps the
       // field absent (not undefined) under exactOptionalPropertyTypes.
       ...(r["campus_block"] ? { campusBlock: r["campus_block"] as string } : {}),
-      orgs: (r["orgs"] as { name: string; role: string | null }[]) ?? [],
+      orgs:
+        (r["orgs"] as {
+          name: string;
+          role: string | null;
+          registryRef?: string | null;
+          registryVerified?: boolean;
+        }[]) ?? [],
       aGradeEvidence: Number(r["a_grade"] ?? 0),
       lastMaterialChangeAt: r["last_material_at"] ? new Date(r["last_material_at"] as string) : null,
     };

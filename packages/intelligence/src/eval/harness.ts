@@ -28,7 +28,16 @@ const featuresSchema = z.object({
   maxValuation: z.number().nullable(),
   clusterSize: z.number(),
   hasVelocitySignal: z.boolean(),
-  orgs: z.array(z.object({ name: z.string(), role: z.string().nullable() })),
+  orgs: z.array(
+    z.object({
+      name: z.string(),
+      role: z.string().nullable(),
+      // Registry identity is additive + optional so pre-existing frozen eval
+      // JSONL (which lacks it) still validates and replays unchanged.
+      registryRef: z.string().nullable().optional(),
+      registryVerified: z.boolean().optional(),
+    }),
+  ),
   aGradeEvidence: z.number(),
   lastMaterialChangeAt: z.string().nullable(),
 });

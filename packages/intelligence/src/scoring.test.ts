@@ -445,3 +445,61 @@ describe("v1.8.0 — Solis routes residential new construction (home counties)",
     ).toBeTruthy();
   });
 });
+
+describe("WS-B — registry identity as a Solis inference signal (score-neutral under §12.3)", () => {
+  const solisTi = (orgs: ProjectFeatures["orgs"]): ProjectFeatures =>
+    features({
+      text: "tenant improvement interior remodel drywall and paint suite 200",
+      maxValuation: 250_000,
+      stage: "permit_issued",
+      orgs,
+    });
+  const solis = (f: ProjectFeatures) =>
+    routeProject(f, ACCOUNTS).find((r) => r.accountKey === "solis_interiors")!;
+
+  it("a registry-bound GC lifts gc_identified to 1 and fires the verified_gc_on_project signal", () => {
+    const r = solis(
+      solisTi([
+        {
+          name: "pat rivera", // bare person name — no legal suffix
+          role: "primary_contractor",
+          registryRef: "8a12a7cb-0000",
+          registryVerified: true,
+        },
+      ]),
+    );
+    expect(r.components["gc_identified"]).toBe(1);
+    expect(r.signals).toContain("verified_gc_on_project");
+  });
+
+  it("the same GC unbound (bare person name) scores gc_identified 0.5 and fires no signal", () => {
+    const r = solis(solisTi([{ name: "pat rivera", role: "primary_contractor" }]));
+    expect(r.components["gc_identified"]).toBe(0.5);
+    expect(r.signals).not.toContain("verified_gc_on_project");
+  });
+
+  it("registry identity is SCORE-NEUTRAL while Solis is provisional (§12.3): no weight ⇒ score unchanged", () => {
+    const bound = solis(
+      solisTi([{ name: "pat rivera", role: "primary_contractor", registryVerified: true }]),
+    ).score;
+    const unbound = solis(solisTi([{ name: "pat rivera", role: "primary_contractor" }])).score;
+    expect(bound).toBe(unbound);
+  });
+
+  it("a binding lifts even a bare person name to full ID for a WEIGHTED account (Glass), no legal-name regression", () => {
+    const commercial = (verified: boolean) =>
+      routeProject(
+        features({
+          county: "King",
+          permittingJurisdiction: "City of Seattle",
+          text: "new commercial office building storefront curtain wall glazing",
+          maxValuation: 4_000_000,
+          stage: "permit_applied",
+          orgs: [{ name: "pat rivera", role: "primary_contractor", registryVerified: verified }],
+        }),
+        ACCOUNTS,
+      ).find((r) => r.accountKey === "lacey_glass_commercial")!;
+    expect(commercial(true).components["gc_developer_architect_known"]).toBe(1); // bound ⇒ full
+    expect(commercial(false).components["gc_developer_architect_known"]).toBe(0.5); // unchanged baseline
+  });
+});

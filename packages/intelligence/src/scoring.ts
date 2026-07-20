@@ -50,7 +50,14 @@ export interface ProjectFeatures {
    * Absent on frozen eval examples → prior behavior, gates hold unchanged.
    */
   campusBlock?: string | null;
-  orgs: { name: string; role: string | null }[];
+  orgs: {
+    name: string;
+    role: string | null;
+    /** Canonical registry entity_id when the org is bound (null/absent otherwise). */
+    registryRef?: string | null | undefined;
+    /** True when the org carries a governed registry binding (strong-key or reviewed). */
+    registryVerified?: boolean | undefined;
+  }[];
   aGradeEvidence: number;
   lastMaterialChangeAt: Date | null;
 }
@@ -178,8 +185,16 @@ export function classify(f: ProjectFeatures) {
 function orgIdentified(f: ProjectFeatures, roles: string[]): number {
   const hits = f.orgs.filter((o) => o.role && roles.includes(o.role));
   if (hits.length === 0) return 0;
-  // A legal-entity name is a stronger identification than a person name.
-  return hits.some((o) => /\b(LLC|INC|CORP|COMPANY|LP|LLP|PLLC|LTD)\b/i.test(o.name)) ? 1 : 0.5;
+  // A registry-bound entity (an ALREADY-governed binding — strong-key or
+  // human-reviewed; never auto-bound in the scorer) or a legal-entity name is a
+  // full identification; a registry binding lifts even a bare person-name sole
+  // proprietor to full. Purely additive over the prior name-only rule — orgs
+  // with no `registryVerified` (e.g. frozen eval examples) score exactly as before.
+  return hits.some(
+    (o) => o.registryVerified || /\b(LLC|INC|CORP|COMPANY|LP|LLP|PLLC|LTD)\b/i.test(o.name),
+  )
+    ? 1
+    : 0.5;
 }
 
 function evidenceQuality(f: ProjectFeatures): number {
@@ -424,6 +439,17 @@ export function routeSolis(
   // rationale/digest but score-neutral until customer calibration.
   if (f.campusBlock) signals.push("active_campus");
   if (overCapacity) signals.push("gc_relationship_radar");
+  // A registry-verified GC/owner on the project — score-neutral SIGNAL while
+  // §12.3 provisional (the weighted lift lands at Solis calibration).
+  // `registryVerified` reads an already-governed binding, not a new auto-bind.
+  if (
+    f.orgs.some(
+      (o) =>
+        o.registryVerified && ["primary_contractor", "applicant", "owner"].includes(o.role ?? ""),
+    )
+  ) {
+    signals.push("verified_gc_on_project");
+  }
   // v1.7.0 — why an issued commercial project ranks lower (auditability).
   // bidding_confirmed sorts after issuance but is a CONFIRMED-open window.
   if (
@@ -469,6 +495,12 @@ export function routeSolis(
             : 0.3,
     timing: timingInterior(f.stage, track) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: 1,
+    // Registry-backed GC/owner identification (spec §12.3 — SIGNAL-ONLY while
+    // Solis is provisional: present here for auditability/rationale but absent
+    // from Solis's account weights, so `weighted()` leaves the score unchanged
+    // until calibration adds a weight). Reads an already-bound registry_ref —
+    // introduces no new auto-binding.
+    gc_identified: orgIdentified(f, ["primary_contractor", "applicant", "owner"]),
     evidence_quality: evidenceQuality(f),
   };
   const score = weighted(components, acct.weights);

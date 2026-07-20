@@ -97,14 +97,14 @@ async function runMaintenance(logger: Logger): Promise<void> {
     const materialized = await materializeProjectGeometry(db, { logger });
     const geocoded = await geocodeProjects(db, { limit: NIGHTLY_GEOCODE_LIMIT, logger });
     const stageLag = await computeStageLagStats(db, { logger });
-    const scored = await scoreAll(db, { logger });
-    const tokenCleanup = await cleanupActionTokens(db);
 
     // Registry seam: bind by strong identifier, then regenerate the reviewed
     // observation queue (binding candidates, phone adoption, alias/trade
     // export) and push accepted export items + public project facts to
-    // registry_partner staging. No REGISTRY_DATABASE_URL ⇒ visible skips;
-    // never blocks the chain.
+    // registry_partner staging. Runs BEFORE scoreAll so THIS run's fresh binds
+    // carry into scoring (registry identity is a scoring signal); the export is
+    // order-independent of this run's score. No REGISTRY_DATABASE_URL ⇒ visible
+    // skips; never blocks the chain.
     const registryPool = createRegistryPool();
     let registryLink;
     let registryObs;
@@ -117,6 +117,9 @@ async function runMaintenance(logger: Logger): Promise<void> {
     } finally {
       await registryPool?.end();
     }
+
+    const scored = await scoreAll(db, { logger });
+    const tokenCleanup = await cleanupActionTokens(db);
 
     const monthlyBudgetUsd = process.env.LLM_MONTHLY_BUDGET_USD
       ? Number(process.env.LLM_MONTHLY_BUDGET_USD)
