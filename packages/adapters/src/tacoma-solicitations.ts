@@ -2,6 +2,7 @@ import { loadHtml } from "@otn/documents";
 import {
   httpFetchArtifact,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -131,6 +132,27 @@ export class TacomaSolicitationsAdapter implements SourceAdapter {
     }
     if (out.length === 0) {
       ctx.logger.warn({ category }, "no solicitation rows parsed — layout may have changed");
+    }
+    return out;
+  }
+
+  /**
+   * D1 — column-shift canary for the fixed 6-column solicitations table
+   * (spec / type / due / time / title / issued). If the columns reorder, the
+   * due-date column stops holding a date; a clean parse never trips this.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    for (const p of parsed) {
+      const rf = p.rawFields as { dueDate?: string };
+      if (rf.dueDate && !/\d{2}\/\d{2}\/\d{4}/.test(rf.dueDate)) {
+        out.push({
+          check: "tacoma_solicitation_column_shift",
+          detail: `${p.record.externalId}: dueDate="${rf.dueDate}" is not a date — column drift`,
+          observed: rf.dueDate,
+          expected: "MM/DD/YYYY due date",
+        });
+      }
     }
     return out;
   }

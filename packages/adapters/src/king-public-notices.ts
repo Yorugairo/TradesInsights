@@ -2,6 +2,7 @@ import { collapsedText, extractLinks, loadHtml } from "@otn/documents";
 import {
   httpFetchArtifact,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -160,6 +161,27 @@ export class KingPublicNoticesAdapter implements SourceAdapter {
 
     if (out.length === 0) {
       throw new Error("King public notices table parsed to zero records — page shape changed?");
+    }
+    return out;
+  }
+
+  /**
+   * D1 — column-shift canary for the index-addressed notices table (cells[0..3]).
+   * A reorder or inserted column lands a permit number or a bare 10-digit parcel
+   * in the project-name column; a descriptive project name never matches these.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    for (const p of parsed) {
+      const pn = (p.rawFields as { projectName?: string }).projectName?.trim() ?? "";
+      if (pn && (PERMIT_RE.test(pn) || PARCEL_RE.test(pn))) {
+        out.push({
+          check: "king_notice_column_shift",
+          detail: `${p.record.externalId}: projectName="${pn}" looks like a permit/parcel id — column drift`,
+          observed: pn,
+          expected: "descriptive project name",
+        });
+      }
     }
     return out;
   }

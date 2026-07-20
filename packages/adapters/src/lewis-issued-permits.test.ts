@@ -177,3 +177,36 @@ describe("lewis_issued_permits discovery", () => {
     expect(ctx.savedCheckpoint).toEqual({ reportDateHighWater: "2026-07-05" });
   });
 });
+
+describe("lewis_issued_permits WS5 — column-shift canary", () => {
+  it("clean golden parse yields no invariant violations", async () => {
+    const adapter = new LewisIssuedPermitsAdapter();
+    const raw = rawArtifact(
+      await readFile(join(FIXTURES_DIR, GOLDEN)),
+      "https://x/06.28.2026_Issued_Permits_with_Valuation.pdf",
+      { reportDate: "2026-06-28" },
+    );
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+    expect(adapter.checkInvariants(raw, parsed)).toEqual([]);
+  });
+
+  it("flags a permit id or date bleeding into a descriptive column", () => {
+    const adapter = new LewisIssuedPermitsAdapter();
+    const drift = [
+      {
+        rawFields: {
+          applicationNumber: "BLD26-1234",
+          applicant: "AB26-5678",
+          primaryContractor: "Acme Co",
+          applicationType: "New SFR",
+        },
+        record: { externalId: "BLD26-1234" },
+      },
+    ] as unknown as Parameters<typeof adapter.checkInvariants>[1];
+    const v = adapter.checkInvariants(
+      null as unknown as Parameters<typeof adapter.checkInvariants>[0],
+      drift,
+    );
+    expect(v.some((x) => x.check === "lewis_issued_column_shift")).toBe(true);
+  });
+});

@@ -87,3 +87,24 @@ describe("king_public_notices (golden fixture)", () => {
     );
   });
 });
+
+describe("king_public_notices WS5 — column-shift canary", () => {
+  it("clean golden parse yields no invariant violations", async () => {
+    const adapter = new KingPublicNoticesAdapter();
+    const raw = rawArtifact(await readFile(join(FIXTURES_DIR, "king_public_notices/landing.html")));
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+    expect(adapter.checkInvariants(raw, parsed)).toEqual([]);
+  });
+
+  it("flags a permit/parcel id in the project-name column", () => {
+    const adapter = new KingPublicNoticesAdapter();
+    const drift = [
+      { rawFields: { projectName: "SHOR25-0022" }, record: { externalId: "SHOR25-0022" } },
+    ] as unknown as Parameters<typeof adapter.checkInvariants>[1];
+    const v = adapter.checkInvariants(
+      null as unknown as Parameters<typeof adapter.checkInvariants>[0],
+      drift,
+    );
+    expect(v.some((x) => x.check === "king_notice_column_shift")).toBe(true);
+  });
+});

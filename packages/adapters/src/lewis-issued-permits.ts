@@ -1,8 +1,10 @@
 import { extractLinks, extractPdfTextItems, loadHtml, type PdfTextItem } from "@otn/documents";
 import {
+  checkPattern,
   httpFetchArtifact,
   httpGet,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -311,4 +313,46 @@ export class LewisIssuedPermitsAdapter implements SourceAdapter {
     });
   }
 
+  /**
+   * D1 — column-shape invariants. The issued-permits table has no reconcilable
+   * printed total, so guard the geometry directly (mirrors lewis_inspections):
+   * the application-number column must keep its format, and an application number
+   * or a date must never surface in the applicant, contractor, or type columns —
+   * the signature of a horizontal column drift silently mis-assigning cells.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    const idViolation = checkPattern(
+      parsed,
+      (p) => (p.rawFields as { applicationNumber?: string }).applicationNumber ?? null,
+      { re: ANCHOR_RE, check: "lewis_issued_permit_id_format" },
+    );
+    if (idViolation) out.push(idViolation);
+
+    const PERMIT_TOKEN = /\b[A-Z]{1,3}\d{2}-\d{4,5}\b/;
+    const DATE_TOKEN = /\b\d{2}\/\d{2}\/\d{4}\b/;
+    for (const p of parsed) {
+      const rf = p.rawFields as {
+        applicant?: string | null;
+        primaryContractor?: string | null;
+        applicationType?: string | null;
+      };
+      for (const [field, val] of [
+        ["applicant", rf.applicant],
+        ["primaryContractor", rf.primaryContractor],
+        ["applicationType", rf.applicationType],
+      ] as const) {
+        if (val && (PERMIT_TOKEN.test(val) || DATE_TOKEN.test(val))) {
+          out.push({
+            check: "lewis_issued_column_shift",
+            detail: `${p.record.externalId}: ${field}="${val}" looks like a permit/date — column drift`,
+            observed: val,
+            expected: `descriptive ${field}`,
+          });
+          break;
+        }
+      }
+    }
+    return out;
+  }
 }

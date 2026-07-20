@@ -71,3 +71,29 @@ describe("tacoma_solicitations (golden fixtures — live pages of 2026-07-17)", 
     expect(parsed.length).toBe(0);
   });
 });
+
+describe("tacoma_solicitations WS5 — column-shift canary", () => {
+  it("clean golden parse yields no invariant violations", async () => {
+    const adapter = new TacomaSolicitationsAdapter();
+    const raw = rawArtifact(
+      await readFile(
+        join(FIXTURES_DIR, "tacoma_solicitations/public-works-and-improvements-solicitations.html"),
+      ),
+      "public-works-and-improvements-solicitations",
+    );
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+    expect(adapter.checkInvariants(raw, parsed)).toEqual([]);
+  });
+
+  it("flags a non-date in the due-date column", () => {
+    const adapter = new TacomaSolicitationsAdapter();
+    const drift = [
+      { rawFields: { dueDate: "RFP" }, record: { externalId: "PW26-0140F" } },
+    ] as unknown as Parameters<typeof adapter.checkInvariants>[1];
+    const v = adapter.checkInvariants(
+      null as unknown as Parameters<typeof adapter.checkInvariants>[0],
+      drift,
+    );
+    expect(v.some((x) => x.check === "tacoma_solicitation_column_shift")).toBe(true);
+  });
+});

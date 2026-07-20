@@ -4,6 +4,7 @@ import {
   httpFetchArtifact,
   httpGet,
   type DiscoveredArtifact,
+  type InvariantViolation,
   type ParsedSourceRecord,
   type RawArtifact,
   type RunContext,
@@ -196,5 +197,27 @@ export class LewisCurrentPlanningAdapter implements SourceAdapter {
         },
       },
     ];
+  }
+
+  /**
+   * D1 — column-shift canary for the index-addressed planning table (cells[0..1]).
+   * A reorder lands a file number or a bare parcel in the project-name column;
+   * a descriptive project name never matches these.
+   */
+  checkInvariants(_raw: RawArtifact, parsed: ParsedSourceRecord[]): InvariantViolation[] {
+    const out: InvariantViolation[] = [];
+    const FILE_RE = /^[A-Z]{2,4}\d{2}-\d{4,5}$/;
+    for (const p of parsed) {
+      const pn = (p.rawFields as { projectName?: string }).projectName?.trim() ?? "";
+      if (pn && (FILE_RE.test(pn) || /^\d{6,}$/.test(pn))) {
+        out.push({
+          check: "lewis_planning_column_shift",
+          detail: `${p.record.externalId}: projectName="${pn}" looks like a file/parcel id — column drift`,
+          observed: pn,
+          expected: "descriptive project name",
+        });
+      }
+    }
+    return out;
   }
 }
