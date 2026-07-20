@@ -10,6 +10,7 @@ import {
   computeClusterVelocity,
   exportRegistryObservations,
   fetchRegistryIdentityRows,
+  fetchTradeTaxonomy,
   generateRegistryObservations,
   geocodeProjects,
   linkRegistry,
@@ -111,8 +112,12 @@ async function runMaintenance(logger: Logger): Promise<void> {
     let registryExport;
     try {
       const registryRows = registryPool ? await fetchRegistryIdentityRows(registryPool) : null;
+      // The SHARED trade vocabulary (registry_public.trades_taxonomy_v1). Null
+      // when no registry connection OR the taxonomy view is not yet published —
+      // generateRegistryObservations then falls back to the built-in vocabulary.
+      const tradeTaxonomy = registryPool ? await fetchTradeTaxonomy(registryPool) : null;
       registryLink = await linkRegistry(db, { fetchRows: async () => registryRows, logger });
-      registryObs = await generateRegistryObservations(db, registryRows, { logger });
+      registryObs = await generateRegistryObservations(db, registryRows, { logger, tradeTaxonomy });
       registryExport = await exportRegistryObservations(db, registryPool, { logger });
     } finally {
       await registryPool?.end();

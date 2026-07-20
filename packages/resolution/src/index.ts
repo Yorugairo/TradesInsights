@@ -10,3 +10,4 @@ export * from "./geocode.js";
 export * from "./identifiers.js";
 export * from "./registry-link.js";
 export * from "./registry-observations.js";
+export * from "./trade-taxonomy.js";

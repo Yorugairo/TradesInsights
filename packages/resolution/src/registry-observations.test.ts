@@ -8,7 +8,6 @@ import {
   matchOrgByAddress,
   PHONE_MATCH_MIN_NAME_SIMILARITY,
   registryCorroborationBonus,
-  TRADE_KEYWORDS,
   TRUST_WEIGHTS,
   type TrustComponents,
 } from "./registry-observations.js";
@@ -98,15 +97,6 @@ describe("crossNameKey (cross-system name equality)", () => {
     expect(crossNameKey("ACME BUILDERS 500 UNION STREET SUITE 410 SEATTLE WA")).toBe(
       crossNameKey("Acme Builders LLC"),
     );
-  });
-});
-
-describe("TRADE_KEYWORDS", () => {
-  it("maps only explicit trade signals, never generic building permits", () => {
-    const generic = "BUILDING/RESIDENTIAL BUILDING/DWELLING-SINGLE/NA";
-    expect(Object.keys(TRADE_KEYWORDS).some((k) => generic.includes(k))).toBe(false);
-    expect(TRADE_KEYWORDS["SPRINKLER"]).toBe("fire_sprinkler");
-    expect(TRADE_KEYWORDS["MECHANICAL"]).toBe("mechanical");
   });
 });
 

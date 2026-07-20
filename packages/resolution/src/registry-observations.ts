@@ -12,7 +12,15 @@
  *   phone_adoption      bound org: registry L&I phone → a GLOBAL public_business
  *                       contact (the paying accounts' bucket). Accept applies it.
  *   alias_export        bound org: Insights name variant → registry alias.
- *   trade_export        bound org: permit-type keyword evidence → registry trade.
+ *   trade_export        bound org: trade evidence from the SHARED registry trade
+ *                       vocabulary (registry_public.trades_taxonomy_v1) matched
+ *                       over each primary_contractor permit's type AND its
+ *                       title/description. permitType matches are authoritative;
+ *                       description-only matches are DE-RATED (role 0.5) so they
+ *                       land in review, not auto-accept (a GC's building permit
+ *                       describing "drywall" is not proof the GC self-performs
+ *                       it). Skip-safe: no registry ⇒ the built-in fallback
+ *                       vocabulary over permitType only (pre-taxonomy behavior).
  *                       Accepted export types are pushed to registry_partner
  *                       staging; the registry's own loader adjudicates from there.
  *
@@ -27,6 +35,12 @@ import type { Db } from "@otn/db";
 import { addressMatchKey, loadOrganizationAddresses, loadOrganizationPhones } from "./identifiers.js";
 import { nameSimilarity, orgNameKey } from "./normalize.js";
 import { identitySnapshot, type RegistryIdentityRow } from "./registry-link.js";
+import {
+  buildTradeMatcher,
+  FALLBACK_TRADE_MATCHER,
+  type TradeMatcher,
+  type TradeTaxonomyRow,
+} from "./trade-taxonomy.js";
 
 export const OBSERVATION_TYPES = [
   "binding_name_match", "phone_adoption", "alias_export", "trade_export",
@@ -149,18 +163,6 @@ export function matchOrgByAddress(
   return best;
 }
 
-/** Permit-type keyword → provisional registry trade code (loader validates
- * against the registry taxonomy; unknown codes are skipped there, not here). */
-export const TRADE_KEYWORDS: Record<string, string> = {
-  MECHANICAL: "mechanical",
-  PLUMBING: "plumbing",
-  ELECTRICAL: "electrical",
-  SPRINKLER: "fire_sprinkler",
-  ROOF: "roofing",
-  DEMOLITION: "demolition",
-  SIGN: "signage",
-};
-
 export interface RuleHistoryRow {
   ruleKey: string;
   decisions: number;
@@ -250,7 +252,14 @@ interface PendingInsert {
 export async function generateRegistryObservations(
   db: Db,
   registryRows: RegistryIdentityRow[] | null,
-  opts: { logger?: { info: (obj: unknown, msg?: string) => void } } = {},
+  opts: {
+    logger?: { info: (obj: unknown, msg?: string) => void };
+    /** The SHARED registry trade vocabulary (registry_public.trades_taxonomy_v1).
+     * When present, Insights derives its trade matcher from it and scans permit
+     * descriptions too; when null/absent, it falls back to the built-in
+     * permitType-only vocabulary (pre-taxonomy behavior). */
+    tradeTaxonomy?: TradeTaxonomyRow[] | null;
+  } = {},
 ): Promise<GenerateSummary> {
   const summary: GenerateSummary = {
     skipped: false, bindingCandidates: 0, phoneAdoptions: 0, aliasExports: 0, tradeExports: 0, autoAccepted: 0,
@@ -451,51 +460,113 @@ export async function generateRegistryObservations(
     }
   }
 
-  // ── trade_export: permit-type keyword evidence for bound orgs ──
+  // ── trade_export: SHARED-vocabulary trade evidence for bound orgs ──
+  // Match the registry trade taxonomy (single source of truth, seeded from L&I
+  // license specialties) over each primary_contractor permit. permitType matches
+  // are authoritative (the permit IS that trade); title/description matches are
+  // DE-RATED and flagged `description`, so the registry loader's human/taxonomy
+  // review gate filters GC-misattributions (a GC's building permit that mentions
+  // "drywall" is not proof the GC self-performs drywall — the finish sub does).
+  // SKIP-SAFE: with no registry taxonomy we use the built-in fallback vocabulary
+  // over permitType ONLY, byte-identical to the pre-taxonomy behavior.
+  const taxonomyRows =
+    opts.tradeTaxonomy && opts.tradeTaxonomy.length > 0 ? opts.tradeTaxonomy : null;
+  const tradeMatcher: TradeMatcher = taxonomyRows
+    ? buildTradeMatcher(taxonomyRows)
+    : FALLBACK_TRADE_MATCHER;
+  const scanDescription = taxonomyRows !== null;
+
   const tradeRes = await db.execute(sql`
-    SELECT o.id AS organization_id, o.registry_ref, upper(sr.normalized_json->>'permitType') AS permit_type,
-      count(DISTINCT pr.source_record_id)::int AS n
+    SELECT o.id AS organization_id, o.registry_ref,
+      upper(coalesce(sr.normalized_json->>'permitType', '')) AS permit_type,
+      upper(concat_ws(' ',
+        sr.normalized_json->>'permitType',
+        sr.normalized_json->>'title',
+        left(sr.normalized_json->>'description', 800))) AS scan_text,
+      pr.source_record_id::text AS source_record_id
     FROM organizations o
     JOIN project_roles pr ON pr.organization_id = o.id AND pr.role = 'primary_contractor'
     JOIN source_records sr ON sr.id = pr.source_record_id
-    WHERE o.registry_ref IS NOT NULL AND sr.normalized_json->>'permitType' IS NOT NULL
-    GROUP BY o.id, o.registry_ref, upper(sr.normalized_json->>'permitType')`);
-  const tradeCounts = new Map<string, { organizationId: string; entityId: string; tradeCode: string; n: number; samples: Set<string> }>();
+    WHERE o.registry_ref IS NOT NULL
+      AND (sr.normalized_json->>'permitType' IS NOT NULL
+        OR (${scanDescription} AND (sr.normalized_json->>'title' IS NOT NULL
+                                    OR sr.normalized_json->>'description' IS NOT NULL)))`);
+
+  interface TradeAgg {
+    organizationId: string;
+    entityId: string;
+    tradeCode: string;
+    permitRecords: Set<string>;
+    descRecords: Set<string>;
+    permitSamples: Set<string>;
+    descSamples: Set<string>;
+  }
+  const tradeCounts = new Map<string, TradeAgg>();
   for (const r of tradeRes.rows as Record<string, unknown>[]) {
     const permitType = (r["permit_type"] as string | null) ?? "";
-    for (const [keyword, tradeCode] of Object.entries(TRADE_KEYWORDS)) {
-      if (!permitType.includes(keyword)) continue;
-      const orgId = r["organization_id"] as string;
+    // Fallback mode scans permitType only (pre-taxonomy behavior); with the
+    // shared taxonomy we also scan the title/description text.
+    const scanText = scanDescription ? ((r["scan_text"] as string | null) ?? "") : permitType;
+    const orgId = r["organization_id"] as string;
+    const entityId = r["registry_ref"] as string;
+    const srId = r["source_record_id"] as string;
+    const permitCodes = new Set(tradeMatcher.match(permitType));
+    for (const tradeCode of tradeMatcher.match(scanText)) {
       const key = `${orgId}:${tradeCode}`;
       const entry = tradeCounts.get(key) ?? {
-        organizationId: orgId, entityId: r["registry_ref"] as string, tradeCode, n: 0, samples: new Set<string>(),
+        organizationId: orgId, entityId, tradeCode,
+        permitRecords: new Set<string>(), descRecords: new Set<string>(),
+        permitSamples: new Set<string>(), descSamples: new Set<string>(),
       };
-      entry.n += Number(r["n"]);
-      if (entry.samples.size < 5) entry.samples.add(permitType);
+      if (permitCodes.has(tradeCode)) {
+        entry.permitRecords.add(srId);
+        if (entry.permitSamples.size < 5) entry.permitSamples.add(permitType);
+      } else {
+        entry.descRecords.add(srId);
+        if (entry.descSamples.size < 5) entry.descSamples.add(scanText.slice(0, 120));
+      }
       tradeCounts.set(key, entry);
     }
   }
   const boundById = new Map(bound.map((o) => [o.id, o]));
   for (const t of tradeCounts.values()) {
     const org = boundById.get(t.organizationId);
+    const permitN = t.permitRecords.size;
+    const descN = t.descRecords.size;
+    const total = new Set([...t.permitRecords, ...t.descRecords]).size;
+    const matchedOn: "permit_type" | "description" = permitN > 0 ? "permit_type" : "description";
+    // permitType evidence is authoritative (role 1). Description-only evidence
+    // corroborates but is DE-RATED (role 0.5) and tracked under a distinct rule
+    // key, so it surfaces for review and only auto-accepts once reviewers build
+    // an independent accept history for the description-derived signal.
+    const role = matchedOn === "permit_type" ? 1 : 0.5;
+    const ruleKey = matchedOn === "permit_type" ? `trade_${t.tradeCode}` : `trade_${t.tradeCode}_desc`;
     const components: TrustComponents = {
       name: 1,
       identifier: 1, // entity identity already reviewed/strong-key bound
       locality: 1,
-      role: 1, // primary_contractor by construction
-      corroboration: Math.min(1, t.n / 3),
-      ruleHistory: rate(`trade_${t.tradeCode}`),
+      role,
+      corroboration: Math.min(1, total / 3),
+      ruleHistory: rate(ruleKey),
     };
     inserts.push({
       observationType: "trade_export",
       organizationId: t.organizationId,
       registryEntityId: t.entityId,
-      ruleKey: `trade_${t.tradeCode}`,
+      ruleKey,
       payload: {
         trade_code: t.tradeCode,
-        permit_type_samples: [...t.samples],
-        role_count: t.n,
-        evidence: { role: "primary_contractor", org_records: org?.record_count ?? t.n },
+        matched_on: matchedOn,
+        permit_type_samples: [...t.permitSamples],
+        description_samples: matchedOn === "description" ? [...t.descSamples] : [],
+        role_count: total,
+        evidence: {
+          role: "primary_contractor",
+          matched_on: matchedOn,
+          permit_matches: permitN,
+          description_matches: descN,
+          org_records: org?.record_count ?? total,
+        },
       },
       components,
       dedupeKey: `trade:${t.entityId}:${t.tradeCode}`,
