@@ -131,14 +131,13 @@ session. Standing counts are in `docs/calibration-prep-solis.md`.
   volume. (Implement as a routing/geographic component, not a hard filter — King work
   still surfaces, it just doesn't dominate the priority pool. Versioned in
   `account-profiles.yaml`.)
-- **Application-stage vs issued — NEUTRAL.** An equal opportunity is equal regardless
-  of `permit_applied` vs `permit_issued`; the team is small enough that residential is
-  just as good as commercial. **Surfacing the opportunity and building the
-  relationship matters more than out-ranking one stage over another.** So the
-  pre-permit bid window is still *surfaced* (the R4 bid-window line, informational) but
-  carries **no scoring boost** over an equivalent issued job. (No change — confirms the
-  current timing-neutral behavior; keeps the core `domain-bid-timing.md` inversion as a
-  surfaced line, not a ranking lever.)
+- **Application-stage weighted ABOVE issued.** A `permit_applied` record ranks **above**
+  an otherwise-equivalent `permit_issued` one. Earlier = more lead time to get in and
+  build the relationship *before* the GC locks its subs ("by issuance, most have already
+  lined up their contractors"); and for commercial the application / plan-review window
+  is the **only** live bid window — by issuance it is too late (`domain-bid-timing.md`).
+  (Implement as a positive stage-timing weight on `permit_applied` / pre-permit stages;
+  the R4 bid-window line still reflects the per-track clock, informational.)
 - **`warm_gc_active` — small positive weight.** A project whose GC is in Solis's warm
   set gets a **small** lift (relationship-first, per the philosophy above), not a large
   one. (Implement a small weight; keep it bounded so it nudges rather than reorders.)

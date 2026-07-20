@@ -101,11 +101,12 @@ By stage (score ≥ 80): permit_issued 295, permit_applied 178, complete 6, near
 unknown 1 — the pool is concentrated exactly where an interior sub wants it
 (issued/applied), which supports the easy-win framing.
 
-**DECIDED (owner, 2026-07-20):** application-stage vs issued is **NEUTRAL** — an equal
-opportunity is equal regardless of stage; a small team makes residential just as good
-as commercial, and surfacing the opportunity + building the relationship matters more
-than out-ranking one stage. The pre-permit bid window is still *surfaced* (informational
-bid line) but gets no scoring boost. Also decided: a **small** positive weight for
+**DECIDED (owner, 2026-07-20):** application-stage is weighted **ABOVE** issued — a
+`permit_applied` project ranks above an otherwise-equivalent `permit_issued` one.
+Earlier = more lead time to get in before the GC locks its subs ("by issuance, most
+have already lined up their contractors"), and for commercial the application /
+plan-review window is the only biddable one (issuance is too late,
+`docs/domain-bid-timing.md`). Also decided: a **small** positive weight for
 `warm_gc_active` (relationship-first). Both are `account-profiles.yaml` + scorer
 follow-ups.
 
