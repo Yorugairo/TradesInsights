@@ -6,10 +6,12 @@ import { extractPdfTextItems } from "@otn/documents";
 import type { RawArtifact } from "@otn/source-sdk";
 import {
   CentraliaPermitReportsAdapter,
+  assignCentraliaUnits,
   leadingPermitNumber,
   parseCentraliaPdf,
   permitFromCell,
   reportMonthFromTitle,
+  type CentraliaRow,
 } from "./centralia-permit-reports.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
 
@@ -78,6 +80,7 @@ describe("centralia_permit_reports golden PDF (February 2026)", () => {
       contractor: "Promise Land Construction",
       comments: "Add toilet & sink to laundry room",
       valuation: 4500,
+      units: null,
     });
 
     // Three-line address wrap ("1027 N" / "Washington" / "Avenue") belongs to
@@ -307,5 +310,106 @@ describe("centralia_permit_reports discovery", () => {
       vi.fn(async () => new Response("<html><body>no docs</body></html>", { status: 200, headers: { "content-type": "text/html" } })),
     );
     await expect(adapter.discover(ctx)).rejects.toThrow(/zero report links/i);
+  });
+});
+
+function unitsRow(units: number | null = null): CentraliaRow {
+  return {
+    permitNumber: "x",
+    permitType: null,
+    issueDate: null,
+    owner: null,
+    address: null,
+    parcels: [],
+    contractor: null,
+    comments: null,
+    valuation: null,
+    units,
+  };
+}
+
+describe("centralia_permit_reports WS5 — dwelling units (matrix, reconciled)", () => {
+  it("recovers reconciled dwelling units from the count matrix (February 2026)", async () => {
+    const pdf = await readFile(join(FIXTURES_DIR, GOLDEN));
+    const { rows } = parseCentraliaPdf(await extractPdfTextItems(pdf));
+
+    // Only reconciled dwelling permits carry units; everything else stays null.
+    expect(rows.filter((r) => r.units !== null).length).toBe(4);
+    // The three Century Communities SFR-New each count one dwelling.
+    const sfrNew = rows.filter((r) => r.permitType === "SFR - New");
+    expect(sfrNew.length).toBe(3);
+    expect(sfrNew.every((r) => r.units === 1)).toBe(true);
+    // A commercial remodel converting an existing building to 11 dwelling units —
+    // a count NOT derivable from the permit type alone.
+    const conversion = rows.find((r) => r.units === 11)!;
+    expect(conversion.permitType).toBe("Commercial - Remodel");
+    // Reroofs / mechanical / etc. are not dwellings.
+    expect(rows.find((r) => /Reroof/i.test(r.permitType ?? ""))!.units).toBeNull();
+    // Total dwellings = 3 SFR + 11 converted units.
+    expect(rows.reduce((s, r) => s + (r.units ?? 0), 0)).toBe(14);
+  });
+
+  it("counts new single-family dwellings (May 2026)", async () => {
+    const pdf = await readFile(join(FIXTURES_DIR, "centralia_permit_reports/may-2026.pdf"));
+    const { rows } = parseCentraliaPdf(await extractPdfTextItems(pdf));
+    expect(rows.filter((r) => r.units === 1).length).toBe(3);
+    expect(rows.reduce((s, r) => s + (r.units ?? 0), 0)).toBe(3);
+  });
+
+  it("counts SFR and ADU dwellings across pages, older form layout (July 2025)", async () => {
+    const pdf = await readFile(join(FIXTURES_DIR, "centralia_permit_reports/july-2025.pdf"));
+    const { rows } = parseCentraliaPdf(await extractPdfTextItems(pdf));
+    const adus = rows.filter((r) => /Accessory Dwelling Unit/i.test(r.permitType ?? ""));
+    expect(adus.length).toBe(2);
+    expect(adus.every((r) => r.units === 1)).toBe(true);
+    expect(rows.filter((r) => r.permitType === "SFR - New" && r.units === 1).length).toBe(5);
+    expect(rows.reduce((s, r) => s + (r.units ?? 0), 0)).toBe(7);
+  });
+
+  it("sets record.units on the emitted records (February 2026)", async () => {
+    const adapter = new CentraliaPermitReportsAdapter();
+    const pdf = await readFile(join(FIXTURES_DIR, GOLDEN));
+    const parsed = await adapter.parse(
+      rawArtifact(pdf, "https://www.cityofcentralia.com/DocumentCenter/View/5408/x", { month: "2026-02" }),
+      testContext(adapter.key),
+    );
+    expect(parsed.find((p) => p.record.externalId === "20250786")!.record.units).toBe(1);
+    expect(parsed.some((p) => p.record.units === 11)).toBe(true);
+    expect(parsed.filter((p) => p.record.units !== null).length).toBe(4);
+  });
+
+  it("reconciles, applies the N-unit-building multiplier, and fail-closes on drift", () => {
+    // Two SFR (×1) + one duplex BUILDING mark (×2) whose column totals all match.
+    const rows = [unitsRow(), unitsRow(), unitsRow()];
+    assignCentraliaUnits(
+      rows,
+      [
+        { x: 100, value: 1 },
+        { x: 100, value: 1 },
+        { x: 120, value: 1 },
+      ],
+      [
+        { x: 100, total: 2, unitsPerMark: 1 },
+        { x: 120, total: 1, unitsPerMark: 2 }, // one duplex building → 2 units
+      ],
+    );
+    expect(rows.map((r) => r.units)).toEqual([1, 1, 2]);
+
+    // A printed total the marks don't sum to → every unit falls back to null.
+    const drifted = [unitsRow(), unitsRow()];
+    assignCentraliaUnits(
+      drifted,
+      [
+        { x: 100, value: 1 },
+        { x: 100, value: 1 },
+      ],
+      [{ x: 100, total: 3, unitsPerMark: 1 }],
+    );
+    expect(drifted.every((r) => r.units === null)).toBe(true);
+
+    // No matrix present at all → units untouched.
+    const noMatrix = [unitsRow()];
+    assignCentraliaUnits(noMatrix, [null], null);
+    expect(noMatrix[0]!.units).toBeNull();
   });
 });

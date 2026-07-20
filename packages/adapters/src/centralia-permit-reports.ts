@@ -69,6 +69,9 @@ export interface CentraliaRow {
   contractor: string | null;
   comments: string | null;
   valuation: number | null;
+  /** Dwelling units from the far-right count matrix (WS5). Null unless the whole
+   * matrix reconciles against its printed column totals — never guessed. */
+  units: number | null;
 }
 
 type ColName =
@@ -211,6 +214,167 @@ export function permitFromCell(text: string): { permit: string; rest: string } |
 const MONTH_TITLE_RE = new RegExp(`^(${Object.keys(MONTHS).join("|")})\\s+\\d{4}$`, "i");
 const MONTH_WORD_RE = new RegExp(`^(${Object.keys(MONTHS).join("|")})$`, "i");
 
+// ── WS5: dwelling-unit count matrix ─────────────────────────────────────────
+// The report's far-right grid is the city's own dwelling accounting: each permit
+// carries exactly one mark in its category column, and a printed totals row sums
+// every column. We recover per-permit dwelling units ONLY when the WHOLE matrix
+// reconciles against those printed totals — any drift leaves `units` null (never
+// guessed). Column x's and the label→data offset drift between form versions, so
+// geometry is derived per-report from the header labels plus a global offset.
+interface MatrixColumn {
+  x: number;
+  total: number;
+  unitsPerMark: number | null; // null ⇒ not a dwelling column
+}
+interface RowMark {
+  x: number;
+  value: number;
+}
+interface DwellingLabel {
+  re: RegExp;
+  unitsPerMark: number;
+}
+/** Dwelling columns and how a mark converts to units. "# of units"-style columns
+ * carry the unit count directly (×1); an N-unit-building column carries the
+ * BUILDING count, so ×N. Non-dwelling columns (reroof, demo, mechanical, …) are
+ * absent here and therefore never contribute units. More specific patterns first. */
+const DWELLING_LABELS: DwellingLabel[] = [
+  { re: /New Single Family/i, unitsPerMark: 1 },
+  { re: /Existing Bldg Adding/i, unitsPerMark: 1 },
+  { re: /New Townhouse/i, unitsPerMark: 1 },
+  { re: /New (?:2|Two)[\s-]*Unit/i, unitsPerMark: 2 },
+  { re: /New 3[\s-]*Unit/i, unitsPerMark: 3 },
+  { re: /New 4[\s-]*Unit/i, unitsPerMark: 4 },
+  { re: /New 5[\s-]*Unit/i, unitsPerMark: 5 },
+  { re: /#\s*of\s*New\s*Units/i, unitsPerMark: 1 },
+  { re: /#\s*of\s*Units\s*\(only used for 5\+/i, unitsPerMark: 1 },
+  { re: /\bADU\b/i, unitsPerMark: 1 },
+];
+
+type PdfPage = { pageNumber: number; items: PdfTextItem[] };
+
+/** The printed per-column totals row: the densest band of lone small integers in
+ * the matrix region (a data row shows one mark; the totals row shows one per
+ * column). Returns the totals ascending by x, or null if no such row exists. */
+function findCentraliaTotalsRow(
+  pages: PdfPage[],
+  minX: number,
+  valueX: number,
+): { x: number; value: number }[] | null {
+  let best: PdfTextItem[] | null = null;
+  for (const pg of pages) {
+    const marks = pg.items
+      .filter((i) => i.x >= minX && i.x < valueX - 8 && /^\d{1,3}$/.test(i.text.trim()))
+      .sort((a, b) => a.y - b.y);
+    const bands: PdfTextItem[][] = [];
+    for (const m of marks) {
+      const b = bands.find((g) => Math.abs(g[0]!.y - m.y) <= 3);
+      if (b) b.push(m);
+      else bands.push([m]);
+    }
+    for (const b of bands) if (!best || b.length > best.length) best = b;
+  }
+  if (!best || best.length < 6) return null;
+  return best.map((i) => ({ x: Math.round(i.x), value: Number(i.text.trim()) })).sort((a, b) => a.x - b.x);
+}
+
+/** Derive the matrix columns (x, printed total, dwelling multiplier) for a report
+ * from its header labels + a New-Single-Family-anchored global offset. Returns
+ * null when the header or totals row can't be found — the caller keeps units null. */
+function buildCentraliaMatrixColumns(pages: PdfPage[]): MatrixColumn[] | null {
+  let header: { page: PdfPage; nsf: PdfTextItem } | null = null;
+  for (const pg of pages) {
+    const nsf = pg.items.find((i) => /New Single Family/i.test(i.text));
+    if (nsf) {
+      header = { page: pg, nsf };
+      break;
+    }
+  }
+  if (!header) return null;
+  const headerY = header.nsf.y;
+  const valueItem = header.page.items.find((i) => /^Value$/i.test(i.text.trim()) && Math.abs(i.y - headerY) <= 4);
+  const valueX = valueItem ? valueItem.x : Infinity;
+
+  const dwellingLabels: { labelX: number; unitsPerMark: number }[] = [];
+  for (const it of header.page.items) {
+    if (Math.abs(it.y - headerY) > 3 || it.x < 270) continue;
+    for (const d of DWELLING_LABELS) {
+      if (d.re.test(it.text)) {
+        dwellingLabels.push({ labelX: it.x, unitsPerMark: d.unitsPerMark });
+        break;
+      }
+    }
+  }
+
+  // The NSF column is the leftmost matrix column; its printed total can sit a few
+  // pt LEFT of the label (older forms), so seed the lower bound from the label.
+  const minMatrixX = header.nsf.x - 6;
+  const totals = findCentraliaTotalsRow(pages, minMatrixX, valueX);
+  if (!totals) return null;
+
+  // Global label→data offset, anchored on the New Single Family column.
+  const nsfTotal = totals.reduce((a, b) =>
+    Math.abs(b.x - header!.nsf.x) < Math.abs(a.x - header!.nsf.x) ? b : a,
+  );
+  const offset = nsfTotal.x - header.nsf.x;
+
+  return totals.map((t) => {
+    let unitsPerMark: number | null = null;
+    for (const dl of dwellingLabels) {
+      if (Math.abs(dl.labelX + offset - t.x) <= 4) {
+        unitsPerMark = dl.unitsPerMark;
+        break;
+      }
+    }
+    return { x: t.x, total: t.value, unitsPerMark };
+  });
+}
+
+/** Assign each row's dwelling units from its matrix mark — but ONLY if the whole
+ * matrix reconciles: every mark lands in a column and every column's summed marks
+ * equals its printed total. Any drift or missed mark leaves ALL units null for the
+ * report (honest fail-closed). Mutates `rows[i].units` in place. */
+export function assignCentraliaUnits(
+  rows: CentraliaRow[],
+  rowMarks: (RowMark | null)[],
+  columns: MatrixColumn[] | null,
+): void {
+  if (!columns || columns.length === 0) return;
+  const sums = new Array<number>(columns.length).fill(0);
+  const rowCol = new Array<number>(rows.length).fill(-1);
+  let assigned = 0;
+  let marked = 0;
+  for (let i = 0; i < rows.length; i += 1) {
+    const m = rowMarks[i];
+    if (!m) continue;
+    marked += 1;
+    let ci = -1;
+    // Nearest column within tolerance. Columns are ≥9pt apart but the label→data
+    // offset drifts up to ~5pt across a row, so allow ≤6; any true misassignment
+    // is still caught by the per-column reconciliation below (fail-closed).
+    let bestD = 6.5;
+    for (let c = 0; c < columns.length; c += 1) {
+      const d = Math.abs(columns[c]!.x - m.x);
+      if (d < bestD) {
+        bestD = d;
+        ci = c;
+      }
+    }
+    if (ci < 0) return; // a mark matching no column → geometry drift → fail-closed
+    rowCol[i] = ci;
+    sums[ci]! += m.value;
+    assigned += 1;
+  }
+  if (assigned === 0 || assigned !== marked) return;
+  for (let c = 0; c < columns.length; c += 1) if (sums[c] !== columns[c]!.total) return;
+  for (let i = 0; i < rows.length; i += 1) {
+    const ci = rowCol[i]!;
+    if (ci < 0) continue;
+    const per = columns[ci]!.unitsPerMark;
+    if (per != null) rows[i]!.units = rowMarks[i]!.value * per;
+  }
+}
+
 /**
  * Parse one report's pages into rows. Cells are BOTTOM-ALIGNED on the row's
  * permit-number anchor line: a wrapped cell's fragments stack UPWARD, ending
@@ -225,6 +389,12 @@ export function parseCentraliaPdf(pages: { pageNumber: number; items: PdfTextIte
 } {
   const rows: CentraliaRow[] = [];
   let printedTotal: number | null = null;
+
+  // WS5: document-level dwelling-matrix geometry + per-row marks (reconciled at
+  // the end). Null when no matrix is present — units then stay null.
+  const matrixCols = buildCentraliaMatrixColumns(pages);
+  const maxColX = matrixCols && matrixCols.length ? Math.max(...matrixCols.map((c) => c.x)) : Infinity;
+  const rowMarks: (RowMark | null)[] = [];
 
   // Pass 1 — per-page table bodies + the printed total.
   const pageBodies: PdfTextItem[][] = [];
@@ -356,9 +526,24 @@ export function parseCentraliaPdf(pages: { pageNumber: number; items: PdfTextIte
         contractor: cell("contractor") || null,
         comments: cell("comments") || null,
         valuation: parseMoney(cell("value")),
+        units: null,
       });
+      // WS5: the row's lone dwelling-matrix mark — a small integer right of the
+      // comments column (dropped from the text cells above), left of the value
+      // column. Reconciled against the printed totals after all rows are built.
+      const commentsX = cols[cols.length - 1]!.x;
+      const markItems = block.filter((i) => {
+        const t = i.text.trim();
+        return i.x > commentsX + 20 && i.x <= maxColX + 6 && /^\d{1,3}$/.test(t);
+      });
+      rowMarks.push(
+        markItems.length === 1
+          ? { x: Math.round(markItems[0]!.x), value: Number(markItems[0]!.text.trim()) }
+          : null,
+      );
     }
   }
+  assignCentraliaUnits(rows, rowMarks, matrixCols);
   return { rows, printedTotal };
 }
 
@@ -409,6 +594,7 @@ export function parseCentraliaXlsxRows(
         contractor: at("contractor") || null,
         comments: at("comments") || null,
         valuation: money ? (parseMoney(money) ?? (Number(money) > 0 ? Number(money) : null)) : null,
+        units: null,
       });
     }
   }
@@ -539,7 +725,7 @@ export class CentraliaPermitReportsAdapter implements SourceAdapter {
           issueDate: r.issueDate,
           sourceUpdatedAt: null,
           valuationUsd: r.valuation,
-          units: null,
+          units: r.units,
           lots: null,
           squareFeet: null,
           organizations,
