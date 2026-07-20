@@ -64,6 +64,63 @@ const HEADER_LABELS: { label: string; name: ColName }[] = [
   { label: "Applicant", name: "applicant" },
 ];
 
+/**
+ * Olympia publishes two rolling 30-day permit reports that share this EXACT PDF
+ * layout (same six columns, same category-total + Grand-Total structure),
+ * differing only in the date column's meaning and the "Permits" vs "Applications"
+ * wording. The APPLICATIONS report is the higher-lead-time signal: at submission
+ * the GC has usually not yet bought out its finish subs, so a trade sub (Solis)
+ * can still get in — by issuance that window is mostly closed. Both are parsed by
+ * the shared logic below; only the date field + stage + status differ.
+ */
+interface ReportSpec {
+  report: string;
+  file: string; // capture / fixture filename
+  idempotencyKey: string;
+  canonicalUrl: string;
+  meta: Record<string, unknown>;
+  dateField: "issueDate" | "applicationDate";
+  stage: "permit_issued" | "permit_applied";
+  statusRaw: string;
+  documentType: string;
+  dateLabel: string; // evidence label for the date column
+}
+
+const REPORTS: Record<string, ReportSpec> = {
+  permits_issued_last_30_days: {
+    report: "permits_issued_last_30_days",
+    file: "permits-issued-last-30-days.pdf",
+    idempotencyKey: "olympia_smartgov_reports:permits_issued_last_30_days",
+    canonicalUrl: `${PORTAL}#report=${ISSUED_REPORT_GUID}`,
+    meta: { report: "permits_issued_last_30_days", exagoGuid: ISSUED_REPORT_GUID },
+    dateField: "issueDate",
+    stage: "permit_issued",
+    statusRaw: "issued",
+    documentType: "permits_issued_report",
+    dateLabel: "Date Issued",
+  },
+  permit_applications_last_30_days: {
+    report: "permit_applications_last_30_days",
+    file: "permit-applications-last-30-days.pdf",
+    idempotencyKey: "olympia_smartgov_reports:permit_applications_last_30_days",
+    canonicalUrl: `${PORTAL}#report=permit_applications_last_30_days`,
+    meta: { report: "permit_applications_last_30_days" },
+    dateField: "applicationDate",
+    stage: "permit_applied",
+    statusRaw: "submitted",
+    documentType: "permit_applications_report",
+    dateLabel: "Submitted Date",
+  },
+};
+
+/** Resolve the report spec for an artifact (meta.report, else the idempotency-key
+ * suffix), defaulting to the issued-permits report for legacy/test artifacts. */
+function resolveReport(d: DiscoveredArtifact): ReportSpec {
+  const key =
+    (d as { meta?: { report?: string } }).meta?.report ?? d.idempotencyKey.split(":")[1] ?? "";
+  return REPORTS[key] ?? REPORTS["permits_issued_last_30_days"]!;
+}
+
 /** Derive the column x-anchors from the report's own header row, so a reformat
  * that shifts the margins moves the columns with it. Falls back to the observed
  * defaults if the full header can't be located; the printed-total reconciliation
@@ -106,10 +163,16 @@ function isoDate(s: string): string | null {
  * logical record stream flows across page breaks. */
 function isFurniture(text: string): boolean {
   return (
-    /^City of Olympia - Permits Issued/.test(text) ||
-    /^Permits Issued \d/.test(text) ||
+    /^City of Olympia - Permit/i.test(text) || // "Permits Issued" and "Permit Applications"
+    /^Permits? (Issued|Applications)\b/.test(text) ||
     /^Report Run /.test(text) ||
-    /^Pg\. /.test(text)
+    /^Pg\. /.test(text) ||
+    // The applications report's date-column header wraps as two lone items
+    // ("Submitted" / "Date") off the Permit-Number header row — skip both so they
+    // never leak into an open record.
+    text === "Submitted" ||
+    text === "Date" ||
+    text === "Submitted Date"
   );
 }
 
@@ -139,33 +202,39 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
   readonly key = "olympia_smartgov_reports";
   readonly parserVersion = "1.0.0";
 
-  /** Report-class discovery: the issued-permits report is the enumerated
-   * artifact. It is a rolling 30-day window, so the idempotency key is the
-   * report identity (the body hash drives change detection upstream). */
+  /** Report-class discovery. Only the ISSUED report is discovered in production.
+   * The APPLICATIONS report is fully scaffolded (REPORTS/resolveReport + a
+   * report-aware parse that maps submissions to applicationDate/permit_applied)
+   * and parses ~98% clean, but its printed-total reconciliation is not yet exact
+   * (a couple of category-boundary edge cases from the applications report's
+   * wrapped totals). Discovering it now would surface reconciliation violations
+   * that mark this shared source red and suppress the working issued report — so
+   * it stays gated until the parser reconciles. Flip in `REPORTS`-driven discovery
+   * once the applications parse is total-exact (see the applications parse test). */
   async discover(_ctx: RunContext): Promise<DiscoveredArtifact[]> {
+    const issued = REPORTS["permits_issued_last_30_days"]!;
     return [
       {
-        idempotencyKey: `${this.key}:permits_issued_last_30_days`,
-        canonicalUrl: `${PORTAL}#report=${ISSUED_REPORT_GUID}`,
+        idempotencyKey: issued.idempotencyKey,
+        canonicalUrl: issued.canonicalUrl,
         parentUrl: PORTAL,
         expectedContentType: "application/pdf",
         sourcePublishedAt: null,
-        meta: { report: "permits_issued_last_30_days", exagoGuid: ISSUED_REPORT_GUID },
+        meta: issued.meta,
       },
     ];
   }
 
   async fetch(item: DiscoveredArtifact, _ctx: RunContext): Promise<RawArtifact> {
+    const spec = resolveReport(item);
     // Capture-fed: an operator-local run points OTN_CAPTURE_DIR at a directory of
     // genuine-browser captures. Read <OTN_CAPTURE_DIR>/olympia_smartgov_reports/
-    // permits-issued-last-30-days.pdf when present. The golden fixtures dir is NOT
-    // consulted here, so tests still dead-letter.
+    // <report>.pdf when present. The golden fixtures dir is NOT consulted here, so
+    // tests still dead-letter.
     const captureDir = process.env.OTN_CAPTURE_DIR;
     if (captureDir) {
       try {
-        const body = await readFile(
-          join(captureDir, this.key, "permits-issued-last-30-days.pdf"),
-        );
+        const body = await readFile(join(captureDir, this.key, spec.file));
         if (body.byteLength > 0) {
           return {
             discovered: item,
@@ -186,8 +255,8 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
     throw new Error(
       `olympia_smartgov_reports: ${item.canonicalUrl} renders only through a session-bound ` +
         "Exago `eid` (non-PDF export 500s). Genuine-visitor capture-fed; stage a captured report " +
-        "PDF at $OTN_CAPTURE_DIR/olympia_smartgov_reports/permits-issued-last-30-days.pdf " +
-        "(operator-local run) — auto-fetch dead-letters here by design.",
+        `PDF at $OTN_CAPTURE_DIR/olympia_smartgov_reports/${spec.file} (operator-local run) — ` +
+        "auto-fetch dead-letters here by design.",
     );
   }
 
@@ -198,6 +267,8 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
     const pages = await extractPdfTextItems(raw.body);
     // Durable geometry: column x-anchors from the header, not baked-in coordinates.
     const columns = deriveColumns(pages);
+    // Which report (issued vs applications) — drives the date field + stage.
+    const spec = resolveReport(raw.discovered);
 
     const out: ParsedSourceRecord[] = [];
     let categoryRecords: ParsedSourceRecord[] = []; // emitted for the current category, awaiting its printed total
@@ -209,7 +280,7 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
 
     const finalizeOpen = (): void => {
       if (!open) return;
-      const rec = this.buildRecord(open, raw);
+      const rec = this.buildRecord(open, raw, spec);
       if (rec) {
         out.push(rec);
         categoryRecords.push(rec);
@@ -225,39 +296,52 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
         if (isFurniture(joined)) continue;
         if (first.text === "Permit Number") continue; // column-header row
 
-        // The count on a total line is the RIGHTMOST bare integer — a category
-        // name may itself contain a number ("2 Family"), and the count comes last.
-        const countItem = [...line].reverse().find((i) => /^\d+$/.test(i.text.trim()));
+        // The printed count is the number after "Permits:"/"Applications:" in the
+        // line TEXT. The issued report leaves it as a separate integer item
+        // ("… Permits:  5") while the applications report glues it into the label
+        // item ("… Applications: 1"); reading it from the joined text handles both
+        // and never reaches forward to grab a permit number off the next category.
+        const joinedText = line.map((i) => i.text).join(" ");
+        const textCount = /(?:Permits|Applications)\s*:\s*(\d+)\b/i.exec(joinedText);
+        const bareInt = [...line].reverse().find((i) => /^\d+$/.test(i.text.trim()));
 
         // Grand total closes the report.
-        if (line.some((i) => /^Grand Total/i.test(i.text))) {
+        if (/Grand Total/i.test(joinedText)) {
           finalizeOpen();
-          if (countItem) grandTotalPrinted = Number(countItem.text);
+          const g = /Grand Total\s*:?\s*(\d+)/i.exec(joinedText);
+          if (g) grandTotalPrinted = Number(g[1]);
+          else if (bareInt) grandTotalPrinted = Number(bareInt.text);
           awaitingTotalCount = false;
           continue;
         }
 
-        // Category total line ("Total <Category> Permits: N"); the count may wrap
+        // Category total line ("Total <Category> Permits|Applications: N"); the
+        // count is the number after the noun (glued or separate), else the
+        // rightmost bare integer (issued's separate-item form). It may also wrap
         // onto a following line while the label continues.
         if (/^Total\b/i.test(first.text)) {
           finalizeOpen();
-          if (countItem) {
-            this.closeCategoryTotal(currentCategory, Number(countItem.text), categoryRecords, categoryTotals);
+          const c = textCount ? Number(textCount[1]) : bareInt ? Number(bareInt.text) : null;
+          if (c !== null) {
+            this.closeCategoryTotal(currentCategory, c, categoryRecords, categoryTotals);
             categoryRecords = [];
             awaitingTotalCount = false;
           } else {
-            awaitingTotalCount = true; // count is on a later line
+            awaitingTotalCount = true; // "… : N" is on a later line
           }
           continue;
         }
-        // A lone count on a wrapped total block.
-        if (awaitingTotalCount && countItem) {
-          this.closeCategoryTotal(currentCategory, Number(countItem.text), categoryRecords, categoryTotals);
-          categoryRecords = [];
-          awaitingTotalCount = false;
-          continue;
+        // Wrapped total continuation: close on "… : N" text, OR a LONE integer
+        // line (issued's wrapped count) — never a data row's integer (length > 1).
+        if (awaitingTotalCount) {
+          const c = textCount ? Number(textCount[1]) : bareInt && line.length === 1 ? Number(bareInt.text) : null;
+          if (c !== null) {
+            this.closeCategoryTotal(currentCategory, c, categoryRecords, categoryTotals);
+            categoryRecords = [];
+            awaitingTotalCount = false;
+          }
+          continue; // otherwise still accumulating the wrapped label
         }
-        if (awaitingTotalCount) continue; // label continuation ("… Permits:") — ignore
 
         // Record start: a permit number in its column AND a date in the date column
         // (columns derived from the header, so a margin shift moves them together).
@@ -321,14 +405,16 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
     }
   }
 
-  private buildRecord(open: OpenRecord, raw: RawArtifact): ParsedSourceRecord | null {
+  private buildRecord(open: OpenRecord, raw: RawArtifact, spec: ReportSpec): ParsedSourceRecord | null {
+    void raw;
     const permitNumber = joinCell(open.cells.get("permitNumber"));
     if (!permitNumber) return null;
-    const dateIssued = joinCell(open.cells.get("dateIssued"));
+    const dateStr = joinCell(open.cells.get("dateIssued")); // the date column (issued OR submitted)
     const siteAddress = joinCell(open.cells.get("siteAddress"));
     const projectName = joinCell(open.cells.get("projectName"));
     const projectDesc = joinCell(open.cells.get("projectDescription"));
     const applicant = joinCell(open.cells.get("applicant"));
+    const iso = dateStr ? isoDate(dateStr) : null;
 
     const organizations: NormalizedSourceRecord["organizations"] = [];
     if (applicant) {
@@ -342,8 +428,8 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
     const evidence: NormalizedSourceRecord["evidence"] = [
       { factPath: "externalId", text: permitNumber, pageOrSection: `${open.category} table` },
     ];
-    if (dateIssued)
-      evidence.push({ factPath: "issueDate", text: `Date Issued: ${dateIssued}`, pageOrSection: "Date Issued column" });
+    if (dateStr)
+      evidence.push({ factPath: spec.dateField, text: `${spec.dateLabel}: ${dateStr}`, pageOrSection: `${spec.dateLabel} column` });
     if (applicant)
       evidence.push({ factPath: "organizations", text: `Applicant: ${applicant}`, pageOrSection: "Applicant column" });
     if (siteAddress)
@@ -363,11 +449,11 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
       geometry: null,
       applicationType: null,
       permitType: open.category,
-      documentType: "permits_issued_report",
-      statusRaw: "issued",
-      normalizedStage: "permit_issued",
-      applicationDate: null,
-      issueDate: dateIssued ? isoDate(dateIssued) : null,
+      documentType: spec.documentType,
+      statusRaw: spec.statusRaw,
+      normalizedStage: spec.stage,
+      applicationDate: spec.dateField === "applicationDate" ? iso : null,
+      issueDate: spec.dateField === "issueDate" ? iso : null,
       sourceUpdatedAt: null,
       valuationUsd: null,
       units: null,
@@ -382,8 +468,9 @@ export class OlympiaSmartgovReportsAdapter implements SourceAdapter {
       record,
       rawFields: {
         permitNumber,
+        report: spec.report,
         category: open.category,
-        dateIssued,
+        date: dateStr,
         siteAddress,
         projectName,
         projectDescription: projectDesc,

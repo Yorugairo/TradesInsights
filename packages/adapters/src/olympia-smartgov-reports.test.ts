@@ -79,7 +79,7 @@ describe("olympia_smartgov_reports — positional parse reconciles with the repo
 });
 
 describe("olympia_smartgov_reports — discovery & capture-fed gate", () => {
-  it("discovers the single issued-permits report artifact", async () => {
+  it("discovers the issued-permits report (applications scaffolded but gated)", async () => {
     const adapter = new OlympiaSmartgovReportsAdapter();
     const arts = await adapter.discover(testContext(adapter.key));
     expect(arts).toHaveLength(1);
@@ -97,6 +97,53 @@ describe("olympia_smartgov_reports — discovery & capture-fed gate", () => {
     await expect(adapter.parse(rawPdf(Buffer.alloc(0)), testContext(adapter.key))).rejects.toThrow(
       /empty artifact/i,
     );
+  });
+});
+
+describe("olympia_smartgov_reports — the Applications report (lead-time signal)", () => {
+  const APPS_PDF = join(FIXTURES_DIR, "olympia_smartgov_reports", "permit-applications-last-30-days.pdf");
+  function rawApps(body: Buffer): RawArtifact {
+    // The applications idempotency key resolves to the applications spec.
+    const discovered: DiscoveredArtifact = {
+      idempotencyKey: "olympia_smartgov_reports:permit_applications_last_30_days",
+      canonicalUrl:
+        "https://ci-olympia-wa.smartgovcommunity.com/Public/ReportsView#report=permit_applications_last_30_days",
+      parentUrl: null,
+      expectedContentType: "application/pdf",
+      sourcePublishedAt: null,
+    };
+    return {
+      discovered,
+      body,
+      contentType: "application/pdf",
+      httpStatus: 200,
+      headers: {},
+      retrievedAt: new Date("2026-07-20T00:00:00Z"),
+    };
+  }
+
+  it("parses submissions as permit_applied with applicationDate (report-aware parse)", async () => {
+    const adapter = new OlympiaSmartgovReportsAdapter();
+    const raw = rawApps(await readFile(APPS_PDF));
+    const parsed = await adapter.parse(raw, testContext(adapter.key));
+
+    // Report-aware parse: applications map to the application stage. Full
+    // printed-total reconciliation (checkInvariants) is ~98% and NOT yet exact —
+    // the last few category-boundary edge cases from the applications report's
+    // wrapped totals are why it stays GATED out of discovery (see discover()).
+    // This locks the structural parse; the reconciliation is tracked separately.
+    expect(parsed.length).toBeGreaterThan(780); // ~799 of the report's printed 815
+
+    for (const p of parsed.slice(0, 40)) {
+      const v = NormalizedSourceRecordSchema.safeParse(p.record);
+      expect(v.success, JSON.stringify(v.success ? null : v.error.issues)).toBe(true);
+      expect(p.record.permittingJurisdiction).toBe("City of Olympia");
+      // Application stage — the lead-time signal, NOT issuance.
+      expect(p.record.normalizedStage).toBe("permit_applied");
+      expect(p.record.applicationDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(p.record.issueDate).toBeNull();
+      expect(p.record.documentType).toBe("permit_applications_report");
+    }
   });
 });
 
