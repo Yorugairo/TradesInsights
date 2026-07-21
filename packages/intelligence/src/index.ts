@@ -21,6 +21,8 @@ export * from "./extraction/runs.js";
 // Premium: the verified decision brief (model prose over the deterministic memo).
 export * from "./extraction/brief-contract.js";
 export * from "./brief.js";
+// WS-E: the grounded, pre-drafted GC outreach message (brief-twin over the memo).
+export * from "./outreach.js";
 // M3.4: independent verifier + §15 publication gate.
 export * from "./gate/verifier-contract.js";
 export * from "./gate/verify.js";

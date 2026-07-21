@@ -20,7 +20,7 @@ import {
   sourceRuns,
   type Db,
 } from "@otn/db";
-import { MockProvider, extractProject, verifyProject } from "@otn/intelligence";
+import { MockProvider, extractProject, generateOutreach, verifyProject } from "@otn/intelligence";
 import {
   buildDigest,
   deliverDigest,
@@ -653,5 +653,41 @@ describe("M3.6 weekly digest", () => {
       await db.execute(sql`DELETE FROM organization_contacts WHERE organization_id = ${gcOrgId}`);
       await db.execute(sql`DELETE FROM organizations WHERE id = ${gcOrgId}`);
     }
+  });
+
+  it("WS-E: a persisted outreach draft is carried into the item and renders as ✍ Draft intro", async () => {
+    // Project A passes the gate with inclusion=auto (no missing critical facts),
+    // so it reaches a customer section and renders. Generate a grounded draft
+    // for its opportunity from the verified memo menu (project ref → c_summary,
+    // the 42-unit fact → f0, value prop → c_why, soft ask → c_action), then the
+    // digest must carry it through buildItem → itemHtml.
+    const [opp] = (
+      await db.execute(sql`
+        SELECT id FROM opportunities
+        WHERE project_id = ${projectPassId} AND account_profile_id = ${accountId} LIMIT 1`)
+    ).rows as { id: string }[];
+    const draft = JSON.stringify({
+      segments: [
+        { text: "I came across your permit-applied project in Thurston County and wanted to introduce our shop to the project team.", kind: "context", refs: ["c_summary"] },
+        { text: "It's a 42-unit interior scope that fits our crews.", kind: "fact", refs: ["f0"] },
+        { text: "We're a local interior-trades subcontractor.", kind: "context", refs: ["c_why"] },
+        { text: "We'd welcome the chance to be considered for the interior scope.", kind: "context", refs: ["c_action"] },
+      ],
+    });
+    const gen = await generateOutreach(db, new MockProvider([{ text: draft }]), opp!.id, { budget: BUDGET });
+    expect(gen.status).toBe("succeeded");
+
+    const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+    const item = [
+      ...model.sections.priorityNew,
+      ...model.sections.stageChanges,
+      ...model.sections.missingFacts,
+      ...model.sections.monitoring,
+    ].find((i) => i.projectId === projectPassId)!;
+    expect(item.outreachDraft).toBe(gen.draft!.message);
+
+    const html = renderDigestHtml(model);
+    expect(html).toContain("✍ Draft intro:");
+    expect(html).toContain("42-unit interior scope");
   });
 });

@@ -185,12 +185,18 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
   const brief = item.brief
     ? `<p style="font-size:1.05em;line-height:1.5">${esc(item.brief)}</p>`
     : "";
+  // WS-E — the pre-drafted GC intro the estimator can copy. Grounded in the same
+  // verified memo menu as the brief (every claim traces to a cited fact); a
+  // draft only — the system never sends it.
+  const outreach = item.outreachDraft
+    ? `<p><strong>✍ Draft intro:</strong> ${esc(item.outreachDraft)}</p>`
+    : "";
   return `<li>
     <p><strong>${esc(item.projectName)}</strong><br/>${esc(humanStage(item.stage))} · ${esc(humanPlace(item.county, item.jurisdiction))} · score ${item.score ?? "—"}</p>
     ${brief}${bidWindow}<p><strong>What changed:</strong> ${esc(item.whatChanged).replace(/_/g, " ")}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
     ${gcLine(item.generalContractor)}${campus}${facts}${inferences}${missing}${unitConflict}
-    <p><strong>Next step:</strong> ${esc(item.nextAction)}</p>
+    ${outreach}<p><strong>Next step:</strong> ${esc(item.nextAction)}</p>
     ${actionButtons(item.opportunityId, opts)}
     <p>Sources: ${links || "—"}</p>
   </li>`;

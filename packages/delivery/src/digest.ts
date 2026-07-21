@@ -7,6 +7,7 @@ import {
   evaluateGate,
   latestBrief,
   latestExtraction,
+  latestOutreach,
   latestVerification,
   relationshipTargets,
   suppressedProjectIds,
@@ -45,6 +46,11 @@ export interface DigestItem {
    * it never sets the score or a bid state. A one-line lead for the busy
    * owner — the structured fields below stay the audit trail. */
   brief: string | null;
+  /** WS-E — a grounded, pre-drafted intro message the estimator can copy and
+   * send to the GC. Composed from the same verified memo menu as the brief;
+   * every claim traces to a cited fact. Null when none has been generated. It
+   * is a draft only — the system never sends it. */
+  outreachDraft: string | null;
   whatChanged: string;
   whyItFits: string;
   /** Verified facts as (path, value) pairs — render humanizes; the model keeps
@@ -465,7 +471,7 @@ async function buildItem(
     accountProfileId: string;
   },
 ): Promise<DigestItem> {
-  const [events, links, extraction, verification, unitDisagreement, campus, brief, gc] =
+  const [events, links, extraction, verification, unitDisagreement, campus, brief, outreach, gc] =
     await Promise.all([
       materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
       sourceLinks(db, c.project_id),
@@ -474,6 +480,7 @@ async function buildItem(
       unitCountDisagreement(db, c.project_id),
       campusContext(db, c.campus_block),
       latestBrief(db, c.id, opts.accountProfileId, c.project_id),
+      latestOutreach(db, c.id, opts.accountProfileId, c.project_id),
       generalContractor(db, c.project_id),
     ]);
   const inclusion = decideInclusion({
@@ -543,6 +550,7 @@ async function buildItem(
     route: c.route,
     isNew: opts.isNew,
     brief: brief?.narrative ?? null,
+    outreachDraft: outreach?.message ?? null,
     whatChanged,
     whyItFits: whyItFits || "Matched your routing rules",
     confirmedFacts: facts.map((f) => ({ path: f.path, value: f.value })),
