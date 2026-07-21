@@ -57,17 +57,17 @@ CREATE TABLE "roi_events" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "account_suppressions" ADD CONSTRAINT "account_suppressions_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "claim_corrections" ADD CONSTRAINT "claim_corrections_evidence_item_id_evidence_items_id_fk" FOREIGN KEY ("evidence_item_id") REFERENCES "public"."evidence_items"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "claim_corrections" ADD CONSTRAINT "claim_corrections_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "claim_corrections" ADD CONSTRAINT "claim_corrections_source_record_id_source_records_id_fk" FOREIGN KEY ("source_record_id") REFERENCES "public"."source_records"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "opportunity_outcomes" ADD CONSTRAINT "opportunity_outcomes_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "opportunity_outcomes" ADD CONSTRAINT "opportunity_outcomes_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "public"."pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "research_time_entries" ADD CONSTRAINT "research_time_entries_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "research_time_entries" ADD CONSTRAINT "research_time_entries_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "roi_events" ADD CONSTRAINT "roi_events_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "roi_events" ADD CONSTRAINT "roi_events_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "roi_events" ADD CONSTRAINT "roi_events_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "public"."pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "account_suppressions" ADD CONSTRAINT "account_suppressions_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "claim_corrections" ADD CONSTRAINT "claim_corrections_evidence_item_id_evidence_items_id_fk" FOREIGN KEY ("evidence_item_id") REFERENCES "evidence_items"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "claim_corrections" ADD CONSTRAINT "claim_corrections_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "claim_corrections" ADD CONSTRAINT "claim_corrections_source_record_id_source_records_id_fk" FOREIGN KEY ("source_record_id") REFERENCES "source_records"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "opportunity_outcomes" ADD CONSTRAINT "opportunity_outcomes_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "opportunity_outcomes" ADD CONSTRAINT "opportunity_outcomes_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "research_time_entries" ADD CONSTRAINT "research_time_entries_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "research_time_entries" ADD CONSTRAINT "research_time_entries_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "roi_events" ADD CONSTRAINT "roi_events_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "roi_events" ADD CONSTRAINT "roi_events_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "roi_events" ADD CONSTRAINT "roi_events_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "account_suppressions_ix" ON "account_suppressions" USING btree ("account_profile_id","target_type","target_id");--> statement-breakpoint
 CREATE INDEX "claim_corrections_opp_ix" ON "claim_corrections" USING btree ("opportunity_id");--> statement-breakpoint
 CREATE INDEX "opportunity_outcomes_opp_ix" ON "opportunity_outcomes" USING btree ("opportunity_id");--> statement-breakpoint

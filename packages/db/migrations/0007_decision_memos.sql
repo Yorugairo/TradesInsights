@@ -7,6 +7,6 @@ CREATE TABLE "opportunity_decision_memos" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "opportunity_decision_memos" ADD CONSTRAINT "opportunity_decision_memos_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "opportunity_decision_memos" ADD CONSTRAINT "opportunity_decision_memos_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "opportunity_decision_memos_version_ux" ON "opportunity_decision_memos" USING btree ("opportunity_id","decision_version");--> statement-breakpoint
 CREATE INDEX "opportunity_decision_memos_opp_ix" ON "opportunity_decision_memos" USING btree ("opportunity_id");

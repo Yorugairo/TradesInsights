@@ -19,5 +19,5 @@ CREATE TABLE "account_capacity_snapshots" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "account_capacity_snapshots" ADD CONSTRAINT "account_capacity_snapshots_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "account_capacity_snapshots" ADD CONSTRAINT "account_capacity_snapshots_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "account_capacity_snapshots_account_ix" ON "account_capacity_snapshots" USING btree ("account_profile_id","effective_from");

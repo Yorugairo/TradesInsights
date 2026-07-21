@@ -48,11 +48,11 @@ CREATE TABLE "pursuits" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "pursuit_notes" ADD CONSTRAINT "pursuit_notes_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "public"."pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pursuit_tasks" ADD CONSTRAINT "pursuit_tasks_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "public"."pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pursuit_transitions" ADD CONSTRAINT "pursuit_transitions_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "public"."pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pursuits" ADD CONSTRAINT "pursuits_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pursuits" ADD CONSTRAINT "pursuits_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pursuit_notes" ADD CONSTRAINT "pursuit_notes_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pursuit_tasks" ADD CONSTRAINT "pursuit_tasks_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pursuit_transitions" ADD CONSTRAINT "pursuit_transitions_pursuit_id_pursuits_id_fk" FOREIGN KEY ("pursuit_id") REFERENCES "pursuits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pursuits" ADD CONSTRAINT "pursuits_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pursuits" ADD CONSTRAINT "pursuits_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "opportunities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "pursuit_notes_pursuit_ix" ON "pursuit_notes" USING btree ("pursuit_id","created_at");--> statement-breakpoint
 CREATE INDEX "pursuit_tasks_pursuit_ix" ON "pursuit_tasks" USING btree ("pursuit_id","status");--> statement-breakpoint
 CREATE INDEX "pursuit_transitions_pursuit_ix" ON "pursuit_transitions" USING btree ("pursuit_id","created_at");--> statement-breakpoint

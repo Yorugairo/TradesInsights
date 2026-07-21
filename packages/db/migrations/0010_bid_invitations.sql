@@ -50,16 +50,16 @@ CREATE TABLE "inbound_messages" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "bid_documents" ADD CONSTRAINT "bid_documents_bid_invitation_id_bid_invitations_id_fk" FOREIGN KEY ("bid_invitation_id") REFERENCES "public"."bid_invitations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_documents" ADD CONSTRAINT "bid_documents_raw_artifact_id_raw_artifacts_id_fk" FOREIGN KEY ("raw_artifact_id") REFERENCES "public"."raw_artifacts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_invitation_events" ADD CONSTRAINT "bid_invitation_events_bid_invitation_id_bid_invitations_id_fk" FOREIGN KEY ("bid_invitation_id") REFERENCES "public"."bid_invitations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_invitation_events" ADD CONSTRAINT "bid_invitation_events_source_message_id_inbound_messages_id_fk" FOREIGN KEY ("source_message_id") REFERENCES "public"."inbound_messages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_gc_organization_id_organizations_id_fk" FOREIGN KEY ("gc_organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_source_message_id_inbound_messages_id_fk" FOREIGN KEY ("source_message_id") REFERENCES "public"."inbound_messages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "inbound_messages" ADD CONSTRAINT "inbound_messages_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "inbound_messages" ADD CONSTRAINT "inbound_messages_raw_artifact_id_raw_artifacts_id_fk" FOREIGN KEY ("raw_artifact_id") REFERENCES "public"."raw_artifacts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_documents" ADD CONSTRAINT "bid_documents_bid_invitation_id_bid_invitations_id_fk" FOREIGN KEY ("bid_invitation_id") REFERENCES "bid_invitations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_documents" ADD CONSTRAINT "bid_documents_raw_artifact_id_raw_artifacts_id_fk" FOREIGN KEY ("raw_artifact_id") REFERENCES "raw_artifacts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_invitation_events" ADD CONSTRAINT "bid_invitation_events_bid_invitation_id_bid_invitations_id_fk" FOREIGN KEY ("bid_invitation_id") REFERENCES "bid_invitations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_invitation_events" ADD CONSTRAINT "bid_invitation_events_source_message_id_inbound_messages_id_fk" FOREIGN KEY ("source_message_id") REFERENCES "inbound_messages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_gc_organization_id_organizations_id_fk" FOREIGN KEY ("gc_organization_id") REFERENCES "organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bid_invitations" ADD CONSTRAINT "bid_invitations_source_message_id_inbound_messages_id_fk" FOREIGN KEY ("source_message_id") REFERENCES "inbound_messages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inbound_messages" ADD CONSTRAINT "inbound_messages_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "inbound_messages" ADD CONSTRAINT "inbound_messages_raw_artifact_id_raw_artifacts_id_fk" FOREIGN KEY ("raw_artifact_id") REFERENCES "raw_artifacts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "bid_documents_invitation_ix" ON "bid_documents" USING btree ("bid_invitation_id");--> statement-breakpoint
 CREATE INDEX "bid_invitation_events_invitation_ix" ON "bid_invitation_events" USING btree ("bid_invitation_id","created_at");--> statement-breakpoint
 CREATE INDEX "bid_invitations_account_ix" ON "bid_invitations" USING btree ("account_profile_id","invitation_status");--> statement-breakpoint

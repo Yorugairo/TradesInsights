@@ -17,7 +17,7 @@ CREATE TABLE "model_runs" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "model_runs" ADD CONSTRAINT "model_runs_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "model_runs" ADD CONSTRAINT "model_runs_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "public"."account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "model_runs" ADD CONSTRAINT "model_runs_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "model_runs" ADD CONSTRAINT "model_runs_account_profile_id_account_profiles_id_fk" FOREIGN KEY ("account_profile_id") REFERENCES "account_profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "model_runs_project_ix" ON "model_runs" USING btree ("project_id","job_type");--> statement-breakpoint
 CREATE INDEX "model_runs_month_ix" ON "model_runs" USING btree ("created_at");
