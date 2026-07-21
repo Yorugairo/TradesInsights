@@ -113,6 +113,26 @@ export interface CoverageCaveat {
   freshnessState: string;
 }
 
+/**
+ * WS-G — a first-class "🧭 Decisions" pre-permit entry: an opportunity still in
+ * the land-use / pre-application window (before a permit exists), carrying a
+ * deterministic bid-window note derived from bid-window.ts (classify →
+ * bidTrackFor → tradeBidWindows), NOT the model. The note is the one line the
+ * owner acts on — "commercial buyout window — biddable now" for a commercial
+ * project already in review, "bids open after the permit issues" for a
+ * residential one. Display-only: it never sets a score or a bid state.
+ */
+export interface DecisionItem {
+  opportunityId: string;
+  projectId: string;
+  projectName: string;
+  stage: string;
+  county: string;
+  jurisdiction: string;
+  /** Bid-window guidance for this pre-permit stage (bid-window.ts, deterministic). */
+  bidWindowNote: string;
+}
+
 export interface DigestModel {
   accountProfileId: string;
   accountKey: string;
@@ -130,7 +150,10 @@ export interface DigestModel {
   easyWins: DigestItem[]; // ≤3 — gate-passing auto items meeting the easy-win cut
   relationshipPlays: RelationshipPlay[]; // ≤2 — active relevant orgs, no relationship yet
   deadlines: DeadlineItem[]; // upcoming bid-invitation dues (private inbox)
-  radar: DigestItem[]; // ≤2 — gate-passing early-stage (pre-app/entitlement)
+  /** WS-G — the first-class "🧭 Decisions" pre-permit section (supersedes the old
+   * capped-2 radar): gate-passing early-stage (concept/pre-app/entitlement)
+   * opportunities, each with a bid-window note. Bounded at MAX_DECISIONS. */
+  decisions: DecisionItem[];
   /** Gate-passing items withheld from automation for a human decision. */
   reviewQueue: DigestItem[];
   suppressed: { gateFailed: number; blockedOnVerifier: number; customerSuppressed: number };
@@ -254,8 +277,98 @@ export function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
   return true;
 }
 
-/** Early-stage radar (pre-app/entitlement/SEPA-era stages). */
-const RADAR_STAGES = new Set(["concept", "preapplication", "entitlement"]);
+/**
+ * WS-G — the pre-permit stages that make an opportunity a first-class "Decisions"
+ * entry: the land-use / pre-application window before a permit exists. Same
+ * membership as the superseded RADAR_STAGES — a promotion, not a scope change.
+ */
+export const DECISION_STAGES = new Set(["concept", "preapplication", "entitlement"]);
+
+/** Bounded cap for the Decisions section (the radar it supersedes was ≤2; a
+ * first-class section shows more but stays bounded — no wall of early-stage). */
+export const MAX_DECISIONS = 5;
+
+/**
+ * WS-G — the one-line bid-window guidance for a pre-permit Decisions entry.
+ * Derived from bid-window.ts — classify() → bidTrackFor() → the drywall window
+ * (the lead interior trade Solis bids) — NEVER from the model. Deterministic:
+ * same inputs, same note. For a commercial project already in land-use review
+ * this yields the "buyout window — biddable now" line (commercial finish subs
+ * are bought out during plan review, before the permit issues); for a
+ * residential one it says the bid opens only after the permit issues.
+ */
+export function decisionBidWindowNote(input: {
+  projectId: string;
+  county: string;
+  permittingJurisdiction: string;
+  stage: string;
+  text: string;
+  maxValuation: number | null;
+}): string {
+  // Honest nulls for the aggregates a pre-permit record does not carry — the
+  // track only needs the keyword classification (mirrors buildItem's call).
+  const cls = classify({
+    projectId: input.projectId,
+    county: input.county,
+    permittingJurisdiction: input.permittingJurisdiction,
+    city: null,
+    stage: input.stage,
+    text: input.text,
+    maxUnits: null,
+    maxValuation: input.maxValuation,
+    clusterSize: 0,
+    hasVelocitySignal: false,
+    orgs: [],
+    aGradeEvidence: 0,
+    lastMaterialChangeAt: null,
+  } satisfies ProjectFeatures);
+  const track = bidTrackFor(cls);
+  // Drywall leads (structural interior before finish paint); its window carries
+  // the note we surface. issuedAt is null — a pre-permit project has no issue date.
+  const drywall = tradeBidWindows({ stage: input.stage, track, issuedAt: null })[0]!;
+  switch (drywall.status) {
+    case "confirmed_open":
+      return "A bid invitation is on record — biddable now.";
+    case "open":
+      // Commercial GMP buyout during plan review — the pre-permit "biddable now".
+      return "Commercial buyout window — drywall/paint are typically let during plan review, months before the permit issues. Biddable now while it sits in land-use review.";
+    case "opens_soon":
+      // Residential, framing window not yet reached — reuse the "~N weeks" note.
+      return drywall.note;
+    case "likely_closed":
+      return "Buyout has likely already been let — track for addendum scope.";
+    case "watch":
+    default:
+      return track === "commercial"
+        ? "Early stage — the commercial buyout typically starts once construction documents reach plan review; watch for it."
+        : "Residential — drywall/paint bids open only after the permit issues; watch for issuance.";
+  }
+}
+
+/**
+ * WS-G — build the Decisions entry for a candidate, or null when the candidate
+ * is NOT at a pre-permit stage (so a permit_issued/approved opportunity never
+ * enters the Decisions section). Pure + deterministic — no DB, no model.
+ */
+export function decisionForCandidate(c: CandidateRow): DecisionItem | null {
+  if (!DECISION_STAGES.has(c.current_stage)) return null;
+  return {
+    opportunityId: c.id,
+    projectId: c.project_id,
+    projectName: c.canonical_name,
+    stage: c.current_stage,
+    county: c.county,
+    jurisdiction: c.permitting_jurisdiction,
+    bidWindowNote: decisionBidWindowNote({
+      projectId: c.project_id,
+      county: c.county,
+      permittingJurisdiction: c.permitting_jurisdiction,
+      stage: c.current_stage,
+      text: c.text ?? "",
+      maxValuation: c.max_valuation === null ? null : Number(c.max_valuation),
+    }),
+  };
+}
 
 /**
  * Upcoming bid-invitation deadlines from the account's own private inbox.
@@ -655,7 +768,7 @@ export async function buildDigest(
   // Owner 2026-07-20 — collect every qualifying easy win with its distance, then
   // select nearest-band-first AFTER the pass (score order alone no longer decides).
   const easyWinCandidates: { item: DigestItem; distM: number | null }[] = [];
-  const radar: DigestItem[] = [];
+  const decisions: DecisionItem[] = [];
   const suppressed = { gateFailed: 0, blockedOnVerifier: 0, customerSuppressed: 0 };
 
   for (const c of candidates) {
@@ -690,14 +803,18 @@ export async function buildDigest(
     }
 
     // P2.2 — the 10-minute top block (auto items only). Easy-win stages
-    // (permit_issued/approved) and radar stages (concept/preapplication/
+    // (permit_issued/approved) and Decisions stages (concept/preapplication/
     // entitlement) are disjoint, so these two picks are independent. Easy wins
     // are gathered here and ordered nearest-band-first after the pass (owner
-    // 2026-07-20); radar stays score-ordered and capped at 2.
+    // 2026-07-20); Decisions stay score-ordered (candidates arrive score-desc)
+    // and bounded at MAX_DECISIONS.
     if (item.easyWin) {
       easyWinCandidates.push({ item, distM: c.dist_m === null ? null : Number(c.dist_m) });
     }
-    if (RADAR_STAGES.has(c.current_stage) && radar.length < 2) radar.push(item);
+    if (decisions.length < MAX_DECISIONS) {
+      const decision = decisionForCandidate(c);
+      if (decision) decisions.push(decision);
+    }
 
     // Exclusive section order (spec §18): priority-new > stage change >
     // missing-fact queue > monitoring.
@@ -745,7 +862,7 @@ export async function buildDigest(
       rating: p.rating,
     })),
     deadlines,
-    radar,
+    decisions,
     reviewQueue,
     suppressed,
     ruleVersions: account.ruleVersions,

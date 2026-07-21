@@ -1,0 +1,7 @@
+{
+  "synthetic": "SYNTHETIC failure fixture — valid JSON but a shape-broken index (a row missing required case_number/project_name/docket_type, and a document with an invalid kind). Exercises the parser's schema guard.",
+  "source_url": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets",
+  "rows": [
+    { "project_name": "Broken Row (placeholder)", "documents": [ { "kind": "not_a_real_kind", "date": "01/01/2026", "url": "https://www.thurstoncountywa.gov/media/synthetic/broken.pdf" } ] }
+  ]
+}

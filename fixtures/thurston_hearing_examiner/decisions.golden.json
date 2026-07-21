@@ -1,0 +1,158 @@
+[
+  {
+    "sourceKey": "thurston_hearing_examiner",
+    "externalId": "2026100001-SUP",
+    "recordType": "public_notice",
+    "title": "2026100001 SUP – Example Ridge Community Center (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": null,
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Special Use Permit Decision",
+    "statusRaw": "decision issued",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-05-12",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "2026100001 SUP — Example Ridge Community Center (placeholder)",
+        "pageOrSection": "Special Uses decisions"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Special Use Permit decision (05/12/2026): https://www.thurstoncountywa.gov/media/synthetic/2026100001-SUP-decision.pdf",
+        "pageOrSection": "decision document"
+      }
+    ]
+  },
+  {
+    "sourceKey": "thurston_hearing_examiner",
+    "externalId": "2026100002-SSDP",
+    "recordType": "public_notice",
+    "title": "2026100002 SSDP – Placeholder Shoreline Dock (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": null,
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Shoreline Substantial Development Permit Decision",
+    "statusRaw": "decision issued",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-04-28",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "2026100002 SSDP — Placeholder Shoreline Dock (placeholder)",
+        "pageOrSection": "Critical Areas/Shorelines decisions"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Shoreline Substantial Development Permit decision (04/28/2026): https://www.thurstoncountywa.gov/media/synthetic/2026100002-SSDP-decision.pdf",
+        "pageOrSection": "decision document"
+      }
+    ]
+  },
+  {
+    "sourceKey": "thurston_hearing_examiner",
+    "externalId": "2026100003-VAR",
+    "recordType": "public_notice",
+    "title": "2026100003 VAR – Sample Setback Variance (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": null,
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Variance Decision",
+    "statusRaw": "decision issued",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-04-03",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "2026100003 VAR — Sample Setback Variance (placeholder)",
+        "pageOrSection": "Variances decisions"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Variance decision (04/03/2026): https://www.thurstoncountywa.gov/media/synthetic/2026100003-VAR-decision.pdf",
+        "pageOrSection": "decision document"
+      }
+    ]
+  },
+  {
+    "sourceKey": "thurston_hearing_examiner",
+    "externalId": "2026100004-PSUB",
+    "recordType": "public_notice",
+    "title": "2026100004 PSUB – Example Ridge Preliminary Plat (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": null,
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Preliminary Plat / Subdivision Decision",
+    "statusRaw": "decision issued",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-03-15",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "2026100004 PSUB — Example Ridge Preliminary Plat (placeholder)",
+        "pageOrSection": "Plats decisions"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Preliminary Plat / Subdivision decision (03/15/2026): https://www.thurstoncountywa.gov/media/synthetic/2026100004-PSUB-decision.pdf",
+        "pageOrSection": "decision document"
+      }
+    ]
+  }
+]

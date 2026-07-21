@@ -1,0 +1,158 @@
+[
+  {
+    "sourceKey": "seattle_design_review",
+    "externalId": "3099001-EG@2026-05-14",
+    "recordType": "public_notice",
+    "title": "3099001-EG – Design Review (Early Design Guidance)",
+    "description": null,
+    "permittingJurisdiction": "City of Seattle",
+    "county": "King",
+    "city": "Seattle",
+    "addressRaw": "1200 Example Ave (placeholder)",
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Early Design Guidance",
+    "statusRaw": "Early Design Guidance",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-05-14",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "3099001-EG — 1200 Example Ave (placeholder)",
+        "pageOrSection": "Design Review calendar"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Early Design Guidance — Northwest board (05/14/2026): https://www.seattle.gov/documents/synthetic/3099001-EG-edg-agenda.pdf",
+        "pageOrSection": "Northwest Design Review Board"
+      }
+    ]
+  },
+  {
+    "sourceKey": "seattle_design_review",
+    "externalId": "3099001-EG@2026-07-09",
+    "recordType": "public_notice",
+    "title": "3099001-EG – Design Review (Recommendation)",
+    "description": null,
+    "permittingJurisdiction": "City of Seattle",
+    "county": "King",
+    "city": "Seattle",
+    "addressRaw": "1200 Example Ave (placeholder)",
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Recommendation",
+    "statusRaw": "Recommendation",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-07-09",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "3099001-EG — 1200 Example Ave (placeholder)",
+        "pageOrSection": "Design Review calendar"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Recommendation — Northwest board (07/09/2026): https://www.seattle.gov/documents/synthetic/3099001-EG-rec-agenda.pdf",
+        "pageOrSection": "Northwest Design Review Board"
+      }
+    ]
+  },
+  {
+    "sourceKey": "seattle_design_review",
+    "externalId": "3099002-LU@2026-06-04",
+    "recordType": "public_notice",
+    "title": "3099002-LU – Design Review (Early Design Guidance)",
+    "description": null,
+    "permittingJurisdiction": "City of Seattle",
+    "county": "King",
+    "city": "Seattle",
+    "addressRaw": "455 Placeholder Way (placeholder)",
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Early Design Guidance",
+    "statusRaw": "Early Design Guidance",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-06-04",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "3099002-LU — 455 Placeholder Way (placeholder)",
+        "pageOrSection": "Design Review calendar"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Early Design Guidance — Southwest board (06/04/2026)",
+        "pageOrSection": "Southwest Design Review Board"
+      }
+    ]
+  },
+  {
+    "sourceKey": "seattle_design_review",
+    "externalId": "3099003-LU@2026-06-25",
+    "recordType": "public_notice",
+    "title": "3099003-LU – Design Review (Recommendation)",
+    "description": null,
+    "permittingJurisdiction": "City of Seattle",
+    "county": "King",
+    "city": "Seattle",
+    "addressRaw": "88 Sample Street (placeholder)",
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": null,
+    "permitType": null,
+    "documentType": "Recommendation",
+    "statusRaw": "Recommendation",
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-06-25",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings",
+    "evidence": [
+      {
+        "factPath": "externalId",
+        "text": "3099003-LU — 88 Sample Street (placeholder)",
+        "pageOrSection": "Design Review calendar"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Recommendation — East board (06/25/2026): https://www.seattle.gov/documents/synthetic/3099003-LU-rec-agenda.pdf",
+        "pageOrSection": "East Design Review Board"
+      }
+    ]
+  }
+]

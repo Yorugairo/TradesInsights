@@ -1,0 +1,7 @@
+{
+  "synthetic": "SYNTHETIC failure fixture — valid JSON but a shape-broken index (a decision missing required case_number/decision_date/document_url). Exercises the parser's schema guard.",
+  "source_url": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions",
+  "decisions": [
+    { "decision_type": "SUP", "applicant": "Broken Row (placeholder)" }
+  ]
+}

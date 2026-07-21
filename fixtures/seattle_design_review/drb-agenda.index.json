@@ -1,0 +1,40 @@
+{
+  "synthetic": "SYNTHETIC — representative structure only; replace with a genuine-browser capture during verify-first step 4 before enabling",
+  "source_url": "https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings",
+  "captured_via": "NOT a real capture. Hand-authored representative shape for the DISABLED verify-first scaffold parser. Mirrors the live Design Review calendar's per-meeting fields (project number, address, meeting date, board district, meeting type, agenda link). Project numbers/addresses are placeholders, not real Seattle SDCI records.",
+  "sample_note": "The live calendar lists many upcoming meetings; this fixture stores 4 representative meetings incl. a project that appears twice (Early Design Guidance then Recommendation).",
+  "meetings": [
+    {
+      "project_number": "3099001-EG",
+      "address": "1200 Example Ave (placeholder)",
+      "meeting_date": "05/14/2026",
+      "board_district": "Northwest",
+      "meeting_type": "Early Design Guidance",
+      "agenda_url": "https://www.seattle.gov/documents/synthetic/3099001-EG-edg-agenda.pdf"
+    },
+    {
+      "project_number": "3099001-EG",
+      "address": "1200 Example Ave (placeholder)",
+      "meeting_date": "07/09/2026",
+      "board_district": "Northwest",
+      "meeting_type": "Recommendation",
+      "agenda_url": "https://www.seattle.gov/documents/synthetic/3099001-EG-rec-agenda.pdf"
+    },
+    {
+      "project_number": "3099002-LU",
+      "address": "455 Placeholder Way (placeholder)",
+      "meeting_date": "06/04/2026",
+      "board_district": "Southwest",
+      "meeting_type": "Early Design Guidance",
+      "agenda_url": null
+    },
+    {
+      "project_number": "3099003-LU",
+      "address": "88 Sample Street (placeholder)",
+      "meeting_date": "06/25/2026",
+      "board_district": "East",
+      "meeting_type": "Recommendation",
+      "agenda_url": "https://www.seattle.gov/documents/synthetic/3099003-LU-rec-agenda.pdf"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "synthetic": "SYNTHETIC failure fixture — valid JSON but a shape-broken index (meetings missing required meeting_date/board_district/meeting_type). Exercises the parser's schema guard.",
+  "source_url": "https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings",
+  "meetings": [
+    { "project_number": "3099009-EG", "address": "0 Broken Row (placeholder)" }
+  ]
+}

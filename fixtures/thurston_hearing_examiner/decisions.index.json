@@ -1,0 +1,40 @@
+{
+  "synthetic": "SYNTHETIC — representative structure only; replace with a genuine-browser capture during verify-first step 4 before enabling",
+  "source_url": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions",
+  "captured_via": "NOT a real capture. Hand-authored representative shape for the DISABLED verify-first scaffold parser. Mirrors the live category-grouped decisions list: each entry is '<case number YYYYNNNNNN> <TYPE> - <applicant>' with a decision PDF. Case numbers and applicant names are placeholders, not real Thurston County cases or people.",
+  "sample_note": "The live page groups many decisions by category; this fixture stores 4 representative decisions across Special Uses, Shorelines, Variances, and Plats.",
+  "decisions": [
+    {
+      "case_number": "2026100001",
+      "decision_type": "SUP",
+      "applicant": "Example Ridge Community Center (placeholder)",
+      "category": "Special Uses",
+      "decision_date": "05/12/2026",
+      "document_url": "https://www.thurstoncountywa.gov/media/synthetic/2026100001-SUP-decision.pdf"
+    },
+    {
+      "case_number": "2026100002",
+      "decision_type": "SSDP",
+      "applicant": "Placeholder Shoreline Dock (placeholder)",
+      "category": "Critical Areas/Shorelines",
+      "decision_date": "04/28/2026",
+      "document_url": "https://www.thurstoncountywa.gov/media/synthetic/2026100002-SSDP-decision.pdf"
+    },
+    {
+      "case_number": "2026100003",
+      "decision_type": "VAR",
+      "applicant": "Sample Setback Variance (placeholder)",
+      "category": "Variances",
+      "decision_date": "04/03/2026",
+      "document_url": "https://www.thurstoncountywa.gov/media/synthetic/2026100003-VAR-decision.pdf"
+    },
+    {
+      "case_number": "2026100004",
+      "decision_type": "PSUB",
+      "applicant": "Example Ridge Preliminary Plat (placeholder)",
+      "category": "Plats",
+      "decision_date": "03/15/2026",
+      "document_url": "https://www.thurstoncountywa.gov/media/synthetic/2026100004-PSUB-decision.pdf"
+    }
+  ]
+}

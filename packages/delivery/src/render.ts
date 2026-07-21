@@ -207,8 +207,9 @@ function section(title: string, items: DigestItem[], opts: RenderOptions = {}): 
 ${items.length === 0 ? "<p>Nothing this week.</p>" : `<ol>${items.map((i) => itemHtml(i, opts)).join("\n")}</ol>`}`;
 }
 
-/** P2.2 — the 10-minute top block: winnable now, GCs worth meeting, deadlines,
- * radar. Renders ONLY the parts with content; the full §18 sections follow. */
+/** P2.2 / WS-G — the 10-minute top block: winnable now, GCs worth meeting,
+ * deadlines, and the pre-permit Decisions section. Renders ONLY the parts with
+ * content; the full §18 sections follow. */
 function topBlock(model: DigestModel, opts: RenderOptions): string {
   const parts: string[] = [];
   if (model.easyWins.length > 0) {
@@ -238,12 +239,13 @@ function topBlock(model: DigestModel, opts: RenderOptions): string {
       })
       .join("\n")}</ul>`);
   }
-  if (model.radar.length > 0) {
-    parts.push(`<h2>📡 Radar (early stage)</h2>
-<ul>${model.radar
+  if (model.decisions.length > 0) {
+    parts.push(`<h2>🧭 Decisions (${model.decisions.length})</h2>
+<p>Pre-permit opportunities in your territory — land-use and pre-application stages, where the commercial bid window opens months before a permit exists.</p>
+<ul>${model.decisions
       .map(
-        (i) =>
-          `<li><strong>${esc(i.projectName)}</strong> — ${esc(humanStage(i.stage))} · ${esc(i.county)} · ${esc(i.whatChanged).replace(/_/g, " ")}</li>`,
+        (d) =>
+          `<li><strong>${esc(d.projectName)}</strong> — ${esc(humanStage(d.stage))} · ${esc(humanPlace(d.county, d.jurisdiction))}<br/>${esc(d.bidWindowNote)}</li>`,
       )
       .join("\n")}</ul>`);
   }

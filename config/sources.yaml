@@ -417,6 +417,65 @@ sources:
       is empty and normalizedStage stays unknown (decision outcome is not visible
       in the index). Parser reconciles record count against the index rows.
 
+  # ── WS-G pre-permit "Decisions" layer — VERIFY-FIRST SCAFFOLDS (disabled) ──
+  - key: thurston_hearing_examiner
+    name: Thurston County Hearing Examiner Decisions
+    authority: Thurston County CPED (Hearing Examiner)
+    priority: P1
+    landing_url: https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner
+    access_url: https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/permitting/hearing-examiner/hearing-examiner-decisions
+    format: html_docs
+    access_class: dynamic_lookup
+    cadence: on_demand
+    county: Thurston
+    permitting_jurisdiction: Thurston County
+    enabled: false
+    terms_reviewed_at: null
+    robots_reviewed_at: null
+    notes: >-
+      WS-G G.2 pre-permit Decisions signal. Landing page CONFIRMED live
+      2026-07-21 (category-grouped decisions list: '<case# YYYYNNNNNN> <TYPE> -
+      <applicant>' + decision PDF; observed types SUP/VAR/CUP/SSDP/RUE/LLOT).
+      Adapter: ThurstonHearingExaminerAdapter — capture-fed (fetch() reads
+      $OTN_CAPTURE_DIR/thurston_hearing_examiner/decisions.index.json else
+      dead-letters). recordType public_notice → notice_published; normalizedStage
+      entitlement (approve/deny outcome lives in the decision PDF, not fetched —
+      never claimed); decision_issued declared as the intended event, wired at
+      activation. organizations[] empty (applicant is often a homeowner — PII out
+      of the bridge). PENDING VERIFY-FIRST (skill steps 1–4,7): confirm live
+      publisher + review robots/terms + capture genuine-browser fixtures +
+      manual row/count compare before enabling. Fixtures are SYNTHETIC.
+
+  - key: thurston_land_use_rezone
+    name: Thurston County Rezone & Comprehensive Plan Amendment Dockets
+    authority: Thurston County CPED (Community Planning)
+    priority: P1
+    landing_url: https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/list-plans-programs-codes
+    access_url: https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets
+    format: html_docs
+    access_class: dynamic_lookup
+    cadence: on_demand
+    county: Thurston
+    permitting_jurisdiction: Thurston County
+    enabled: false
+    terms_reviewed_at: null
+    robots_reviewed_at: null
+    notes: >-
+      WS-G G.3 title/rezoning pilot signal — the earliest pre-permit action
+      there is (a rezone reshapes what may be built years ahead). Landing/docket
+      pages CONFIRMED live 2026-07-21 (applicant-initiated rezone & Comp-Plan
+      amendments with dated notice/SEPA/adoption docs, e.g. Black Lake Quarry,
+      Martin Way, Beaver Creek CPA-20). Adapter: ThurstonLandUseRezoneAdapter —
+      capture-fed ($OTN_CAPTURE_DIR/thurston_land_use_rezone/dockets.index.json
+      else dead-letters). normalizedStage entitlement when a dated action exists,
+      else unknown (honest null); recordType sepa_document → sepa_determination
+      for a SEPA-most-advanced row, else public_notice → notice_published;
+      plat_approved (adoption) declared as an intended event, wired at activation.
+      organizations[] empty (owner PII out of the bridge). PENDING VERIFY-FIRST
+      (skill steps 1–4,7): confirm live publisher + review robots/terms + capture
+      genuine-browser fixtures + manual row/count compare before enabling.
+      Fixtures are SYNTHETIC.
+
   # ── Lewis County (P0) ─────────────────────────────────────────────────────
   - key: lewis_issued_permits
     name: Lewis Building Permit Data
@@ -639,6 +698,37 @@ sources:
       Verified 2026-07-15: research page links both Socrata datasets
       (76t5-zqzr, ht3q-kdvx); missing either fails the run (dataset
       move/renumber alarm).
+
+  - key: seattle_design_review
+    name: Seattle SDCI Design Review Board meetings
+    authority: City of Seattle SDCI (Design Review)
+    priority: P1
+    landing_url: https://www.seattle.gov/sdci/about-us/who-we-are/design-review
+    access_url: https://www.seattle.gov/sdci/about-us/who-we-are/design-review/virtual-board-meetings
+    format: html_calendar
+    access_class: dynamic_lookup
+    cadence: on_demand
+    county: King
+    permitting_jurisdiction: City of Seattle
+    enabled: false
+    terms_reviewed_at: null
+    robots_reviewed_at: null
+    notes: >-
+      WS-G G.2 pre-permit Decisions signal — a project hits the Design Review
+      Board (Early Design Guidance → Recommendation) months before its permit
+      issues, exactly the commercial finish-sub buyout window. Program +
+      meetings pages CONFIRMED live 2026-07-21; the meeting schedule itself is an
+      INTERACTIVE client-side calendar app (web.seattle.gov/dpd/.../
+      DesignReview/UpcomingReviews), so this is capture-fed. Adapter:
+      SeattleDesignReviewAdapter — fetch() reads
+      $OTN_CAPTURE_DIR/seattle_design_review/drb-agenda.index.json else
+      dead-letters. recordType public_notice → notice_published; normalizedStage
+      entitlement; a Recommendation OUTCOME maps to decision_issued (declared as
+      intended, wired at activation — the outcome is in the report PDF, not
+      fetched). organizations[] empty (applicant/architect live in the agenda
+      PDF — PII out of the bridge). PENDING VERIFY-FIRST (skill steps 1–4,7):
+      confirm live publisher + review robots/terms + capture genuine-browser
+      fixtures + manual row/count compare before enabling. Fixtures are SYNTHETIC.
 
   # ── Statewide (P0) ────────────────────────────────────────────────────────
   - key: wa_sepa

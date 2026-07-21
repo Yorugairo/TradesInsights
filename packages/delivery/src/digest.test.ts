@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  DECISION_STAGES,
+  MAX_DECISIONS,
+  decisionBidWindowNote,
+  decisionForCandidate,
   easyWinBandIndex,
   isEasyWin,
   type CandidateRow,
@@ -90,5 +94,70 @@ describe("layered easy-win proximity bands (owner 2026-07-20)", () => {
     );
     expect(ordered[0]).toBe(near); // nearer band wins despite the lower score
     expect(ordered[1]).toBe(far);
+  });
+});
+
+/**
+ * WS-G — the first-class "🧭 Decisions" pre-permit section. A pre-permit
+ * (preapplication/entitlement) opportunity enters Decisions with the correct
+ * bid-window note; a permit_issued one never does. The note is derived from
+ * bid-window.ts (classify → bidTrackFor → tradeBidWindows), never the model.
+ */
+describe("WS-G Decisions section (pre-permit)", () => {
+  it("only pre-permit stages qualify; permit_issued/approved do not", () => {
+    expect(DECISION_STAGES.has("preapplication")).toBe(true);
+    expect(DECISION_STAGES.has("entitlement")).toBe(true);
+    expect(DECISION_STAGES.has("concept")).toBe(true);
+    expect(DECISION_STAGES.has("permit_issued")).toBe(false);
+    expect(DECISION_STAGES.has("approved")).toBe(false);
+    expect(MAX_DECISIONS).toBeGreaterThan(0);
+  });
+
+  it("a preapplication opportunity becomes a Decisions entry", () => {
+    const d = decisionForCandidate(
+      candidate({
+        current_stage: "preapplication",
+        canonical_name: "Cedar Grove Apartments",
+        text: "new multifamily apartment building — 60 units",
+      }),
+    );
+    expect(d).not.toBeNull();
+    expect(d!.projectName).toBe("Cedar Grove Apartments");
+    expect(d!.stage).toBe("preapplication");
+    expect(d!.county).toBe("Thurston");
+    expect(d!.bidWindowNote.length).toBeGreaterThan(0);
+  });
+
+  it("an entitlement commercial opportunity carries the commercial-buyout note (biddable now)", () => {
+    const note = decisionBidWindowNote({
+      projectId: "p1",
+      county: "Thurston",
+      permittingJurisdiction: "City of Olympia",
+      stage: "entitlement",
+      text: "new commercial office building with retail storefront",
+      maxValuation: 4_000_000,
+    });
+    // Commercial finish subs are bought out during plan review, pre-permit.
+    expect(note).toMatch(/biddable now/i);
+    expect(note).toMatch(/buyout/i);
+  });
+
+  it("a residential preapplication opportunity says bids open after the permit issues", () => {
+    const note = decisionBidWindowNote({
+      projectId: "p2",
+      county: "Thurston",
+      permittingJurisdiction: "Thurston County",
+      stage: "preapplication",
+      text: "single family dwelling — new detached home",
+      maxValuation: 350_000,
+    });
+    expect(note).toMatch(/after the permit issues/i);
+    expect(note).not.toMatch(/biddable now/i);
+  });
+
+  it("a permit_issued opportunity is NOT a Decisions entry (returns null)", () => {
+    expect(decisionForCandidate(candidate({ current_stage: "permit_issued" }))).toBeNull();
+    expect(decisionForCandidate(candidate({ current_stage: "approved" }))).toBeNull();
+    expect(decisionForCandidate(candidate({ current_stage: "construction" }))).toBeNull();
   });
 });

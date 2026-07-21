@@ -1,0 +1,44 @@
+{
+  "synthetic": "SYNTHETIC — representative structure only; replace with a genuine-browser capture during verify-first step 4 before enabling",
+  "source_url": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets",
+  "captured_via": "NOT a real capture. Hand-authored representative shape for the DISABLED verify-first scaffold parser. Mirrors the live rezone/Comprehensive-Plan-Amendment docket: each row is a case number + project name + docket type carrying dated notice/SEPA/adoption documents. Case numbers, project names, and addresses are placeholders, not real Thurston County dockets.",
+  "sample_note": "4 representative rows: a SEPA-most-advanced rezone (→ sepa_determination), an adopted rezone (→ plat_approved intended), a notice-only amendment (→ notice_published), and a bare listing with no dated document (→ normalizedStage unknown, honest null).",
+  "rows": [
+    {
+      "case_number": "2026-REZ-004",
+      "project_name": "Example Quarry Rezone (placeholder)",
+      "docket_type": "Rezone",
+      "address": "0000 Placeholder Rd SW (placeholder)",
+      "documents": [
+        { "kind": "notice_of_application", "date": "02/10/2026", "url": "https://www.thurstoncountywa.gov/media/synthetic/2026-REZ-004-noa.pdf" },
+        { "kind": "sepa_determination", "date": "03/24/2026", "url": "https://www.thurstoncountywa.gov/media/synthetic/2026-REZ-004-sepa.pdf" }
+      ]
+    },
+    {
+      "case_number": "CPA-20",
+      "project_name": "Placeholder Creek Land Use & Rezone Amendment (placeholder)",
+      "docket_type": "Comprehensive Plan Amendment",
+      "address": null,
+      "documents": [
+        { "kind": "notice_of_application", "date": "11/12/2025", "url": "https://www.thurstoncountywa.gov/media/synthetic/CPA-20-noa.pdf" },
+        { "kind": "adoption_notice", "date": "12/16/2025", "url": "https://www.thurstoncountywa.gov/media/synthetic/CPA-20-ordinance.pdf" }
+      ]
+    },
+    {
+      "case_number": "2026-CPA-007",
+      "project_name": "Sample Way Land Use Amendment (placeholder)",
+      "docket_type": "Land Use Amendment",
+      "address": "7809 Sample Way E (placeholder)",
+      "documents": [
+        { "kind": "notice_of_application", "date": "04/01/2026", "url": "https://www.thurstoncountywa.gov/media/synthetic/2026-CPA-007-noa.pdf" }
+      ]
+    },
+    {
+      "case_number": "2027-REZ-001",
+      "project_name": "Unscheduled Docket Placeholder (placeholder)",
+      "docket_type": "Rezone",
+      "address": null,
+      "documents": []
+    }
+  ]
+}

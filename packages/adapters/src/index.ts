@@ -20,6 +20,9 @@ import { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 import { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
 import { CentraliaPermitReportsAdapter } from "./centralia-permit-reports.js";
 import { OlympiaSmartgovReportsAdapter } from "./olympia-smartgov-reports.js";
+import { SeattleDesignReviewAdapter } from "./seattle-design-review.js";
+import { ThurstonHearingExaminerAdapter } from "./thurston-hearing-examiner.js";
+import { ThurstonLandUseRezoneAdapter } from "./thurston-land-use-rezone.js";
 import { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 import { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
@@ -75,6 +78,12 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   puyallup_permits_arcgis: () => new PuyallupPermitsArcgisAdapter(),
   centralia_permit_reports: () => new CentraliaPermitReportsAdapter(),
   olympia_smartgov_reports: () => new OlympiaSmartgovReportsAdapter(),
+  // WS-G verify-first scaffolds — DISABLED in config/sources.yaml (enabled:false),
+  // registered so the parser + fixtures are testable and the source is ready to
+  // activate once the verify-first checklist passes. Never scheduled while disabled.
+  seattle_design_review: () => new SeattleDesignReviewAdapter(),
+  thurston_hearing_examiner: () => new ThurstonHearingExaminerAdapter(),
+  thurston_land_use_rezone: () => new ThurstonLandUseRezoneAdapter(),
   tumwater_sepa: () => new TumwaterSepaAdapter(),
   tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
   tacoma_solicitations: () => new TacomaSolicitationsAdapter(),
@@ -84,6 +93,9 @@ export { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 export { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
 export { CentraliaPermitReportsAdapter } from "./centralia-permit-reports.js";
 export { OlympiaSmartgovReportsAdapter } from "./olympia-smartgov-reports.js";
+export { SeattleDesignReviewAdapter } from "./seattle-design-review.js";
+export { ThurstonHearingExaminerAdapter } from "./thurston-hearing-examiner.js";
+export { ThurstonLandUseRezoneAdapter } from "./thurston-land-use-rezone.js";
 export { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 export { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 export { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";

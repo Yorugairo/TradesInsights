@@ -1,0 +1,163 @@
+[
+  {
+    "sourceKey": "thurston_land_use_rezone",
+    "externalId": "2026-REZ-004",
+    "recordType": "sepa_document",
+    "title": "2026-REZ-004 – Example Quarry Rezone (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": "0000 Placeholder Rd SW (placeholder)",
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": "Rezone",
+    "permitType": null,
+    "documentType": "SEPA Determination",
+    "statusRaw": null,
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-03-24",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets",
+    "evidence": [
+      {
+        "factPath": "title",
+        "text": "2026-REZ-004 — Example Quarry Rezone (placeholder) (Rezone)",
+        "pageOrSection": "Comprehensive Plan & Development Code docket"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Notice of Application (02/10/2026): https://www.thurstoncountywa.gov/media/synthetic/2026-REZ-004-noa.pdf",
+        "pageOrSection": "Notice of Application"
+      },
+      {
+        "factPath": "documentType",
+        "text": "SEPA Determination (03/24/2026): https://www.thurstoncountywa.gov/media/synthetic/2026-REZ-004-sepa.pdf",
+        "pageOrSection": "SEPA Determination"
+      }
+    ]
+  },
+  {
+    "sourceKey": "thurston_land_use_rezone",
+    "externalId": "CPA-20",
+    "recordType": "public_notice",
+    "title": "CPA-20 – Placeholder Creek Land Use & Rezone Amendment (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": null,
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": "Comprehensive Plan Amendment",
+    "permitType": null,
+    "documentType": "Adoption / Ordinance",
+    "statusRaw": null,
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2025-12-16",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets",
+    "evidence": [
+      {
+        "factPath": "title",
+        "text": "CPA-20 — Placeholder Creek Land Use & Rezone Amendment (placeholder) (Comprehensive Plan Amendment)",
+        "pageOrSection": "Comprehensive Plan & Development Code docket"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Notice of Application (11/12/2025): https://www.thurstoncountywa.gov/media/synthetic/CPA-20-noa.pdf",
+        "pageOrSection": "Notice of Application"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Adoption / Ordinance (12/16/2025): https://www.thurstoncountywa.gov/media/synthetic/CPA-20-ordinance.pdf",
+        "pageOrSection": "Adoption / Ordinance"
+      }
+    ]
+  },
+  {
+    "sourceKey": "thurston_land_use_rezone",
+    "externalId": "2026-CPA-007",
+    "recordType": "public_notice",
+    "title": "2026-CPA-007 – Sample Way Land Use Amendment (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": "7809 Sample Way E (placeholder)",
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": "Land Use Amendment",
+    "permitType": null,
+    "documentType": "Notice of Application",
+    "statusRaw": null,
+    "normalizedStage": "entitlement",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": "2026-04-01",
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets",
+    "evidence": [
+      {
+        "factPath": "title",
+        "text": "2026-CPA-007 — Sample Way Land Use Amendment (placeholder) (Land Use Amendment)",
+        "pageOrSection": "Comprehensive Plan & Development Code docket"
+      },
+      {
+        "factPath": "documentType",
+        "text": "Notice of Application (04/01/2026): https://www.thurstoncountywa.gov/media/synthetic/2026-CPA-007-noa.pdf",
+        "pageOrSection": "Notice of Application"
+      }
+    ]
+  },
+  {
+    "sourceKey": "thurston_land_use_rezone",
+    "externalId": "2027-REZ-001",
+    "recordType": "public_notice",
+    "title": "2027-REZ-001 – Unscheduled Docket Placeholder (placeholder)",
+    "description": null,
+    "permittingJurisdiction": "Thurston County",
+    "county": "Thurston",
+    "city": null,
+    "addressRaw": null,
+    "parcelIds": [],
+    "geometry": null,
+    "applicationType": "Rezone",
+    "permitType": null,
+    "documentType": null,
+    "statusRaw": null,
+    "normalizedStage": "unknown",
+    "applicationDate": null,
+    "issueDate": null,
+    "sourceUpdatedAt": null,
+    "valuationUsd": null,
+    "units": null,
+    "lots": null,
+    "squareFeet": null,
+    "organizations": [],
+    "sourceUrl": "https://www.thurstoncountywa.gov/departments/community-planning-and-economic-development/community-planning/plans-programs-and-code-projects/comprehensive-plan-and-development-code-dockets",
+    "evidence": [
+      {
+        "factPath": "title",
+        "text": "2027-REZ-001 — Unscheduled Docket Placeholder (placeholder) (Rezone)",
+        "pageOrSection": "Comprehensive Plan & Development Code docket"
+      }
+    ]
+  }
+]
