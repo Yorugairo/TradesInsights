@@ -14,19 +14,19 @@
   "exclude": [
     "node_modules", ".git", "dist", "build", "out",
     "__pycache__", ".next", "coverage", "target", "vendor",
-    ".context", ".sqz", ".claude", "fixtures"
+    ".context", ".sqz", ".claude", ".agents", "fixtures", "captures", "docs"
   ],
 
   "maxDepth": 6,
 
   "maxSigsPerFile": 25,
 
-  "_maxTokens_comment": "Used only when autoMaxTokens is false. Override to pin a fixed budget.",
-  "maxTokens": 6000,
+  "_maxTokens_comment": "Pinned budget (autoMaxTokens off). Auto-scale under-estimated this repo (~10K budget indexed only ~19% of 276 files). 60K indexes every signature-bearing file (~130); the other ~146 are type-only/barrel/config files with no extractable signatures, so coverage plateaus at ~47% and a higher budget adds nothing (verified: 60K and 120K both yield 130 files). Free at rest: the output is gitignored + NOT auto-loaded, and `ask`/`--query` only pull a ~650-token slice — the full index is never injected. modelContextLimit / maxTokensHeadroom / coverageTarget below are retained for reference but inactive while autoMaxTokens is false.",
+  "maxTokens": 60000,
 
   "_autoMaxTokens_comment": "Auto-scale budget based on repo size. Default: true.",
   "_autoMaxTokens_formula": "effective = clamp(totalSigTokens × coverageTarget, 4000, modelContextLimit × maxTokensHeadroom)",
-  "autoMaxTokens": true,
+  "autoMaxTokens": false,
 
   "_coverageTarget_comment": "Fraction of source files to target for inclusion (0.0–1.0). Default: 0.80 = 80%.",
   "coverageTarget": 0.80,
