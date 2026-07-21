@@ -105,7 +105,10 @@ export function operatorLocalSources(sources: SourceConfig[]): SourceConfig[] {
   );
 }
 
-async function runMaintenance(logger: Logger): Promise<void> {
+/** The nightly maintenance chain (resolution → geometry/geocode → registry
+ * seam → scoring → alerts). Exported so `pnpm maintenance:run` can execute it
+ * once by hand — the co-location runbook's post-cutover verification step. */
+export async function runMaintenance(logger: Logger): Promise<void> {
   const pool = createPool();
   const db = createDb(pool);
   try {

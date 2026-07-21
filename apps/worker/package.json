@@ -11,6 +11,7 @@
     "source:backfill": "tsx src/cli/source-backfill.ts",
     "source:replay": "tsx src/cli/source-replay.ts",
     "resolve:run": "tsx src/cli/resolve-run.ts",
+    "maintenance:run": "tsx src/cli/maintenance-run.ts",
     "geocode:run": "tsx src/cli/geocode-run.ts",
     "review": "tsx src/cli/review.ts",
     "score:run": "tsx src/cli/score-run.ts",

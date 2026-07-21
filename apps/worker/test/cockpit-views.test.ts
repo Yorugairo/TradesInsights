@@ -33,7 +33,7 @@ import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 const RUN = randomUUID().slice(0, 8).toLowerCase();
 // Letters-only tag for ORG NAMES: the views' address-in-name guard rejects 3+
 // consecutive digits, so a hex run id inside a fixture org name would trip it.
-const ORG_TAG = RUN.replace(/[0-9]/g, (d) => "ghijklmnop"[Number(d)]).toUpperCase();
+const ORG_TAG = RUN.replace(/[0-9]/g, (d) => "ghijklmnop".charAt(Number(d))).toUpperCase();
 
 let db: Db;
 let pool: pg.Pool;

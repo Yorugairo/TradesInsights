@@ -280,16 +280,34 @@ Everything rides `DATABASE_URL` (see `.env.example`):
 
 - **Session pooler `:5432` ONLY — never the transaction pooler `:6543`**
   (pg-boss 10 polls + takes advisory locks; transaction pooling breaks it).
-- URL-embedded search_path, URL-ENCODED, exactly:
-  `?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions`
-  (`insights` first = unqualified reads/writes and fresh drizzle DDL land
-  there; `extensions` = PostGIS on Supabase; silently skipped where absent).
-- Symptom of a connection missing the options: unqualified lookups miss
-  ("relation … does not exist") and the test suite fails loudly — fix the URL,
-  not the code.
+- **Hosted reality (verified 2026-07-21): Supavisor IGNORES the `options`
+  startup parameter**, so on the hosted DB the search_path contract is
+  enforced at ROLE level instead: Insights connects as the dedicated
+  **`insights_admin`** role (username `insights_admin.<project-ref>` through
+  the pooler) which carries
+  `ALTER ROLE insights_admin IN DATABASE postgres SET search_path = insights,
+  public, extensions`. Never run Insights as `postgres` — role separation is
+  the point (and `postgres` holds `insights_admin` membership so the deployed
+  registry cockpit can read the `insights_public` views).
+- LOCAL Docker still uses the URL-embedded form
+  (`?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions`) — direct
+  connections honor it. Keep both mechanisms in mind when debugging.
+- TLS through the pooler: `sslmode=require&uselibpqcompat=true` (libpq
+  semantics; strict verify-full rejects the pooler chain).
+- Symptom of a connection missing the contract: unqualified lookups miss
+  ("relation … does not exist") and the test suite fails loudly — fix the
+  URL/role, not the code.
 - `REGISTRY_DATABASE_URL` (seam, Part B) is UNCHANGED by co-location: same
   role separation (`otn_insights` login; reads `registry_public`, writes
   `registry_partner`) even though it now points at the same physical DB.
+  Passwords for `insights_admin` and `otn_insights` were minted 2026-07-21
+  and live ONLY in the operator `.env` — rotate at will via
+  `ALTER ROLE … PASSWORD` (nothing else stores them).
+- Fresh-provision gotcha (fixed 2026-07-21): drizzle-kit had emitted FK
+  clauses hardcoding `"public"."<table>"` in migrations 0000–0012; a fresh
+  hosted provision would bind FKs toward the registry's `public` schema.
+  The qualifiers are stripped (unqualified = search_path-resolved); local
+  already-applied DBs are unaffected (drizzle skips by journal timestamp).
 
 ## C3 — Provision → migrate data → cut over (owner-run order)
 
@@ -319,9 +337,13 @@ Everything rides `DATABASE_URL` (see `.env.example`):
    `node scripts/verify-migration-parity.mjs` (SOURCE_/TARGET_DATABASE_URL)
    must print PARITY OK.
 4. **Cutover:** flip local `.env` `DATABASE_URL` + `OBJECT_STORAGE_*` to
-   hosted; run the nightly chain once by hand; run `pnpm eval:run` (gates must
-   PASS unchanged — §12.3 frozen); compare a digest render against the
-   pre-migration rehearsal.
+   hosted; run the nightly chain once by hand (**`pnpm maintenance:run`** —
+   one-shot CLI over the same chain the scheduler runs); run `pnpm eval:run`
+   (gates must PASS unchanged — §12.3 frozen); compare a digest render against
+   the pre-migration rehearsal. Tests are guarded: a non-local `DATABASE_URL`
+   is IGNORED by vitest (falls back to the local Docker DB) unless
+   `ALLOW_REMOTE_TEST_DB=1` — tests truncate data and must never touch
+   production.
 5. **Rollback = URL swap.** The local Docker Postgres + volume stay intact;
    repointing `DATABASE_URL` back is the entire rollback.
 

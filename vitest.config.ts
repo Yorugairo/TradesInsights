@@ -8,6 +8,26 @@ import { defineConfig } from "vitest/config";
 // defaults below still apply.
 loadEnv();
 
+// PRODUCTION-SAFETY GUARD (Part E co-location): after cutover the repo .env
+// points DATABASE_URL at the HOSTED Supabase DB, but tests truncate/reset data
+// (resetSource, deleteTestProjects) and must never do that to production.
+// A non-local DATABASE_URL is therefore IGNORED for tests — they fall back to
+// the local Docker default below — unless ALLOW_REMOTE_TEST_DB=1 is set
+// explicitly. PG_PORT (compose override) keeps the local fallback correct on
+// machines where a native Postgres shadows 5432.
+const LOCAL_TEST_DB = `postgres://otn:otn@localhost:${process.env.PG_PORT || "5432"}/otn?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions`;
+function testDatabaseUrl(): string {
+  const configured = process.env.DATABASE_URL;
+  if (!configured) return LOCAL_TEST_DB;
+  const isLocal = /localhost|127\.0\.0\.1/.test(configured);
+  if (isLocal || process.env.ALLOW_REMOTE_TEST_DB === "1") return configured;
+  console.warn(
+    "[vitest] DATABASE_URL is non-local — tests run against the LOCAL Docker DB instead " +
+      "(set ALLOW_REMOTE_TEST_DB=1 to override; tests truncate data and must not touch production).",
+  );
+  return LOCAL_TEST_DB;
+}
+
 export default defineConfig({
   test: {
     include: [
@@ -24,12 +44,11 @@ export default defineConfig({
     fileParallelism: false,
     passWithNoTests: false,
     env: {
-      // Defaults match docker-compose; real env vars override. The options
-      // param is the search_path contract (insights,public,extensions) — all
-      // Insights tables live in the `insights` schema (Part E co-location).
-      DATABASE_URL:
-        process.env.DATABASE_URL ??
-        "postgres://otn:otn@localhost:5432/otn?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions",
+      // Local-guarded (see testDatabaseUrl above): non-local DATABASE_URL is
+      // ignored for tests. The options param is the search_path contract
+      // (insights,public,extensions) — all Insights tables live in the
+      // `insights` schema (Part E co-location).
+      DATABASE_URL: testDatabaseUrl(),
       OBJECT_STORAGE_ENDPOINT:
         process.env.OBJECT_STORAGE_ENDPOINT ?? "http://localhost:9000",
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",

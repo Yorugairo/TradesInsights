@@ -26,6 +26,7 @@
     "map:verify": "sigmap && sigmap verify",
     "map:evidence": "sigmap && sigmap evidence",
     "resolve:run": "pnpm --filter @otn/worker resolve:run",
+    "maintenance:run": "pnpm --filter @otn/worker maintenance:run",
     "geocode:run": "pnpm --filter @otn/worker geocode:run",
     "review": "pnpm --filter @otn/worker review",
     "score:run": "pnpm --filter @otn/worker score:run",
