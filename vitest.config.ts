@@ -1,4 +1,12 @@
+import { config as loadEnv } from "dotenv";
 import { defineConfig } from "vitest/config";
+
+// Load a repo-root .env so a local override (e.g. DATABASE_URL on a non-default port
+// when a native Postgres already owns 5432 and the Docker container is published on
+// 5433) applies to tests too. No-op when .env is absent; dotenv never overrides an
+// existing process.env var, so CI (which sets env directly) is unaffected and the
+// defaults below still apply.
+loadEnv();
 
 export default defineConfig({
   test: {
