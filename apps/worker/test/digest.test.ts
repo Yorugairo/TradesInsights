@@ -609,4 +609,49 @@ describe("M3.6 weekly digest", () => {
     expect(item!.inclusion.mode).toBe("auto"); // human decided; policy records it
     expect(model.reviewQueue.map((i) => i.projectId)).not.toContain(projectReviewId);
   });
+
+  it("WS-B: carries a verified GC contact into the model and renders the badge + phone", async () => {
+    // Attach a verified, registry-bound GC with a GLOBAL public-business phone to
+    // Project A; the model must carry it and the HTML must show ✓ verified + ☎.
+    const gcName = `Acme Builders ${RUN} LLC`;
+    const gcPhone = "3605550148"; // raw digits → "(360) 555-0148"
+    const [org] = (
+      await db.execute(sql`
+        INSERT INTO organizations (canonical_name, status, registry_ref, verified_at)
+        VALUES (${gcName}, 'active', ${randomUUID()}, now()) RETURNING id`)
+    ).rows as { id: string }[];
+    const gcOrgId = org!.id;
+    try {
+      await db.execute(sql`
+        INSERT INTO organization_contacts (organization_id, account_profile_id, name, role, phone, source_type)
+        VALUES (${gcOrgId}, NULL, ${gcName}, 'L&I registered phone', ${gcPhone}, 'public_business')`);
+      const [rec] = (
+        await db.execute(sql`
+          SELECT id FROM source_records WHERE external_id = ${`DIGEST-A-${RUN}`} AND source_id = ${sourceId} LIMIT 1`)
+      ).rows as { id: string }[];
+      await db.execute(sql`
+        INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
+        VALUES (${projectPassId}, ${gcOrgId}, 'primary_contractor', ${rec!.id}, true, 1, now(), now())`);
+
+      const model = await buildDigest(db, accountId, { start: PERIOD_START, end: PERIOD_END });
+      // Project A may have moved out of priorityNew once earlier tests delivered
+      // it (isNew is a delivery-history fact); find it across every section.
+      const item = [
+        ...model.sections.priorityNew,
+        ...model.sections.stageChanges,
+        ...model.sections.missingFacts,
+        ...model.sections.monitoring,
+      ].find((i) => i.projectId === projectPassId)!;
+      expect(item.generalContractor).toEqual({ name: gcName, verified: true, phone: gcPhone });
+
+      const html = renderDigestHtml(model);
+      expect(html).toContain(`<strong>GC:</strong> ${gcName}`);
+      expect(html).toContain("✓ verified");
+      expect(html).toContain("(360) 555-0148");
+    } finally {
+      await db.execute(sql`DELETE FROM project_roles WHERE organization_id = ${gcOrgId}`);
+      await db.execute(sql`DELETE FROM organization_contacts WHERE organization_id = ${gcOrgId}`);
+      await db.execute(sql`DELETE FROM organizations WHERE id = ${gcOrgId}`);
+    }
+  });
 });

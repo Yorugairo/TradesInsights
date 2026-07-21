@@ -13,6 +13,25 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** Raw adopted phone digits → a readable US number; unrecognized shapes pass
+ * through unchanged (never fabricate a format for a non-10-digit value). */
+function fmtPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  if (d.length === 11 && d.startsWith("1")) return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  return raw;
+}
+
+/** WS-B — the "who to call" line for an opportunity: GC name, a "✓ verified"
+ * badge when the registry binding is verified, and the adopted public phone when
+ * present. Deterministic; badge only when verified, phone only when non-null. */
+function gcLine(gc: { name: string; verified: boolean; phone: string | null } | null): string {
+  if (!gc) return "";
+  const badge = gc.verified ? " <strong>✓ verified</strong>" : "";
+  const phone = gc.phone ? ` · ☎ ${esc(fmtPhone(gc.phone))}` : "";
+  return `<p><strong>GC:</strong> ${esc(gc.name)}${badge}${phone}</p>`;
+}
+
 // ── Plain-English humanization (deterministic — no model involved) ───────────
 // The DigestModel keeps raw audit values; this layer turns them into words a
 // busy owner reads in seconds. Unknown inputs degrade to de-snake-cased text,
@@ -170,7 +189,7 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
     <p><strong>${esc(item.projectName)}</strong><br/>${esc(humanStage(item.stage))} · ${esc(humanPlace(item.county, item.jurisdiction))} · score ${item.score ?? "—"}</p>
     ${brief}${bidWindow}<p><strong>What changed:</strong> ${esc(item.whatChanged).replace(/_/g, " ")}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
-    ${campus}${facts}${inferences}${missing}${unitConflict}
+    ${gcLine(item.generalContractor)}${campus}${facts}${inferences}${missing}${unitConflict}
     <p><strong>Next step:</strong> ${esc(item.nextAction)}</p>
     ${actionButtons(item.opportunityId, opts)}
     <p>Sources: ${links || "—"}</p>
@@ -194,19 +213,23 @@ function topBlock(model: DigestModel, opts: RenderOptions): string {
   if (model.relationshipPlays.length > 0) {
     parts.push(`<h2>🤝 GCs worth meeting</h2>
 <ul>${model.relationshipPlays
-      .map(
-        (p) =>
-          `<li><strong>${esc(p.name)}</strong> — ${p.relevantProjects} projects routed to you (${esc(p.counties.join(", "))}). No relationship on record yet.</li>`,
-      )
+      .map((p) => {
+        const badge = p.verified ? " <strong>✓ verified</strong>" : "";
+        const phone = p.phone ? ` · ☎ ${esc(fmtPhone(p.phone))}` : "";
+        const rating = p.rating != null ? ` · ★ ${p.rating.toFixed(1)}` : "";
+        return `<li><strong>${esc(p.name)}</strong>${badge} — ${p.relevantProjects} projects routed to you (${esc(p.counties.join(", "))})${phone}${rating}. No relationship on record yet.</li>`;
+      })
       .join("\n")}</ul>`);
   }
   if (model.deadlines.length > 0) {
     parts.push(`<h2>⏰ Deadlines from your inbox</h2>
 <ul>${model.deadlines
-      .map(
-        (d) =>
-          `<li><strong>${d.bidDueAt.slice(0, 10)}</strong> — ${esc(d.title ?? d.scope ?? "bid invitation")}${d.generalContractor ? ` (${esc(d.generalContractor)})` : ""}</li>`,
-      )
+      .map((d) => {
+        const gc = d.generalContractor
+          ? ` (${esc(d.generalContractor)}${d.generalContractorVerified ? " ✓" : ""}${d.generalContractorPhone ? ` ☎ ${esc(fmtPhone(d.generalContractorPhone))}` : ""})`
+          : "";
+        return `<li><strong>${d.bidDueAt.slice(0, 10)}</strong> — ${esc(d.title ?? d.scope ?? "bid invitation")}${gc}</li>`;
+      })
       .join("\n")}</ul>`);
   }
   if (model.radar.length > 0) {

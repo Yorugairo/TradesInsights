@@ -68,6 +68,10 @@ export interface DigestItem {
   campus: { block: string; projectCount: number } | null;
   /** P2.1 — deterministic "winnable now" cut (stage/age/valuation/GC/radius). */
   easyWin: boolean;
+  /** WS-B — the project's general contractor (strongest role: primary_contractor
+   * > applicant > owner) with its verified flag and global public-business phone,
+   * so the owner sees "who to call". Null when the project has no such org. */
+  generalContractor: { name: string; verified: boolean; phone: string | null } | null;
   eventIds: string[];
 }
 
@@ -78,12 +82,21 @@ export interface RelationshipPlay {
   relevantProjects: number;
   counties: string[];
   statedValuationTotal: number | null;
+  /** WS-B — verified registry binding drives the "✓ verified" badge; the global
+   * public-business phone is the "who to call". Null phone/rating = not adopted. */
+  verified: boolean;
+  phone: string | null;
+  rating: number | null;
 }
 
 /** P2.2 — upcoming bid-invitation deadline (the account's own private inbox). */
 export interface DeadlineItem {
   title: string | null;
   generalContractor: string | null;
+  /** WS-B — the GC's global public-business phone + verified flag, when the GC
+   * org resolves and carries an adopted contact. Null/false otherwise. */
+  generalContractorPhone: string | null;
+  generalContractorVerified: boolean;
   bidDueAt: string;
   scope: string | null;
 }
@@ -246,18 +259,29 @@ const RADAR_STAGES = new Set(["concept", "preapplication", "entitlement"]);
  */
 async function upcomingDeadlines(db: Db, accountProfileId: string): Promise<DeadlineItem[]> {
   const res = await db.execute(sql`
-    SELECT bi.bid_due_at, bi.scope_summary, o.canonical_name AS gc, im.subject AS title
+    SELECT bi.bid_due_at, bi.scope_summary, o.canonical_name AS gc, im.subject AS title,
+      (o.verified_at IS NOT NULL) AS gc_verified,
+      (SELECT oc.phone FROM organization_contacts oc
+         WHERE oc.organization_id = o.id
+           AND oc.account_profile_id IS NULL
+           AND oc.source_type = 'public_business'
+           AND oc.phone IS NOT NULL
+         ORDER BY oc.phone
+         LIMIT 1) AS gc_phone
     FROM bid_invitations bi
     LEFT JOIN organizations o ON o.id = bi.gc_organization_id
     LEFT JOIN inbound_messages im ON im.id = bi.source_message_id
     WHERE bi.account_profile_id = ${accountProfileId}
       AND bi.bid_due_at IS NOT NULL AND bi.bid_due_at >= now()
-    GROUP BY bi.bid_due_at, bi.scope_summary, o.canonical_name, im.subject
+    GROUP BY bi.bid_due_at, bi.scope_summary, o.canonical_name, im.subject,
+      o.verified_at, o.id
     ORDER BY bi.bid_due_at ASC
     LIMIT 5`);
   return (res.rows as Record<string, unknown>[]).map((r) => ({
     title: (r["title"] as string | null) ?? null,
     generalContractor: (r["gc"] as string | null) ?? null,
+    generalContractorPhone: (r["gc_phone"] as string | null) ?? null,
+    generalContractorVerified: Boolean(r["gc_verified"]),
     bidDueAt: r["bid_due_at"] as string,
     scope: (r["scope_summary"] as string | null) ?? null,
   }));
@@ -291,6 +315,40 @@ async function materialEventsInPeriod(
     at: r["at"] as string,
     resultingStage: (r["resulting_stage"] as string | null) ?? null,
   }));
+}
+
+/**
+ * WS-B — the project's general contractor to surface on the opportunity: the
+ * strongest-role org (primary_contractor > applicant > owner), its verified flag
+ * (organizations.verified_at), and its GLOBAL public-business phone (account NULL,
+ * source_type 'public_business' — L&I or, when absent, Google, per the adoption
+ * loop). Read-only + deterministic (name tiebreak); the model never sets it.
+ */
+async function generalContractor(
+  db: Db,
+  projectId: string,
+): Promise<{ name: string; verified: boolean; phone: string | null } | null> {
+  const res = await db.execute(sql`
+    SELECT o.canonical_name AS name,
+      (o.verified_at IS NOT NULL) AS verified,
+      (SELECT oc.phone FROM organization_contacts oc
+         WHERE oc.organization_id = o.id
+           AND oc.account_profile_id IS NULL
+           AND oc.source_type = 'public_business'
+           AND oc.phone IS NOT NULL
+         ORDER BY oc.phone
+         LIMIT 1) AS phone
+    FROM project_roles pr
+    JOIN organizations o ON o.id = pr.organization_id
+    WHERE pr.project_id = ${projectId}
+      AND pr.role IN ('primary_contractor', 'applicant', 'owner')
+    ORDER BY CASE pr.role
+        WHEN 'primary_contractor' THEN 1 WHEN 'applicant' THEN 2 ELSE 3 END,
+      o.canonical_name
+    LIMIT 1`);
+  const row = res.rows[0] as { name: string; verified: boolean; phone: string | null } | undefined;
+  if (!row) return null;
+  return { name: row.name, verified: Boolean(row.verified), phone: row.phone ?? null };
 }
 
 async function sourceLinks(db: Db, projectId: string): Promise<{ url: string; label: string }[]> {
@@ -407,7 +465,7 @@ async function buildItem(
     accountProfileId: string;
   },
 ): Promise<DigestItem> {
-  const [events, links, extraction, verification, unitDisagreement, campus, brief] =
+  const [events, links, extraction, verification, unitDisagreement, campus, brief, gc] =
     await Promise.all([
       materialEventsInPeriod(db, c.project_id, opts.periodStart, opts.periodEnd),
       sourceLinks(db, c.project_id),
@@ -416,6 +474,7 @@ async function buildItem(
       unitCountDisagreement(db, c.project_id),
       campusContext(db, c.campus_block),
       latestBrief(db, c.id, opts.accountProfileId, c.project_id),
+      generalContractor(db, c.project_id),
     ]);
   const inclusion = decideInclusion({
     gate: opts.gate,
@@ -500,6 +559,7 @@ async function buildItem(
     easyWin:
       isEasyWin(c, opts.easyWinConfig) &&
       (bidWindows.length === 0 || !bidWindows.every((w) => w.status === "likely_closed")),
+    generalContractor: gc,
     eventIds: events.map((e) => e.id),
   };
 }
@@ -672,6 +732,9 @@ export async function buildDigest(
       relevantProjects: p.relevantProjects,
       counties: p.counties,
       statedValuationTotal: p.statedValuationTotal,
+      verified: p.verified,
+      phone: p.phone,
+      rating: p.rating,
     })),
     deadlines,
     radar,

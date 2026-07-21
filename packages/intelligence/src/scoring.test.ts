@@ -620,3 +620,75 @@ describe("v1.9.0 — owner-directed provisional Solis tweaks (2026-07-20, §12.3
     expect(withVerified.score).toBe(noOrg.score); // registry identity stays score-neutral
   });
 });
+
+describe("WS-B — gc_quality + trade_match are score-NEUTRAL signals (§12.3)", () => {
+  const WANTED_TRADES = ["drywall", "painting"] as const;
+  // The Solis account carrying its configured trades (from `capabilities`).
+  const solisTrades = (): AccountScoringInput => ({ ...ACCOUNTS[2]!, trades: [...WANTED_TRADES] });
+  const solisTi = (orgs: ProjectFeatures["orgs"]): ProjectFeatures =>
+    features({
+      text: "tenant improvement interior remodel drywall and paint suite 200",
+      maxValuation: 250_000,
+      stage: "permit_issued",
+      orgs,
+    });
+  const route = (f: ProjectFeatures, acct: AccountScoringInput) =>
+    routeProject(f, [acct]).find((r) => r.accountKey === "solis_interiors")!;
+
+  // A GC whose Google Business profile clears the bar and whose L&I trade codes
+  // intersect the account's configured trades.
+  const QUALITY_GC = {
+    name: "acme builders llc",
+    role: "primary_contractor",
+    registryRef: "bound-1",
+    registryVerified: true,
+    googleRating: 4.8,
+    googleReviewCount: 50,
+    tradeCodes: ["drywall"],
+  };
+  // The SAME GC minus the enriched contract fields — the neutrality baseline
+  // (identical components; only the two new signals differ).
+  const BARE_GC = {
+    name: "acme builders llc",
+    role: "primary_contractor",
+    registryRef: "bound-1",
+    registryVerified: true,
+  };
+
+  it("fires gc_quality + trade_match when the GC clears the bars", () => {
+    const r = route(solisTi([QUALITY_GC]), solisTrades());
+    expect(r.signals).toContain("gc_quality");
+    expect(r.signals).toContain("trade_match");
+  });
+
+  it("does NOT move the score — signals only, no weight (the §12.3 invariant)", () => {
+    const withSignals = route(solisTi([QUALITY_GC]), solisTrades());
+    const baseline = route(solisTi([BARE_GC]), solisTrades());
+    expect(withSignals.signals).toContain("gc_quality");
+    expect(withSignals.signals).toContain("trade_match");
+    expect(baseline.signals).not.toContain("gc_quality");
+    expect(baseline.signals).not.toContain("trade_match");
+    expect(withSignals.score).toBe(baseline.score);
+  });
+
+  it("gc_quality respects the rating + review-count floors", () => {
+    const lowRating = { ...QUALITY_GC, googleRating: 3.9 };
+    const fewReviews = { ...QUALITY_GC, googleReviewCount: 4 };
+    expect(route(solisTi([lowRating]), solisTrades()).signals).not.toContain("gc_quality");
+    expect(route(solisTi([fewReviews]), solisTrades()).signals).not.toContain("gc_quality");
+  });
+
+  it("trade_match needs a real intersection AND configured account trades", () => {
+    const otherTrade = { ...QUALITY_GC, tradeCodes: ["roofing"] };
+    expect(route(solisTi([otherTrade]), solisTrades()).signals).not.toContain("trade_match");
+    // No configured trades on the account ⇒ never fires (frozen-eval safety).
+    expect(route(solisTi([QUALITY_GC]), ACCOUNTS[2]!).signals).not.toContain("trade_match");
+  });
+
+  it("neither signal triggers on a non-GC role (e.g. architect)", () => {
+    const architect = { ...QUALITY_GC, role: "architect" };
+    const r = route(solisTi([architect]), solisTrades());
+    expect(r.signals).not.toContain("gc_quality");
+    expect(r.signals).not.toContain("trade_match");
+  });
+});

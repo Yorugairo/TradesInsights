@@ -427,9 +427,40 @@ export async function generateRegistryObservations(
         organizationId: org.id,
         registryEntityId: row.entityId,
         ruleKey: "phone_from_lni",
-        payload: { phone: row.phone, registry_name: row.canonicalName },
+        // `role` travels in the payload so the accept side-effect labels the
+        // contact by its channel (L&I here, Google below).
+        payload: { phone: row.phone, registry_name: row.canonicalName, role: "L&I registered phone" },
         components,
         dedupeKey: `phone:${org.id}:${row.phone}`,
+      });
+    } else if (row.googlePhone) {
+      // L&I phone is ABSENT — surface the entity's SECONDARY Google Business phone
+      // (the registry gates it to accepted, publicly-surfaceable links). L&I stays
+      // authoritative, so this path only runs when there is no L&I phone to adopt;
+      // Google phone NEVER overwrites an L&I phone. A DISTINCT rule key means
+      // Google adoptions build their OWN reviewed accept history before any
+      // auto-accept — they never inherit the L&I rule's trust.
+      const components: TrustComponents = {
+        name: 1, // binding already reviewed or strong-key exact
+        identifier: 1, // an accepted Google Business profile phone for this entity
+        locality: 1, // the phone belongs to exactly this bound entity
+        role: org.role_weight,
+        corroboration: 1,
+        ruleHistory: rate("phone_from_google"),
+      };
+      inserts.push({
+        observationType: "phone_adoption",
+        organizationId: org.id,
+        registryEntityId: row.entityId,
+        ruleKey: "phone_from_google",
+        payload: {
+          phone: row.googlePhone,
+          registry_name: row.canonicalName,
+          role: "Google Business phone",
+          source: "google_business",
+        },
+        components,
+        dedupeKey: `phone:${org.id}:${row.googlePhone}`,
       });
     }
 
@@ -541,6 +572,16 @@ export async function generateRegistryObservations(
     // an independent accept history for the description-derived signal.
     const role = matchedOn === "permit_type" ? 1 : 0.5;
     const ruleKey = matchedOn === "permit_type" ? `trade_${t.tradeCode}` : `trade_${t.tradeCode}_desc`;
+    // Corroboration from the entity's AUTHORITATIVE L&I trade codes (contract
+    // column `trade_codes`): flags for the reviewer when Insights' permit-derived
+    // trade matches a trade the registry already licenses this entity for. This is
+    // reviewer metadata ONLY — it does not touch the trust math (so queue/
+    // auto-accept behavior is unchanged), and re-exporting the registry's own
+    // codes back to the registry would be circular, so we never do that.
+    const registryTradeCodes = new Set(
+      (byEntity.get(t.entityId)?.tradeCodes ?? []).map((code) => code.toLowerCase()),
+    );
+    const registryConfirmed = registryTradeCodes.has(t.tradeCode.toLowerCase());
     const components: TrustComponents = {
       name: 1,
       identifier: 1, // entity identity already reviewed/strong-key bound
@@ -557,12 +598,14 @@ export async function generateRegistryObservations(
       payload: {
         trade_code: t.tradeCode,
         matched_on: matchedOn,
+        registry_confirmed: registryConfirmed,
         permit_type_samples: [...t.permitSamples],
         description_samples: matchedOn === "description" ? [...t.descSamples] : [],
         role_count: total,
         evidence: {
           role: "primary_contractor",
           matched_on: matchedOn,
+          registry_confirmed: registryConfirmed,
           permit_matches: permitN,
           description_matches: descN,
           org_records: org?.record_count ?? total,
@@ -712,11 +755,15 @@ export async function decideRegistryObservation(
   } else if (row.observation_type === "phone_adoption") {
     const phone = String(row.payload_json["phone"] ?? "");
     const registryName = String(row.payload_json["registry_name"] ?? "Registry listing");
+    // The channel label ('L&I registered phone' | 'Google Business phone') rides
+    // in the payload; default to L&I for observations generated before the field
+    // existed (back-compat) so no legacy accept changes behavior.
+    const role = String(row.payload_json["role"] ?? "L&I registered phone");
     // GLOBAL public-business contact (migration 0020): NULL account ⇒ visible
     // to every paying account — this IS the reviewed bucket entry.
     await db.execute(sql`
       INSERT INTO organization_contacts (organization_id, account_profile_id, name, role, phone, source_type)
-      SELECT ${row.organization_id}, NULL, ${registryName}, 'L&I registered phone', ${phone}, 'public_business'
+      SELECT ${row.organization_id}, NULL, ${registryName}, ${role}, ${phone}, 'public_business'
       WHERE NOT EXISTS (
         SELECT 1 FROM organization_contacts
         WHERE organization_id = ${row.organization_id} AND account_profile_id IS NULL AND phone = ${phone})`);

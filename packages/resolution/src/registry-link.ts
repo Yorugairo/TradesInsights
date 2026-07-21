@@ -51,6 +51,19 @@ export interface RegistryIdentityRow {
   rootDomain?: string | null;
   /** When the registry first minted this entity — an age/stability trust signal. */
   firstMintedAt?: string | null;
+  /** Secondary business phone from the entity's Google Business profile (gated by
+   * the registry to accepted, publicly-surfaceable links). SECONDARY to the L&I
+   * `phone`: surfaced/adopted only when L&I `phone` is absent — L&I stays
+   * authoritative (`phone_write_policy = 'lni_phone_authoritative'`). Optional:
+   * absent on hand-built test rows, populated by the live fetch. */
+  googlePhone?: string | null;
+  /** Google Business rating signal ∈ [0,5], and its review count. A score-neutral
+   * GC-quality signal downstream (spec §12.3); never a match key. */
+  googleRating?: number | null;
+  googleReviewCount?: number | null;
+  /** The entity's authoritative L&I trade codes, primary-first (e.g. ["drywall"]).
+   * Drives the score-neutral `trade_match` signal + display; never a match key. */
+  tradeCodes?: string[] | null;
 }
 
 /** Public identity snapshot cached on organizations.registry_identity_json. */
@@ -63,6 +76,13 @@ export function identitySnapshot(row: RegistryIdentityRow): Record<string, unkno
     phone: row.phone,
     city: row.cityToken,
     state: row.stateCode,
+    // Enriched contract columns (2026-07-20) cached for the digest/scorer to read
+    // downstream (B.3/B.5) without a second registry round-trip. Google phone is a
+    // SECONDARY channel — L&I `phone` above stays authoritative.
+    google_phone: row.googlePhone ?? null,
+    google_rating: row.googleRating ?? null,
+    google_review_count: row.googleReviewCount ?? null,
+    trade_codes: row.tradeCodes ?? null,
     snapshot_at: new Date().toISOString(),
   };
 }
@@ -181,7 +201,8 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
   const res = await pool.query(
     `SELECT entity_id, ubi, contractor_numbers, canonical_name, canonical_name_normalized,
             phone, city_token, state_code, registered_address, registered_postal_code,
-            status, record_count, root_domain, first_minted_at
+            status, record_count, root_domain, first_minted_at,
+            google_phone, google_rating, google_review_count, trade_codes
        FROM registry_public.trades_identity_v1`,
   );
   return res.rows.map((r: Record<string, unknown>) => ({
@@ -199,6 +220,10 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     recordCount: r["record_count"] == null ? null : Number(r["record_count"]),
     rootDomain: (r["root_domain"] as string | null) ?? null,
     firstMintedAt: (r["first_minted_at"] as string | null) ?? null,
+    googlePhone: (r["google_phone"] as string | null) ?? null,
+    googleRating: r["google_rating"] == null ? null : Number(r["google_rating"]),
+    googleReviewCount: r["google_review_count"] == null ? null : Number(r["google_review_count"]),
+    tradeCodes: (r["trade_codes"] as string[] | null) ?? null,
   }));
 }
 

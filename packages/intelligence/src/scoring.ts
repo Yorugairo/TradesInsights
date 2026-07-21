@@ -71,6 +71,14 @@ export interface ProjectFeatures {
     registryRef?: string | null | undefined;
     /** True when the org carries a governed registry binding (strong-key or reviewed). */
     registryVerified?: boolean | undefined;
+    /** WS-B — Google Business rating signal from the registry contract (cached on
+     * the identity snapshot). Feeds the score-NEUTRAL `gc_quality` signal only;
+     * absent on frozen eval examples → no signal, no score change. */
+    googleRating?: number | null | undefined;
+    googleReviewCount?: number | null | undefined;
+    /** WS-B — the org's authoritative L&I trade codes (registry contract). Feeds
+     * the score-NEUTRAL `trade_match` signal only; absent → no signal. */
+    tradeCodes?: string[] | null | undefined;
   }[];
   aGradeEvidence: number;
   lastMaterialChangeAt: Date | null;
@@ -259,6 +267,11 @@ export interface AccountScoringInput {
    * territory (from the digest league table). Absent for accounts that don't
    * compute it; used only to emit a score-neutral `warm_gc_active` signal. */
   warmGcRefs?: ReadonlySet<string>;
+  /** WS-B — the account's configured trade codes (Solis: drywall/painting, from
+   * the account `capabilities`). Used ONLY to emit the score-neutral `trade_match`
+   * signal when a project GC's registry trade codes intersect these. Absent ⇒ the
+   * signal never fires (frozen eval accounts are unaffected). */
+  trades?: readonly string[];
 }
 
 /** Timing curves differ per trade: glass installs late; entitlement is early radar. */
@@ -436,6 +449,13 @@ export function routeCommercial(
   };
 }
 
+/** Roles that make an org the project's GC/decision-maker for Solis's signals. */
+const SOLIS_GC_ROLES = ["primary_contractor", "applicant", "owner"] as const;
+/** WS-B `gc_quality` bar: a well-rated Google Business profile with enough
+ * reviews to be credible. Signal-only under §12.3 — never a score input. */
+const GC_QUALITY_MIN_RATING = 4.0;
+const GC_QUALITY_MIN_REVIEWS = 5;
+
 /** Route one project for the Solis Interiors profile (spec §12.3, provisional). */
 export function routeSolis(
   f: ProjectFeatures,
@@ -475,11 +495,42 @@ export function routeSolis(
   // `registryVerified` reads an already-governed binding, not a new auto-bind.
   if (
     f.orgs.some(
-      (o) =>
-        o.registryVerified && ["primary_contractor", "applicant", "owner"].includes(o.role ?? ""),
+      (o) => o.registryVerified && SOLIS_GC_ROLES.includes((o.role ?? "") as (typeof SOLIS_GC_ROLES)[number]),
     )
   ) {
     signals.push("verified_gc_on_project");
+  }
+  // WS-B — score-NEUTRAL SIGNALS (§12.3): pushed for rationale/digest only, with
+  // NO account weight and NO `components` entry, so `weighted()` leaves the score
+  // byte-identical (the neutrality invariant in scoring.test.ts). Both read the
+  // registry contract fields cached on the org; absent on frozen eval examples.
+  const isGcRole = (o: ProjectFeatures["orgs"][number]): boolean =>
+    SOLIS_GC_ROLES.includes((o.role ?? "") as (typeof SOLIS_GC_ROLES)[number]);
+  // gc_quality — a GC/owner whose Google Business profile clears the rating +
+  // review-count bar (a credibility cue for the estimator, not a score lever).
+  if (
+    f.orgs.some(
+      (o) =>
+        isGcRole(o) &&
+        (o.googleRating ?? 0) >= GC_QUALITY_MIN_RATING &&
+        (o.googleReviewCount ?? 0) >= GC_QUALITY_MIN_REVIEWS,
+    )
+  ) {
+    signals.push("gc_quality");
+  }
+  // trade_match — a GC/owner whose authoritative L&I trade codes intersect the
+  // account's configured trades (Solis: drywall/painting). Case-insensitive; the
+  // registry and the account config share the L&I trade vocabulary.
+  const acctTrades = acct.trades;
+  if (acctTrades && acctTrades.length > 0) {
+    const wanted = new Set(acctTrades.map((t) => t.toLowerCase()));
+    if (
+      f.orgs.some(
+        (o) => isGcRole(o) && (o.tradeCodes ?? []).some((code) => wanted.has(code.toLowerCase())),
+      )
+    ) {
+      signals.push("trade_match");
+    }
   }
   // WS-W — a project whose GC/owner is a WARM, registry-bound relationship in the
   // account's territory (from the digest league table). Score-neutral SIGNAL

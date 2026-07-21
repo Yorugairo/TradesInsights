@@ -108,7 +108,12 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       SELECT COALESCE(json_agg(json_build_object(
         'name', o.canonical_name, 'role', pr.role,
         'registryRef', o.registry_ref,
-        'registryVerified', (o.registry_ref IS NOT NULL))), '[]'::json) AS orgs
+        'registryVerified', (o.registry_ref IS NOT NULL),
+        -- WS-B — enriched contract fields cached on the identity snapshot; feed
+        -- the score-neutral gc_quality/trade_match signals (null when unbound).
+        'googleRating', (o.registry_identity_json->>'google_rating')::numeric,
+        'googleReviewCount', (o.registry_identity_json->>'google_review_count')::int,
+        'tradeCodes', o.registry_identity_json->'trade_codes')), '[]'::json) AS orgs
       FROM project_roles pr JOIN organizations o ON o.id = pr.organization_id
       WHERE pr.project_id = p.id
     ) orgs ON true
@@ -143,6 +148,9 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
           role: string | null;
           registryRef?: string | null;
           registryVerified?: boolean;
+          googleRating?: number | null;
+          googleReviewCount?: number | null;
+          tradeCodes?: string[] | null;
         }[]) ?? [],
       aGradeEvidence: Number(r["a_grade"] ?? 0),
       lastMaterialChangeAt: r["last_material_at"] ? new Date(r["last_material_at"] as string) : null,
@@ -168,7 +176,16 @@ async function loadAccountInputs(
     // WS-W — the account's warm network of active, registry-bound GCs in
     // territory (empty until orgs are bound; adds only a score-neutral signal).
     const warmGcRefs = await warmGcEntityIds(db, a.id, a.territory);
-    inputs.push({ key: a.key, territory: a.territory, weights, delivery: a.delivery, warmGcRefs });
+    // WS-B — the account's configured trades (capabilities; Solis: drywall/
+    // painting) drive the score-neutral `trade_match` signal only.
+    inputs.push({
+      key: a.key,
+      territory: a.territory,
+      weights,
+      delivery: a.delivery,
+      warmGcRefs,
+      trades: a.capabilities,
+    });
     ids.set(a.key, a.id);
     const versions: Record<string, number> = {};
     for (const [type, rule] of rules) versions[type] = rule.version;

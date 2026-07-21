@@ -327,3 +327,155 @@ describe("registry observation loop", () => {
     expect(org!.registry_ref_method).toBe("name_review_confirmed");
   });
 });
+
+/**
+ * WS-B — google_phone adoption: a bound entity whose L&I `phone` is ABSENT but
+ * whose Google Business profile carries a phone. The Google phone is a SECONDARY
+ * channel — adopted only when there is no L&I phone (L&I stays authoritative),
+ * under a DISTINCT rule key so it earns its own reviewed accept history.
+ */
+describe("google_phone adoption (L&I phone absent — secondary channel)", () => {
+  const GRUN = randomUUID().slice(0, 8).toUpperCase();
+  let gdb: Db;
+  let gpool: pg.Pool;
+  let gAccountId: string;
+  let gOrgId: string;
+  let gProjectId: string;
+  let gRecId: string;
+  let gArtId: string;
+  let gRunId: string;
+  const G_ENTITY = randomUUID();
+  const G_GOOGLE_PHONE = "3609990000";
+  const rows: RegistryIdentityRow[] = [
+    {
+      entityId: G_ENTITY,
+      ubi: "601234567",
+      contractorNumbers: [`GDRY${GRUN.slice(0, 5)}`],
+      canonicalName: `Google Only Drywall ${GRUN} LLC`,
+      canonicalNameNormalized: `GOOGLE ONLY DRYWALL ${GRUN}`,
+      phone: null, // L&I phone ABSENT — the google branch is the only phone to adopt
+      googlePhone: G_GOOGLE_PHONE,
+      cityToken: "lacey",
+      stateCode: "WA",
+      registeredAddress: null,
+      registeredPostalCode: null,
+      tradeCodes: ["drywall"],
+    },
+  ];
+
+  beforeAll(async () => {
+    ({ db: gdb, pool: gpool } = await testDb());
+    const [a] = await gdb.insert(accountProfiles).values({
+      key: `test_gphone_${GRUN.toLowerCase()}`, name: "gphone", active: true,
+      capabilitiesJson: [], territoryJson: {}, deliveryConfigJson: {},
+    }).returning({ id: accountProfiles.id });
+    gAccountId = a!.id;
+
+    // Pre-bound org (registry_ref set) → the BOUND-org phone-adoption path runs.
+    const [o] = await gdb.insert(organizations).values({
+      canonicalName: `Google Only Drywall ${GRUN} LLC`, status: "active", registryRef: G_ENTITY,
+    }).returning({ id: organizations.id });
+    gOrgId = o!.id;
+
+    // Reuse the shared fake_source WITHOUT the destructive resetSource() — its
+    // cross-cutting delete of source_records trips FKs from sibling tests'
+    // organization_identifiers (ambient corpus state). The file's top suite has
+    // already created fake_source; a fresh artifact/record under it is enough.
+    const [src] = (await gdb.execute(sql`SELECT id FROM sources WHERE key = 'fake_source' LIMIT 1`)).rows as { id: string }[];
+    const sourceId = src?.id ?? (await resetSource(gdb, "fake_source"));
+    const [run] = await gdb.insert(sourceRuns).values({ sourceId, status: "succeeded" }).returning({ id: sourceRuns.id });
+    gRunId = run!.id;
+    const [art] = await gdb.insert(rawArtifacts).values({
+      sourceId, sourceRunId: run!.id, canonicalUrl: `https://example.invalid/gphone/${GRUN}`,
+      retrievedAt: new Date(), contentType: "text/html", httpStatus: 200,
+      storageKey: `raw/fake_source/gphone-${GRUN}`, sha256: GRUN.padEnd(64, "9").toLowerCase(), byteSize: 9,
+      headersJson: {}, parserVersion: "test",
+    }).returning({ id: rawArtifacts.id });
+    gArtId = art!.id;
+    const [rec] = await gdb.insert(sourceRecords).values({
+      sourceId, rawArtifactId: art!.id, externalId: `GPHONE-${GRUN}`, recordType: "permit",
+      firstSeenAt: new Date(), lastSeenAt: new Date(), rawFieldsJson: {},
+      normalizedJson: { title: `GPHONE-${GRUN}`, city: "Lacey", permitType: "Drywall", sourceUrl: "https://example.invalid/p" },
+      normalizedFingerprint: `gphone-${GRUN}`,
+    }).returning({ id: sourceRecords.id });
+    gRecId = rec!.id;
+    const [p] = await gdb.insert(projects).values({
+      canonicalName: `GPHONE-${GRUN}`, permittingJurisdiction: "Lacey", county: "Thurston",
+      currentStage: "permit_issued", firstSeenAt: new Date(), lastSeenAt: new Date(),
+    }).returning({ id: projects.id });
+    gProjectId = p!.id;
+    await gdb.execute(sql`
+      INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
+      VALUES (${gProjectId}, ${gOrgId}, 'primary_contractor', ${gRecId}, true, 1, now(), now())`);
+  });
+
+  afterAll(async () => {
+    await gdb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${gOrgId}`);
+    await gdb.execute(sql`DELETE FROM organization_contacts WHERE organization_id = ${gOrgId}`);
+    await gdb.execute(sql`DELETE FROM project_roles WHERE organization_id = ${gOrgId}`);
+    await deleteTestProjects(gdb, [gProjectId]);
+    // Only our own fake_source rows (never the shared source itself).
+    await gdb.execute(sql`DELETE FROM source_records WHERE id = ${gRecId}`);
+    await gdb.execute(sql`DELETE FROM raw_artifacts WHERE id = ${gArtId}`);
+    await gdb.execute(sql`DELETE FROM source_runs WHERE id = ${gRunId}`);
+    await gdb.execute(sql`DELETE FROM organizations WHERE id = ${gOrgId}`);
+    await gdb.execute(sql`DELETE FROM account_profiles WHERE id = ${gAccountId}`);
+    await gpool.end();
+  });
+
+  it("adopts the Google phone as a phone_adoption when the L&I phone is absent", async () => {
+    const summary = await generateRegistryObservations(gdb, rows);
+    expect(summary.phoneAdoptions).toBe(1);
+    const phone = (await listRegistryObservations(gdb, { status: "pending", limit: 20 })).find(
+      (o) => o.organizationId === gOrgId && o.observationType === "phone_adoption",
+    )!;
+    expect(phone.ruleKey).toBe("phone_from_google");
+    expect(phone.payload["phone"]).toBe(G_GOOGLE_PHONE);
+    expect(phone.payload["role"]).toBe("Google Business phone");
+  });
+
+  it("accepting creates the GLOBAL public-business contact with the Google role; idempotent", async () => {
+    const phone = (await listRegistryObservations(gdb, { status: "pending", limit: 20 })).find(
+      (o) => o.organizationId === gOrgId && o.observationType === "phone_adoption",
+    )!;
+    const outcome = await decideRegistryObservation(gdb, phone.id, "accept", { decidedBy: "test:operator" });
+    expect(outcome.applied).toBe("contact_created");
+    const contacts = (await gdb.execute(sql`
+      SELECT account_profile_id, phone, role, source_type FROM organization_contacts WHERE organization_id = ${gOrgId}`)).rows as {
+      account_profile_id: string | null; phone: string; role: string; source_type: string;
+    }[];
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]).toMatchObject({
+      account_profile_id: null, phone: G_GOOGLE_PHONE, role: "Google Business phone", source_type: "public_business",
+    });
+
+    // Idempotent: a fresh observation for the same phone cannot duplicate.
+    await gdb.execute(sql`DELETE FROM registry_observations WHERE dedupe_key = ${"phone:" + gOrgId + ":" + G_GOOGLE_PHONE}`);
+    await generateRegistryObservations(gdb, rows);
+    const again = (await listRegistryObservations(gdb, { status: "pending", limit: 20 })).find(
+      (o) => o.organizationId === gOrgId && o.observationType === "phone_adoption",
+    )!;
+    await decideRegistryObservation(gdb, again.id, "accept", { decidedBy: "test:operator" });
+    const after = (await gdb.execute(sql`
+      SELECT count(*)::int AS n FROM organization_contacts WHERE organization_id = ${gOrgId}`)).rows as { n: number }[];
+    expect(after[0]!.n).toBe(1);
+  });
+
+  it("does NOT adopt the Google phone when the L&I phone is present (L&I authoritative)", async () => {
+    const withLni: RegistryIdentityRow[] = [{ ...rows[0]!, phone: "3601112222" }];
+    await gdb.execute(sql`
+      DELETE FROM registry_observations WHERE organization_id = ${gOrgId} AND observation_type = 'phone_adoption'`);
+    await generateRegistryObservations(gdb, withLni);
+    // Query status-agnostically: 'phone_from_lni' may auto-accept off proven rule
+    // history in the shared corpus, so filtering to pending would miss it.
+    const adoptions = (
+      await gdb.execute(sql`
+        SELECT rule_key, payload_json FROM registry_observations
+        WHERE organization_id = ${gOrgId} AND observation_type = 'phone_adoption'`)
+    ).rows as { rule_key: string; payload_json: Record<string, unknown> }[];
+    // Exactly the L&I phone is adopted; the Google phone is never a second contact.
+    expect(adoptions).toHaveLength(1);
+    expect(adoptions[0]!.rule_key).toBe("phone_from_lni");
+    expect(adoptions[0]!.payload_json["phone"]).toBe("3601112222");
+  });
+});

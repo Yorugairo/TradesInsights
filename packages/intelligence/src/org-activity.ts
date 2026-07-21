@@ -41,6 +41,16 @@ export interface OrgActivityRow {
   /** Raw canonical names covered by this row (≥1; >1 when variants grouped). */
   variantNames: string[];
   registryRef: string | null;
+  /** True when the org carries a governed registry binding that has been verified
+   * (organizations.verified_at IS NOT NULL) — drives the digest "✓ verified" badge. */
+  verified: boolean;
+  /** GLOBAL public-business phone adopted from the registry (L&I or, when L&I is
+   * absent, Google) — account_profile_id IS NULL, source_type 'public_business'.
+   * Null when no public contact has been adopted yet. */
+  phone: string | null;
+  /** Google Business rating (0–5) cached on the registry identity snapshot; null
+   * when unbound or unrated. Display/signal only, never a score input. */
+  rating: number | null;
   /** 'placeholder' | 'likely_individual' | 'address_in_name' (UI filters, never deletes). */
   flags: string[];
   projects: number;
@@ -70,6 +80,9 @@ interface VariantRow {
   canonical_name: string;
   registry_ref: string | null;
   relationship_state: string | null;
+  verified: boolean;
+  gc_phone: string | null;
+  rating: number | null;
   projects: number;
   projects_90d: number;
   counties: string[];
@@ -120,7 +133,16 @@ export async function orgActivityRollup(
       GROUP BY pr.organization_id
       HAVING count(DISTINCT pr.project_id) >= ${minProjects}
     )
-    SELECT a.*, o.canonical_name, o.registry_ref, rel.relationship_state
+    SELECT a.*, o.canonical_name, o.registry_ref, rel.relationship_state,
+      (o.verified_at IS NOT NULL) AS verified,
+      (o.registry_identity_json->>'google_rating')::float AS rating,
+      (SELECT oc.phone FROM organization_contacts oc
+         WHERE oc.organization_id = a.organization_id
+           AND oc.account_profile_id IS NULL
+           AND oc.source_type = 'public_business'
+           AND oc.phone IS NOT NULL
+         ORDER BY oc.phone
+         LIMIT 1) AS gc_phone
     FROM activity a
     JOIN organizations o ON o.id = a.organization_id
     LEFT JOIN account_organization_relationships rel
@@ -162,11 +184,18 @@ export async function orgActivityRollup(
     const valTotals = variants.map((v) => v.val_total).filter((v): v is number => v !== null);
     const valMaxes = variants.map((v) => v.val_max).filter((v): v is number => v !== null);
     const latest = variants.map((v) => v.latest_at).filter((v): v is string => v !== null).sort();
+    const phone = variants.map((v) => v.gc_phone).find((p) => p != null) ?? null;
+    const ratingHit = variants.map((v) => v.rating).find((r) => r != null) ?? null;
     rows.push({
       organizationId: primary.organization_id,
       name: split.name,
       variantNames: variants.map((v) => v.canonical_name),
       registryRef: variants.find((v) => v.registry_ref !== null)?.registry_ref ?? null,
+      // A verified binding on ANY variant verifies the grouped org; the public
+      // phone/rating come from whichever variant carries them (adopted globally).
+      verified: variants.some((v) => v.verified),
+      phone,
+      rating: ratingHit == null ? null : Number(ratingHit),
       flags,
       projects: variants.reduce((s, v) => s + Number(v.projects), 0),
       projects90d: variants.reduce((s, v) => s + Number(v.projects_90d), 0),

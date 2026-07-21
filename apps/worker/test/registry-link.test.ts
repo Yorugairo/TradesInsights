@@ -30,6 +30,9 @@ const REGISTRY_ROWS: RegistryIdentityRow[] = [
     canonicalName: "Solis Interiors LLC", canonicalNameNormalized: "SOLIS INTERIORS",
     phone: "3603508616", cityToken: "olympia", stateCode: "WA",
     registeredAddress: null, registeredPostalCode: null,
+    // WS-B enriched contract columns (secondary Google channel + L&I trade codes).
+    googlePhone: "3603509999", googleRating: 4.7, googleReviewCount: 33,
+    tradeCodes: ["drywall", "painting"],
   },
   {
     entityId: OTHER_ENTITY, ubi: "601000001", contractorNumbers: ["OTHERCO999XX"],
@@ -87,6 +90,20 @@ describe("linkRegistry", () => {
     expect(byId.get(cnOnlyId)).toMatchObject({ registry_ref: OTHER_ENTITY, registry_ref_method: "contractor_number_exact" });
     expect(byId.get(conflictId)!.registry_ref).toBeNull();  // conflict never auto-binds
     expect(byId.get(unknownId)!.registry_ref).toBeNull();
+  });
+
+  it("caches the WS-B enriched contract fields (google + trade codes) in the identity snapshot", async () => {
+    const [row] = (await db.execute(sql`
+      SELECT registry_identity_json FROM organizations WHERE id = ${solisId}`)).rows as {
+      registry_identity_json: Record<string, unknown> | null;
+    }[];
+    const snap = row!.registry_identity_json;
+    expect(snap?.["google_phone"]).toBe("3603509999");
+    expect(snap?.["google_rating"]).toBe(4.7);
+    expect(snap?.["google_review_count"]).toBe(33);
+    expect(snap?.["trade_codes"]).toEqual(["drywall", "painting"]);
+    // L&I phone stays the authoritative `phone` key — Google never overwrites it.
+    expect(snap?.["phone"]).toBe("3603508616");
   });
 
   it("is idempotent — a second run binds nothing new (bound orgs are skipped)", async () => {
