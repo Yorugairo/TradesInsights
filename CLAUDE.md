@@ -129,14 +129,16 @@ A project-scoped learn/inject loop (custom, not ECC's hooks) keeps durable lesso
 
 ## AI tooling (mandatory)
 
-Three tools are required parts of the workflow, not optional conveniences. All are installed (`sigmap` as a repo devDependency, `sqz` as a global binary + shell hook, `ast-grep` as a global binary + Claude Code skills) — do not skip them to save a step.
+Three tools are installed (`sigmap` + `ast-grep` as repo devDependencies, `sqz` as a global binary + shell hook) — do not skip them to save a step.
 
-- **`sigmap ask "<question>"` (or `sigmap --query "<topic>"`) before ad-hoc grep/explore.** When investigating unfamiliar code — "where is X handled," "what calls Y" — run sigmap first to ground the search in the live signature index instead of guessing paths. Falling back to manual grep/Explore is fine once sigmap has narrowed the target, not as the first move.
-- **`sigmap verify <answer.md>` (alias `verify-ai-output`) on any AI-authored deliverable that cites specific files, functions, or symbols** — milestone reports, PR descriptions, docs updates. It flags fabricated references before they ship; this is a direct extension of the governing rule's "never fabricate" invariant, applied to what *we* write about the code, not just what adapters extract from sources. Run it before finalizing, not after something is caught by review.
-- **`ast-grep outline <file|dir>` before reading a file or directory in full**, once sigmap (or search) has narrowed a candidate. It gives a cheap structural map — imports/exports/members with line numbers — so only the relevant range gets read in full, not the whole file.
-- **`ast-grep run`/`ast-grep scan` for structural code search** — finding every call site of a changed signature, every implementation of a pattern (e.g. "every adapter's `parse` method," "every place a stage transition is written without `confirmed`"), or codebase-wide consistency checks. Use it in place of text-based grep whenever the search is about code *structure* rather than a literal string; the `ast-grep` skill has the rule syntax.
-- **Pipe large or repeated command output through `sqz`** — test runs, migration/build logs, file dumps, anything likely to exceed a couple hundred lines or that gets re-read across a session. Use it to cut token cost; don't skip it because a command "seems small enough" — the hook is there to make this automatic, don't work around it.
-- Regenerate sigmap's derived context files (`pnpm map`) after a pass that materially changes package structure or exported symbols — they are gitignored (see `.gitignore`), not source, and go stale silently otherwise.
+**Never-stale by construction:** `pnpm map:ask` / `map:query` / `map:verify` each **regenerate the signature index first** (`sigmap && sigmap …`, ~1.5s), so every answer is computed against the current tree. **Never call raw `sigmap ask`** — it reads a possibly-stale index. Always go through the `pnpm map:*` scripts.
+
+- **`pnpm map:ask "<question>"` before ad-hoc grep/explore.** "Where is X handled," "what builds Y" — ranks the live signature index instead of guessing paths (verified: finds the right files spot-on here — `registry-link.ts`, `scoring.ts` for the relevant queries). Fall back to grep/Explore once it has narrowed the target, not as the first move.
+- **`pnpm map:verify <answer.md>` on any AI-authored deliverable that cites specific files, functions, or symbols** — milestone reports, PR descriptions, docs updates. Flags fabricated references before they ship — the mechanical form of the governing rule's "never fabricate," applied to what *we* write about the code. Run it before finalizing.
+- **`ast-grep run`/`ast-grep scan` for structural code search** — every call site of a changed signature, every implementation of a pattern ("every adapter's `parse` method," "every stage transition written without `confirmed`"), codebase-wide consistency checks. Use in place of text grep when the search is about code *structure*, not a literal string; the `ast-grep` skill has the rule syntax. Prefer this over sigmap's `--callers`/`--impact`, which are unreliable here (budget-capped call graph).
+- **Pipe large or repeated command output through `sqz`** — test runs, build/migration logs, file dumps. The global PreToolUse hook makes this automatic; don't work around it.
+
+The derived index (`.github/copilot-instructions.md`, `.context/`) is gitignored and NOT auto-loaded — it costs nothing at rest, and the `map:*` regen-first wrappers keep it fresh, so it never goes stale. Plain `pnpm map` just rebuilds it (rarely needed manually).
 
 <!-- sigmap-creation-workflow:start -->
 ## Creation workflow (SigMap)

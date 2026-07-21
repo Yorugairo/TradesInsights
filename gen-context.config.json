@@ -3,7 +3,8 @@
 
   "output": ".github/copilot-instructions.md",
 
-  "outputs": ["copilot", "codex", "gemini"],
+  "_outputs_comment": "ONLY copilot → .github/copilot-instructions.md (gitignored, NOT auto-loaded by Claude Code). This single file is what `ask`/`--query` index. Never add 'claude' (would overwrite the hand-curated CLAUDE.md) or 'codex' (would append signatures to AGENTS.md).",
+  "outputs": ["copilot"],
 
   "_srcDirs_comment": "Source directories to scan. OMIT this key to use auto-detection (recommended).",
   "_srcDirs_comment2": "Auto-detection reads package.json/go.mod/Cargo.toml and scans top-level dirs automatically.",
@@ -13,7 +14,7 @@
   "exclude": [
     "node_modules", ".git", "dist", "build", "out",
     "__pycache__", ".next", "coverage", "target", "vendor",
-    ".context"
+    ".context", ".sqz", ".claude", "fixtures"
   ],
 
   "maxDepth": 6,
@@ -30,12 +31,11 @@
   "_coverageTarget_comment": "Fraction of source files to target for inclusion (0.0–1.0). Default: 0.80 = 80%.",
   "coverageTarget": 0.80,
 
-  "_modelContextLimit_comment": "Model context window size (tokens). Hard cap = modelContextLimit × maxTokensHeadroom.",
-  "_modelContextLimit_examples": "128000 = GPT-4o/Claude (default)  |  200000 = Claude max  |  1000000 = Gemini 1M",
-  "modelContextLimit": 128000,
+  "_modelContextLimit_comment": "Budget cap = modelContextLimit × maxTokensHeadroom. The output file is gitignored + NOT auto-loaded by Claude Code, so a large budget costs nothing at rest — it only makes `ask`/`--query` retrieval more complete. 60K indexes most of this repo.",
+  "modelContextLimit": 200000,
 
-  "_maxTokensHeadroom_comment": "Fraction of model context reserved for SigMap output. 0.20 = 25,600 token hard cap.",
-  "maxTokensHeadroom": 0.20,
+  "_maxTokensHeadroom_comment": "Fraction of modelContextLimit used as the index budget. 200000 × 0.30 = 60K.",
+  "maxTokensHeadroom": 0.30,
 
   "secretScan": true,
 
