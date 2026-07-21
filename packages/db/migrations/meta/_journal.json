@@ -176,6 +176,13 @@
       "when": 1784334000000,
       "tag": "0024_identifier_types_address_entity",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1784335000000,
+      "tag": "0025_insights_public_views",
+      "breakpoints": true
     }
   ]
 }
