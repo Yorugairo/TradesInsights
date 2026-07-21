@@ -84,8 +84,10 @@ function pnwExteriorSeasonCaveat(issuedAt: Date): string | null {
     : null;
 }
 
-/** Pre-issuance stages where a commercial GC is running the CD-phase buyout. */
-const COMMERCIAL_BUYOUT_STAGES = new Set([
+/** Pre-issuance stages where a commercial GC is running the CD-phase buyout.
+ * Exported so the phase-change alert (packages/delivery) fires on the SAME
+ * commercial bid window this display overlay reflects — one source of truth. */
+export const COMMERCIAL_BUYOUT_STAGES = new Set([
   "preapplication",
   "entitlement",
   "approved",
