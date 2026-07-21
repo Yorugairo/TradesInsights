@@ -131,7 +131,7 @@ pnpm score:run                             # route + score every project into op
 pnpm extract:run [--project <id>] [--limit N]   # model extraction over stored evidence (spec §13)
 pnpm verify:run  [--project <id>] [--limit N]   # independent verification of extracted facts (spec §15)
 pnpm gate:run    [--opportunity <id>] [--limit N]   # read-only §15 publication-gate evaluation
-pnpm brief:run   [--opportunity <id>] [--limit N]   # verified decision brief (model prose over the memo)
+pnpm --filter @otn/worker brief:run [--opportunity <id>] [--limit N]   # verified decision brief (model prose over the memo; worker-scoped — no root alias; --limit defaults to 10)
 pnpm first-look  [--min N] [--include-test]         # first-look advantage per source×county
 pnpm digest:run  [--account <key>] [--end YYYY-MM-DD] [--send]   # weekly digest draft/send (spec §18)
 pnpm feedback:report [--account <key>]     # per-account calibration rollup (read-only)

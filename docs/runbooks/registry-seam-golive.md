@@ -255,3 +255,103 @@ bid-window timing weight, travel in `signals[]` but carry **no account weight** 
 Solis confirms scope (§12.3). The calibration inputs (thresholds, radius/age, the
 county mix now that Olympia application-stage volume is flowing) are in
 `docs/solis-requirements.md` and `docs/calibration-prep-solis.md`.
+
+# Part C — Co-located operations (Insights inside the trades Supabase)
+
+Part E of `docs/integration-one-trade-network.md`, implemented: the Insights
+Postgres lives in the trades Supabase project (`arbmeioglflvzoffgtii`) as the
+`insights` schema; the deployed registry cockpit reads the `insights_public`
+contract views (migration `0025`). The worker + admin web stay OWNER-LOCAL.
+
+## C1 — Two migration ledgers, one database (HARD RULE)
+
+| Ledger | Schemas it owns | Never touches |
+|---|---|---|
+| registry `supabase_migrations` (registry repo `apps/registry/supabase/migrations` + `db/baseline-v1.2` mirrors) | `public`, `registry_internal`, `registry_public`, `registry_partner` | `insights*`, `pgboss`, `drizzle` |
+| Insights drizzle journal (`packages/db/migrations` → `drizzle.__drizzle_migrations`) + pg-boss self-migration | `insights`, `insights_public`, `pgboss`, `drizzle` | registry schemas |
+
+Never record Insights DDL in `supabase_migrations`; never run registry SQL
+through the drizzle migrator. The registry baseline census README notes the
+foreign schemas so a registry clone knows they are not drift.
+
+## C2 — The connection contract
+
+Everything rides `DATABASE_URL` (see `.env.example`):
+
+- **Session pooler `:5432` ONLY — never the transaction pooler `:6543`**
+  (pg-boss 10 polls + takes advisory locks; transaction pooling breaks it).
+- URL-embedded search_path, URL-ENCODED, exactly:
+  `?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions`
+  (`insights` first = unqualified reads/writes and fresh drizzle DDL land
+  there; `extensions` = PostGIS on Supabase; silently skipped where absent).
+- Symptom of a connection missing the options: unqualified lookups miss
+  ("relation … does not exist") and the test suite fails loudly — fix the URL,
+  not the code.
+- `REGISTRY_DATABASE_URL` (seam, Part B) is UNCHANGED by co-location: same
+  role separation (`otn_insights` login; reads `registry_public`, writes
+  `registry_partner`) even though it now points at the same physical DB.
+
+## C3 — Provision → migrate data → cut over (owner-run order)
+
+1. **Prereqs (dashboard):** PostGIS enabled (lands in `extensions`), compute
+   tier + `max_connections` headroom confirmed, Storage bucket `otn-artifacts`
+   + S3 access keys created, PITR/backup current.
+2. **Fresh provision:** with the hosted `DATABASE_URL` set, run
+   `pnpm db:migrate` — all tables are created inside `insights` (first schema
+   in the search_path); the journal lands in `drizzle`; `0000_init`'s
+   `CREATE EXTENSION IF NOT EXISTS postgis` no-ops. `pgboss` self-creates on
+   first worker boot. Verify: 47+ base tables in `insights`;
+   `\d insights.projects` shows `geometry(Geometry,4326)`.
+3. **Data:** local is already schema-moved (`scripts/migrate-to-insights-schema.sql`),
+   so `pg_dump --schema=insights --data-only` from local restores verbatim —
+   never sed-rewrite a dump. Sync MinIO → Supabase Storage (S3-compatible;
+   `forcePathStyle` already set). Then
+   `node scripts/verify-migration-parity.mjs` (SOURCE_/TARGET_DATABASE_URL)
+   must print PARITY OK.
+4. **Cutover:** flip local `.env` `DATABASE_URL` + `OBJECT_STORAGE_*` to
+   hosted; run the nightly chain once by hand; run `pnpm eval:run` (gates must
+   PASS unchanged — §12.3 frozen); compare a digest render against the
+   pre-migration rehearsal.
+5. **Rollback = URL swap.** The local Docker Postgres + volume stay intact;
+   repointing `DATABASE_URL` back is the entire rollback.
+
+## C4 — Security posture audit (run after provision and after cutover)
+
+```sql
+-- Neither Insights schema may be exposed to PostgREST (dashboard: API
+-- exposed schemas list) and neither may carry client-role grants:
+SELECT table_schema, table_name, grantee, privilege_type
+  FROM information_schema.role_table_grants
+ WHERE table_schema IN ('insights', 'insights_public')
+   AND grantee IN ('anon', 'authenticated');
+-- expect: 0 rows
+
+-- The cockpit reader sees exactly the five contract views:
+SELECT table_schema || '.' || table_name AS object, privilege_type
+  FROM information_schema.role_table_grants
+ WHERE grantee = 'insights_cockpit_reader';
+-- expect: SELECT on the 5 insights_public.cockpit_*_v1 views, nothing else
+```
+
+v1 posture is schema-unexposed + zero client grants (per-table RLS inside
+`insights` is the recorded follow-up, integration doc Part E). The registry
+app reaches the views through its privileged server pool; tenant scoping comes
+from `public.tenant_insights_accounts` (member-read RLS) + every cockpit query
+being keyed by `account_key`.
+
+## C5 — Connection budget
+
+The worker runs ~20 pg-boss queues polling every 2s over one pool
+(`packages/db` `max: 10`) plus the web pool. During the first hosted worker
+session watch:
+
+```sql
+SELECT application_name, state, count(*)
+  FROM pg_stat_activity
+ WHERE datname = current_database()
+ GROUP BY 1, 2 ORDER BY 3 DESC;
+```
+
+If connection pressure appears: lower pool `max` via env, reduce the enabled
+source-queue count, and only then consider a compute-tier bump. `pgmq`
+convergence stays the escape hatch of record.

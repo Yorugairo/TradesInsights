@@ -348,10 +348,12 @@ settled first — this is why it is **not** a lift-and-shift:
 
 - [ ] **Dedicated schema.** Insights tables live in an `insights` schema, never `public`, so
       Drizzle migrations don't collide with the registry's `supabase_migrations`.
-- [ ] **pg-boss on the session connection.** pg-boss uses `LISTEN/NOTIFY` + advisory locks;
-      it **breaks on the Supabase transaction pooler (6543)** — the worker must use the direct/
-      session connection (5432). Or converge onto **`pgmq`** (already available there) and
-      retire pg-boss.
+- [x] **pg-boss on the session connection.** pg-boss 10 does NOT use `LISTEN/NOTIFY` — it
+      polls (2s interval, `FOR UPDATE SKIP LOCKED`) and takes advisory locks during
+      maintenance (verified against pg-boss 10.4.2 `src/plans.js`); the advisory locks and
+      session state are why it still **breaks on the Supabase transaction pooler (6543)** —
+      the worker must use the session pooler / direct connection (5432). Converging onto
+      **`pgmq`** and retiring pg-boss remains the listed escape hatch.
 - [ ] **Scheduling.** They use `pg_cron`; decide whether Insights' cron chain moves to
       `pg_cron` or stays in the worker.
 - [ ] **Account isolation → RLS.** Insights enforces "no account sees another's data" in the
