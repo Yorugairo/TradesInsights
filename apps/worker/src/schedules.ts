@@ -285,6 +285,13 @@ export async function registerSchedules(boss: PgBoss, logger: Logger): Promise<S
   desired.set(MAINTENANCE_QUEUE, { cron: `45 4 * * *` }); // after the 02–03:xx fetch window
   desired.set(DIGEST_DRAFT_QUEUE, { cron: `15 5 * * 1` }); // Mondays, after maintenance
 
+  // The per-source queues reference the shared dead-letter queue via pg-boss v10's
+  // queue_dead_letter_fkey, so it MUST exist before any queue that names it. jobs.ts
+  // also creates it on worker start; createQueue is idempotent, so ensuring it here
+  // makes registerSchedules self-sufficient regardless of call order (and unblocks
+  // calling it in isolation, e.g. tests).
+  await boss.createQueue(SOURCE_RUN_DEAD_LETTER);
+
   // Queues + workers.
   for (const s of sources) {
     const queue = scheduledQueueName(s.key);
