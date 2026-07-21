@@ -32,7 +32,7 @@ async function main() {
   const logger = createLogger({ app: "verify-run-cli" });
   const args = process.argv.slice(2);
   const projectArg = args.includes("--project") ? args[args.indexOf("--project") + 1] : null;
-  const limitArg = args.includes("--limit") ? Number(args[args.indexOf("--limit") + 1]) : 5;
+  const limitArg = args.includes("--limit") ? Number(args[args.indexOf("--limit") + 1]) : 10;
 
   const availability = modelAvailability();
   const provider: ModelProvider | null = availability.available ? providerFromEnv() : null;
