@@ -330,7 +330,7 @@ async function materialEventsInPeriod(
  * source_type 'public_business' — L&I or, when absent, Google, per the adoption
  * loop). Read-only + deterministic (name tiebreak); the model never sets it.
  */
-async function generalContractor(
+export async function generalContractor(
   db: Db,
   projectId: string,
 ): Promise<{ name: string; verified: boolean; phone: string | null } | null> {
@@ -357,7 +357,7 @@ async function generalContractor(
   return { name: row.name, verified: Boolean(row.verified), phone: row.phone ?? null };
 }
 
-async function sourceLinks(db: Db, projectId: string): Promise<{ url: string; label: string }[]> {
+export async function sourceLinks(db: Db, projectId: string): Promise<{ url: string; label: string }[]> {
   const res = await db.execute(sql`
     SELECT DISTINCT ei.source_url, s.name
     FROM record_resolutions rr

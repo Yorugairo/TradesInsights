@@ -8,3 +8,5 @@ export * from "./roi.js";
 export * from "./leadtime.js";
 export * from "./pipeline.js";
 export * from "./actions.js";
+// WS-D: connector-agnostic CRM sync (CSV download + outbound webhook).
+export * from "./export.js";

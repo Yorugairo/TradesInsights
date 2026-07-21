@@ -60,6 +60,20 @@ export const AccountProfileSchema = z
           })
           .strict()
           .optional(),
+        /** WS-D — connector-agnostic CRM sync (CSV download + outbound webhook).
+         * `webhook_url` is the account's OWN outbound destination and the ONLY
+         * URL the export layer may POST to (governance #1); it is account
+         * config/env, never a URL discovered in a permit/source/observed record,
+         * and never hardcoded here. Left null until the owner configures it per
+         * account (do NOT put a real URL in account-profiles.yaml). `format` is
+         * the default surface (CSV download vs. JSON payload). */
+        export: z
+          .object({
+            webhook_url: z.string().url().nullable().default(null),
+            format: z.enum(["csv", "json"]).default("csv"),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     rules: z.array(AccountRuleSchema).default([]),

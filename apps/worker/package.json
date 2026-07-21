@@ -24,7 +24,8 @@
     "eval:build": "tsx src/cli/eval-build.ts",
     "eval:run": "tsx src/cli/eval-run.ts",
     "delivery:metrics": "tsx src/cli/delivery-metrics.ts",
-    "alerts:run": "tsx src/cli/alerts-run.ts"
+    "alerts:run": "tsx src/cli/alerts-run.ts",
+    "export:run": "tsx src/cli/export-run.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",
