@@ -17,6 +17,7 @@
     "extract:run": "tsx src/cli/extract-run.ts",
     "verify:run": "tsx src/cli/verify-run.ts",
     "brief:run": "tsx src/cli/brief-run.ts",
+    "assistant:run": "tsx src/cli/assistant-run.ts",
     "first-look": "tsx src/cli/first-look.ts",
     "gate:run": "tsx src/cli/gate-run.ts",
     "digest:run": "tsx src/cli/digest-run.ts",

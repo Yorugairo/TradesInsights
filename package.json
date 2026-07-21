@@ -30,6 +30,7 @@
     "score:run": "pnpm --filter @otn/worker score:run",
     "extract:run": "pnpm --filter @otn/worker extract:run",
     "verify:run": "pnpm --filter @otn/worker verify:run",
+    "assistant:run": "pnpm --filter @otn/worker assistant:run",
     "gate:run": "pnpm --filter @otn/worker gate:run",
     "digest:run": "pnpm --filter @otn/worker digest:run",
     "feedback:report": "pnpm --filter @otn/worker feedback:report",

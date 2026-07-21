@@ -23,6 +23,8 @@ export * from "./extraction/brief-contract.js";
 export * from "./brief.js";
 // WS-E: the grounded, pre-drafted GC outreach message (brief-twin over the memo).
 export * from "./outreach.js";
+// WS-F: the account's natural-language assistant over its own opportunities.
+export * from "./assistant.js";
 // M3.4: independent verifier + §15 publication gate.
 export * from "./gate/verifier-contract.js";
 export * from "./gate/verify.js";

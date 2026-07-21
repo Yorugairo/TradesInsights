@@ -8,7 +8,11 @@ import { modelRuns, type Db } from "@otn/db";
 
 export interface ModelRunRow {
   jobType: string;
-  projectId: string;
+  /** The project a run is about, when it is about one. Account-scoped jobs that
+   * span many projects (e.g. assistant_query, which answers over the whole
+   * account's opportunities) leave this null — the run is keyed by account, not
+   * project. */
+  projectId?: string | null;
   /** Set for account-scoped jobs (e.g. brief_draft) so two accounts holding
    * opportunities on the same project keep distinct runs. Null otherwise. */
   accountProfileId?: string;
@@ -30,7 +34,7 @@ export async function persistModelRun(db: Db, row: ModelRunRow): Promise<string>
     .insert(modelRuns)
     .values({
       jobType: row.jobType,
-      projectId: row.projectId,
+      projectId: row.projectId ?? null,
       accountProfileId: row.accountProfileId ?? null,
       provider: row.provider,
       model: row.model,
