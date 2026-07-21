@@ -6,7 +6,12 @@ services:
       POSTGRES_PASSWORD: otn
       POSTGRES_DB: otn
     ports:
-      - "5432:5432"
+      # Host port is overridable (PG_PORT in .env) for machines where a native
+      # PostgreSQL already owns 5432 — Windows lets both listeners bind, and the
+      # native one then intercepts host connections (auth failures against the
+      # container's credentials). Set PG_PORT=5433 in .env in that case and use
+      # the same port in DATABASE_URL.
+      - "${PG_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

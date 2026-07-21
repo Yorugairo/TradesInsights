@@ -63,8 +63,11 @@ export class CustomerBidInboxAdapter implements SourceAdapter {
 
   private dir(ctx: RunContext): string {
     // The inbox is a local, customer-provisioned directory — fixtures in
-    // tests, CUSTOMER_BID_INBOX_DIR in production.
-    return join(process.env.CUSTOMER_BID_INBOX_DIR ?? ctx.fixturesDir, this.key);
+    // tests, CUSTOMER_BID_INBOX_DIR in production. A blank value counts as
+    // UNSET (.env.example ships the key empty; "" must mean "not configured",
+    // not "repo root"), so the documented fixtures fallback still applies.
+    const configured = process.env.CUSTOMER_BID_INBOX_DIR?.trim();
+    return join(configured || ctx.fixturesDir, this.key);
   }
 
   async discover(ctx: RunContext): Promise<DiscoveredArtifact[]> {

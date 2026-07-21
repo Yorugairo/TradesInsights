@@ -24,9 +24,12 @@ export default defineConfig({
     fileParallelism: false,
     passWithNoTests: false,
     env: {
-      // Defaults match docker-compose; real env vars override.
+      // Defaults match docker-compose; real env vars override. The options
+      // param is the search_path contract (insights,public,extensions) — all
+      // Insights tables live in the `insights` schema (Part E co-location).
       DATABASE_URL:
-        process.env.DATABASE_URL ?? "postgres://otn:otn@localhost:5432/otn",
+        process.env.DATABASE_URL ??
+        "postgres://otn:otn@localhost:5432/otn?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions",
       OBJECT_STORAGE_ENDPOINT:
         process.env.OBJECT_STORAGE_ENDPOINT ?? "http://localhost:9000",
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",

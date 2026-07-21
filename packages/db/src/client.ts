@@ -4,6 +4,16 @@ import * as schema from "./schema.js";
 
 export type Db = NodePgDatabase<typeof schema>;
 
+/**
+ * Search-path connection contract (Part E co-location): Insights tables live in
+ * the `insights` schema; queries stay unqualified because DATABASE_URL embeds
+ * `?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions` (insights first,
+ * then public, then Supabase's `extensions` for PostGIS). The contract rides
+ * the URL — NOT this pool — so every consumer (web pool, worker pool, pg-boss,
+ * drizzle migrator, vitest) inherits it from one place. A URL missing the
+ * options makes unqualified lookups miss and tests fail loudly; see
+ * docs/runbooks/registry-seam-golive.md Part C.
+ */
 export function createPool(databaseUrl = process.env.DATABASE_URL): pg.Pool {
   if (!databaseUrl) throw new Error("DATABASE_URL is not set");
   return new pg.Pool({ connectionString: databaseUrl, max: 10 });
