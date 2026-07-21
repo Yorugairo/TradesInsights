@@ -281,7 +281,7 @@ beforeAll(async () => {
       status: "sent",
       sentAt: now,
       idempotencyKey: `cockpit-views-${RUN}-latest`,
-      metadataJson: { items: [{}, {}], reviewQueue: [{}], suppressed: { gateFailed: 1, blockedOnVerifier: 2, customerSuppressed: 3 }, candidateCount: 9 },
+      metadataJson: { items: [{}, {}], reviewQueue: [{}], suppressed: { gateFailed: 1, blockedOnVerifier: 2, customerSuppressed: 3 }, candidateCount: 9, easyWins: [oppAlphaId] },
     },
   ]);
 });
@@ -368,6 +368,19 @@ describe("insights_public cockpit views (0025)", () => {
     expect(delta).toBeDefined();
     expect(delta!.gc_name).toBeNull();
     expect(delta!.gc_phone).toBeNull();
+  });
+
+  it("flags easy wins from the latest digest's stored list (never re-derived)", async () => {
+    const rows = await viewRows<OppRow & { is_easy_win: boolean }>(
+      "SELECT opportunity_id, project_name, is_easy_win FROM insights_public.cockpit_opportunities_v1 WHERE account_key = $1",
+      [ACCOUNT_A],
+    );
+    const alpha = rows.find((r) => r.opportunity_id === oppAlphaId);
+    const delta = rows.find((r) => r.project_name === `Cockpit Delta ${RUN}`);
+    // Alpha is the sole opportunity in the latest delivery's easyWins metadata.
+    expect(alpha?.is_easy_win).toBe(true);
+    // Delta shares the account + latest delivery but is NOT in the list.
+    expect(delta?.is_easy_win).toBe(false);
   });
 
   it("discloses withheld digest counts from the LATEST delivery", async () => {

@@ -65,6 +65,27 @@ is owner-gated and fully proceduralized in the seam runbook Part C.
 - **Insights** (`claude/tmux-install-320aiz`): `42d771a` schema move + contract · `a304e51` 0025 views + tests · `03492eb` runbook Part C + parity + doc corrections.
 - **Registry** (`release/trades-staging`): `c12551b7` mapping migration + baseline 27 · `059808cd` verticalized cockpit · `5e2b62ec` invite script.
 
+## Follow-ups (2026-07-21, post-report)
+
+**Easy-win parity (owner-flagged).** The email digest always carried easy wins
+(`model.easyWins` → rendered + action tokens; untouched by the schema move,
+digest-p2 green). The real gap: `deliver.ts` never persisted WHICH
+opportunities were easy wins, so the cockpit had nothing to read and the views
+deliberately don't re-derive the geo bands. Fixed at the source of truth —
+`deliver.ts` now persists `metadata_json.easyWins` (the digest's own computed
+list); migration **0026** adds `is_easy_win` to `cockpit_opportunities_v1` via
+membership in the latest weekly delivery's stored list; email and cockpit agree
+by construction, no forked geo math, §12.3 untouched. Registry surfaces it (⚡
+badge, "Easy wins" filter chip `?win=1`, overview count). Tests: cockpit-views
+10 green (+1), delivery+digest 38 green, registry tsc + test:security 64 green.
+Commits: Insights easy-win + registry `63465d4d`.
+
+**Hosted infra via MCP** (`arbmeioglflvzoffgtii`, owner authorized): PostGIS
+enabled into `extensions` (3.3.7; drizzle's `CREATE EXTENSION` will no-op) and
+private Storage bucket `otn-artifacts` created. Measured `max_connections=60`
+(runbook C5). Still owner/dashboard-only: S3 access keys (credentials → worker
+env), PITR/backups (billing), compute-tier confirm.
+
 ## Owner-gated remainder (runbook `docs/runbooks/registry-seam-golive.md` Part C3)
 1. Supabase dashboard prereqs (PostGIS → `extensions`, compute headroom, `otn-artifacts` bucket + S3 keys, PITR).
 2. Hosted `DATABASE_URL` (session pooler `:5432`, URL-encoded search_path) → `pnpm db:migrate` → census + geometry check.

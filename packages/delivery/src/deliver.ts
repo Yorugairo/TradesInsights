@@ -76,6 +76,12 @@ export async function deliverDigest(
       suppressed: model.suppressed,
       candidateCount: model.candidateCount,
       opportunityIds: items.map((i) => i.opportunityId),
+      // Easy-win membership as COMPUTED by the digest (geo bands × account
+      // easy_win config, digest.ts). Persisted so the co-located cockpit view
+      // (insights_public.cockpit_opportunities_v1.is_easy_win) shows exactly
+      // what this email showed — the digest stays the single source of truth
+      // for the easy-win determination; the view never re-derives it.
+      easyWins: model.easyWins.map((i) => i.opportunityId),
       eventIds: items.flatMap((i) => i.eventIds),
       // Per-item audit trail — the M4.2 duplicate/expired metrics read this.
       items: items.map((i) => ({

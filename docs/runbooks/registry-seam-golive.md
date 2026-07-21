@@ -293,9 +293,19 @@ Everything rides `DATABASE_URL` (see `.env.example`):
 
 ## C3 — Provision → migrate data → cut over (owner-run order)
 
-1. **Prereqs (dashboard):** PostGIS enabled (lands in `extensions`), compute
-   tier + `max_connections` headroom confirmed, Storage bucket `otn-artifacts`
-   + S3 access keys created, PITR/backup current.
+1. **Prereqs.** Status on `arbmeioglflvzoffgtii` as of 2026-07-21:
+   - ✅ **PostGIS** enabled into `extensions` (v3.3.7; `extensions.geometry`
+     resolves) — done via MCP, so the drizzle migrator's
+     `CREATE EXTENSION IF NOT EXISTS postgis` no-ops.
+   - ✅ **Storage bucket `otn-artifacts`** created (private) — done via MCP.
+   - ⬜ **S3 access keys** (Dashboard → Project Settings → Storage → S3 Access
+     Keys) — DASHBOARD-ONLY; they are credentials, entered into the worker's
+     `OBJECT_STORAGE_ACCESS_KEY`/`_SECRET_KEY` env by the owner, never by an
+     agent.
+   - ⬜ **PITR / backups** (Dashboard → Database → Backups) — DASHBOARD/billing
+     add-on; not reachable via MCP/SQL.
+   - ⬜ **Compute tier** — measured `max_connections = 60` on the current tier
+     (see C5); confirm it is enough or bump before the first live worker run.
 2. **Fresh provision:** with the hosted `DATABASE_URL` set, run
    `pnpm db:migrate` — all tables are created inside `insights` (first schema
    in the search_path); the journal lands in `drizzle`; `0000_init`'s
@@ -342,8 +352,11 @@ being keyed by `account_key`.
 ## C5 — Connection budget
 
 The worker runs ~20 pg-boss queues polling every 2s over one pool
-(`packages/db` `max: 10`) plus the web pool. During the first hosted worker
-session watch:
+(`packages/db` `max: 10`) plus the web pool. **Measured ceiling: the current
+compute tier reports `max_connections = 60`** — Supabase reserves some for its
+own roles, so the effective headroom for the worker + web pools is under that.
+The session pooler (`:5432`) multiplexes, but pg-boss holds session state, so
+watch it. During the first hosted worker session:
 
 ```sql
 SELECT application_name, state, count(*)

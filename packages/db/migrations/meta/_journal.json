@@ -183,6 +183,13 @@
       "when": 1784335000000,
       "tag": "0025_insights_public_views",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784336000000,
+      "tag": "0026_cockpit_easy_win",
+      "breakpoints": true
     }
   ]
 }
