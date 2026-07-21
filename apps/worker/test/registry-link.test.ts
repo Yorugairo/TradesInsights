@@ -99,8 +99,19 @@ describe("linkRegistry", () => {
 
   it("force re-evaluates bound orgs and rewrites nothing when the binding is unchanged", async () => {
     const summary = await linkRegistry(db, { fetchRows: async () => REGISTRY_ROWS, force: true });
-    expect(summary.bound).toBe(0);
-    expect(summary.alreadyLinked).toBe(2);
+    expect(summary.bound).toBe(0); // nothing NEW bound — force rewrote nothing
+    // force re-scans EVERY bound org in the table (global), so alreadyLinked counts
+    // this test's 2 PLUS any bound orgs already in the corpus (e.g. a seeded Solis
+    // binding). Assert "≥ our 2 re-evaluated" rather than an exact global count.
+    expect(summary.alreadyLinked).toBeGreaterThanOrEqual(2);
+    // This test's own two orgs stay bound to the same refs (force rewrote nothing).
+    const rows = (await db.execute(sql`
+      SELECT id, registry_ref FROM organizations WHERE id IN (${solisId}, ${cnOnlyId})`)).rows as {
+      id: string; registry_ref: string | null;
+    }[];
+    const byId = new Map(rows.map((r) => [r.id, r.registry_ref]));
+    expect(byId.get(solisId)).toBe(SOLIS_ENTITY);
+    expect(byId.get(cnOnlyId)).toBe(OTHER_ENTITY);
     expect(summary.conflicts).toBe(1);
   });
 });
