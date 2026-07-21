@@ -157,37 +157,29 @@ Or run all four in one pass with **`sigmap create "<task>"`** (`1/4`…`4/4` num
 
 ## sqz — Context Compression (READ FIRST)
 
-sqz is installed in this project. It compresses tool output so large
-files, long logs, and verbose command output cost far fewer tokens.
-There are **two ways** sqz is wired in, and you should prefer each
-one in the situations below.
+sqz is installed globally (machine-wide, not a repo dependency — built
+from source via `cargo install sqz-cli sqz-mcp` since no prebuilt Windows
+binary was available through this environment's proxy; requires the
+`x86_64-pc-windows-gnu` Rust toolchain + WinLibs/MinGW-w64, not MSVC).
+It compresses tool output so large files, long logs, and verbose command
+output cost far fewer tokens.
 
-### Preferred tools (MCP)
+### Active integration: Bash hook
 
-The `sqz-mcp` server is registered in this project's MCP config. It
-exposes three read-only tools that compress their output through the
-sqz pipeline:
+`sqz init --global --only claude` wired a PreToolUse hook into
+`~/.claude/settings.json` (verified present, alongside the project's
+other hooks — merged, not overwritten). This is the integration that is
+actually live; see below.
 
-- **`sqz_read_file`** — read a file from disk and return a compressed
-  view. **PREFER this over the built-in `Read` tool** for any file
-  larger than ~2KB or any file you might read more than once in the
-  same session. Repeat reads return a 13-token `§ref:HASH§` reference
-  instead of the full content.
+### Not yet wired: MCP server
 
-- **`sqz_grep`** — search files for a literal string or regex.
-  **PREFER this over the built-in `Grep`** for anything that might
-  match more than a handful of lines. Caps at 200 matches by default;
-  raise with `max_matches` if needed.
-
-- **`sqz_list_dir`** — list a directory. Skips `.git`, `node_modules`,
-  `target`, `dist`, `build`, `vendor`, `__pycache__` so the output
-  stays focused. **PREFER this over `ls -la` via Bash** when you want
-  to see a project layout.
-
-The built-in `Read`, `Grep`, `Glob` tools remain available. Use them for:
-- Tiny config files (<1KB) where compression can't help.
-- Byte-exact reads you'll hash or diff (lockfiles, signatures).
-- Globbing (sqz has no glob tool; `Glob` is still the right choice).
+`sqz-mcp` (the binary providing `sqz_read_file`/`sqz_grep`/`sqz_list_dir`
+as MCP tools) is built and available at the path below, but **is not
+registered with any client** — `sqz init` only wires the shell/Claude Code
+hook, not an MCP server; registration is a separate, manual step this
+project has not taken. Do not claim these tools are available until that
+registration is actually done and verified — use the built-in `Read`/
+`Grep`/`Glob` tools instead.
 
 ### Bash commands (hooked automatically)
 
@@ -210,22 +202,18 @@ already going through sqz.
 ### Escape hatch — when you see a `§ref:HASH§` token
 
 If tool output contains a `§ref:a1b2c3d4§` token and you need the full
-content it points at, resolve it. Three equivalent ways:
+content it points at, resolve it:
 
-- Shell: `/root/.cargo/bin/sqz expand a1b2c3d4` (or paste the whole token
-  `/root/.cargo/bin/sqz expand §ref:a1b2c3d4§`).
-- MCP tool: call `expand` with `{ "prefix": "a1b2c3d4" }`.
+- Shell: `sqz expand a1b2c3d4` (or paste the whole token
+  `sqz expand §ref:a1b2c3d4§`) — binary at `C:\Users\<user>\.cargo\bin\sqz.exe`,
+  on PATH in any fresh shell after install.
 - To get uncompressed output for one command: prefix it with
   `SQZ_NO_DEDUP=1` (e.g. `SQZ_NO_DEDUP=1 git log | sqz compress`).
 
-If the compressed output is actively making the task harder (looping
-on refs, small retries replacing one big read), call the `passthrough`
-MCP tool to get raw text.
-
-### When NOT to use sqz tools
+### When NOT to use sqz
 
 - Writing or editing files — use the built-in `Write`/`Edit` tools.
-  sqz has no write tools (by design; see issue #5 follow-up).
+  sqz has no write path (by design; see issue #5 follow-up).
 - Running commands interactively or in watch mode.
 - Reading very small files (<1KB) where compression can't help.
 
