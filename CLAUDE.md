@@ -142,6 +142,21 @@ The derived index (`.github/copilot-instructions.md`, `.context/`) is gitignored
 
 **Invariant enforcement lives in code, not prose — extend it there.** The governing constraints that can be checked mechanically (the publication gate, §12.3 score-neutrality, person-vs-business, evidence-before-emit) are enforced by [`packages/intelligence/src/gate/gate.ts`](packages/intelligence/src/gate/gate.ts) and the `pnpm gate:run` / `eval:run` / `eval:build` harness (plus the vitest suite and the `evidence-gate` skill), NOT by a parallel linter. `ast-grep` is for dev-time structural *search* (e.g. locating a stage transition written without `confirmed`), not for re-implementing these gates. When you add a mechanically-checkable invariant, add its check to the gate/eval harness so `gate:run` enforces it.
 
+**Finding code — the tri-tool path.** sigmap indexes the
+`function`/`class`/`interface`-declared code + all `.tsx` UI (~130 files, ~47%);
+the rest of this repo uses arrow-const / HOF-wrapped exports it can't name, so
+route by tool:
+
+- **Declared functions/classes, domain logic, UI components** →
+  `pnpm map:ask "<what it does>"`.
+- **API route handlers** (`export const GET = withAccount(async …)` — 37/41
+  routes, ~12% indexed) → `ast-grep -p 'export const $H = withAccount($$$)'`
+  (also `withAdmin`/`withApp`), or open by convention
+  `apps/web/app/api/<resource>/route.ts`.
+- **Arrow-const package exports** sigmap missed →
+  `ast-grep -p 'export const $NAME = ($$$) => $$$'` scoped to the package.
+- **SQL / Zod schemas / config** → grep by table / schema / key name.
+
 <!-- sigmap-creation-workflow:start -->
 ## Creation workflow (SigMap)
 
