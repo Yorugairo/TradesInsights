@@ -1,11 +1,15 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NormalizedSourceRecordSchema } from "@otn/domain";
 import type { RawArtifact } from "@otn/source-sdk";
 import {
   ArcgisPermitsAdapter,
+  BELLEVUE_CONFIG,
+  bellevueStage,
   type ArcgisPermitsConfig,
 } from "./arcgis-permits.js";
-import { testContext } from "./test-utils.js";
+import { FIXTURES_DIR, testContext } from "./test-utils.js";
 
 function rawArtifact(body: Buffer | string): RawArtifact {
   return {
@@ -286,5 +290,78 @@ describe("arcgis-permits generic adapter", () => {
     const violations = adapter.checkInvariants(rawArtifact("{}"), bad);
     expect(violations.length).toBeGreaterThan(0);
     expect(violations[0]!.check).toBe("arcgis_permits_test_valuation_range");
+  });
+});
+
+describe("bellevue_permits_arcgis (golden fixture — live window of 2026-07-22)", () => {
+  it("parses every real Bellevue feature into a valid King-county record", async () => {
+    const adapter = new ArcgisPermitsAdapter(BELLEVUE_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "bellevue_permits_arcgis/window-page-1.json"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+
+    expect(parsed.length).toBe(285); // manual count comparison, fixture metadata
+    for (const p of parsed) {
+      const v = NormalizedSourceRecordSchema.safeParse(p.record);
+      expect(v.success, JSON.stringify(v.success ? null : v.error.issues)).toBe(true);
+      expect(p.record.county).toBe("King");
+      expect(p.record.permittingJurisdiction).toBe("City of Bellevue");
+      expect(p.record.city).toBe("Bellevue");
+    }
+
+    // CONTRACTOR is populated on every row — the primary trades signal.
+    const withContractor = parsed.filter((p) => p.record.organizations.length > 0);
+    expect(withContractor.length).toBe(285);
+    for (const p of withContractor) {
+      expect(p.record.organizations[0]!.role).toBe("primary_contractor");
+      expect(p.record.evidence.some((e) => e.factPath === "organizations")).toBe(true);
+    }
+
+    // Most rows carry a WGS84 point; a few honestly lack geometry (null, not faked).
+    const withGeom = parsed.filter((p) => p.record.geometry?.type === "Point");
+    expect(withGeom.length).toBe(280);
+    const lons = withGeom.map((p) => (p.record.geometry!.coordinates as [number, number])[0]);
+    expect(Math.min(...lons)).toBeGreaterThan(-122.3); // Bellevue bounds
+    expect(Math.max(...lons)).toBeLessThan(-122.0);
+  });
+
+  it("maps Bellevue statuses to §9 stages; Issued gets an issue date, pre-issuance does not", async () => {
+    const adapter = new ArcgisPermitsAdapter(BELLEVUE_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "bellevue_permits_arcgis/window-page-1.json"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+
+    const issued = parsed.filter((p) => p.record.statusRaw === "Issued");
+    expect(issued.length).toBeGreaterThan(0);
+    for (const p of issued) {
+      expect(p.record.normalizedStage).toBe("permit_issued");
+      expect(p.record.issueDate).not.toBeNull();
+    }
+    const pending = parsed.filter((p) =>
+      ["Open", "Completeness Check", "Screening", "Pending"].includes(p.record.statusRaw ?? ""),
+    );
+    expect(pending.length).toBeGreaterThan(0);
+    for (const p of pending) {
+      expect(p.record.normalizedStage).toBe("permit_applied");
+      expect(p.record.issueDate).toBeNull();
+    }
+  });
+
+  it("stageFor covers the full live vocabulary; unknown degrades, never guessed", () => {
+    expect(bellevueStage("Issued")).toBe("permit_issued");
+    // "Completeness Check" is an intake step — must NOT be misread as "complete".
+    expect(bellevueStage("Completeness Check")).toBe("permit_applied");
+    expect(bellevueStage("Finaled")).toBe("complete");
+    expect(bellevueStage("Canceled")).toBe("withdrawn");
+    expect(bellevueStage("Expired")).toBe("withdrawn");
+    expect(bellevueStage("Accepted")).toBe("permit_applied");
+    expect(bellevueStage("Appealed")).toBe("permit_applied");
+    expect(bellevueStage("Some Brand New Status")).toBe("unknown");
+    expect(bellevueStage(null)).toBe("unknown");
+  });
+
+  it("checkInvariants reconciles clean on the golden Bellevue fixture", async () => {
+    const adapter = new ArcgisPermitsAdapter(BELLEVUE_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "bellevue_permits_arcgis/window-page-1.json"));
+    const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+    expect(adapter.checkInvariants(rawArtifact("{}"), parsed)).toEqual([]);
   });
 });

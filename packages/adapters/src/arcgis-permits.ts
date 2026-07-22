@@ -404,3 +404,65 @@ export class ArcgisPermitsAdapter implements SourceAdapter {
     return out;
   }
 }
+
+// ---------------------------------------------------------------------------
+// City configs. Each field map + stageFor is derived from a LIVE `?f=json`
+// inspection of that city's layer (recorded in fixtures/<key>/metadata.json),
+// never from another city's schema.
+// ---------------------------------------------------------------------------
+
+/** Bellevue PERMITSTATUS → §9 stage. Vocabulary enumerated live 2026-07-22
+ * (fixtures/bellevue_permits_arcgis/metadata.json). Unmatched ⇒ "unknown". */
+export function bellevueStage(status: string | null): NormalizedSourceRecord["normalizedStage"] {
+  const s = (status ?? "").trim().toLowerCase();
+  if (!s) return "unknown";
+  if (/(cancel|void|withdrawn|expired|denied)/.test(s)) return "withdrawn";
+  if (/^issued$/.test(s)) return "permit_issued";
+  // The whole pre-issuance pipeline: an application being worked. Checked BEFORE
+  // the complete branch so "Completeness Check" (an intake step) is not misread
+  // as "complete". "Appealed" is a contested in-process decision — not issued,
+  // not dead — so it stays here.
+  if (/(open|completeness|screening|pending|incomplete|accepted|ready to issue|appealed|review|intake|submitted|application)/.test(s)) {
+    return "permit_applied";
+  }
+  if (/(finaled|closed|complete|c of o|certificate of occupancy)/.test(s)) return "complete";
+  return "unknown";
+}
+
+/**
+ * City of Bellevue permit data (ArcGIS Hub open-data FeatureServer, verified
+ * live 2026-07-22). The richest ArcGIS city in the Puget Sound sweep: CONTRACTOR
+ * of record on every row (the primary trades-matching signal), VALUATION
+ * (populated at/after issuance), dwelling units, applied/issued dates, WGS84
+ * point. King-county — routes to Solis as King-suburb commercial. Bellevue is
+ * King's second-largest job market after Seattle.
+ */
+export const BELLEVUE_CONFIG: ArcgisPermitsConfig = {
+  key: "bellevue_permits_arcgis",
+  layerUrl:
+    "https://services1.arcgis.com/EYzEZbDhXZjURPbP/arcgis/rest/services/Bellevue_Permits/FeatureServer/0",
+  landingUrl: "https://data-bellevue.opendata.arcgis.com/",
+  pageSize: 2000,
+  county: "King",
+  jurisdiction: "City of Bellevue",
+  city: "Bellevue",
+  dateKind: "epoch",
+  windowField: "APPLIEDDATE",
+  windowFieldSecondary: "ISSUEDDATE",
+  applicantRole: "primary_contractor",
+  fields: {
+    externalId: "PERMITNUMBER",
+    permitType: "PERMITTYPE",
+    status: "PERMITSTATUS",
+    description: "PROJECTDESCRIPTION",
+    projectName: "PROJECTNAME",
+    address: ["SITEADDRESS", "CITY", "ZIPCODE"],
+    valuation: "VALUATION",
+    units: "DWELLINGUNITSCREATED",
+    applied: "APPLIEDDATE",
+    issued: "ISSUEDDATE",
+    parcel: "PARCELNUMBER",
+    applicant: "CONTRACTOR",
+  },
+  stageFor: bellevueStage,
+};

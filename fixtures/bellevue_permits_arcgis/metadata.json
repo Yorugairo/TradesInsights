@@ -1,0 +1,45 @@
+{
+  "source_key": "bellevue_permits_arcgis",
+  "captured_at": "2026-07-22",
+  "layer_url": "https://services1.arcgis.com/EYzEZbDhXZjURPbP/arcgis/rest/services/Bellevue_Permits/FeatureServer/0",
+  "landing_url": "https://data-bellevue.opendata.arcgis.com/",
+  "capture_query": "where=APPLIEDDATE >= TIMESTAMP '2026-07-16 00:00:00' OR ISSUEDDATE >= TIMESTAMP '2026-07-16 00:00:00' | outFields=* | returnGeometry=true | outSR=4326 | orderByFields=PERMITNUMBER ASC",
+  "geometry_type": "esriGeometryPoint",
+  "max_record_count": 2000,
+  "date_encoding": "epoch_ms (esriFieldTypeDate: APPLIEDDATE, ISSUEDDATE, FINALEDDATE, ...)",
+  "manual_comparison": {
+    "feature_count": 285,
+    "exceeded_transfer_limit": false,
+    "with_contractor": 285,
+    "with_geometry": 280,
+    "with_issued_date": 130,
+    "with_valuation_gt_0": 0,
+    "note": "The recent capture window carries in-progress permits; VALUATION populates at/after issuance (35,468 records carry VALUATION>0 all-time, verified live). CONTRACTOR is populated on every row — the primary trades signal. 5 records lack point geometry (null, honest).",
+    "distinct_statuses_in_fixture": [
+      "Completeness Check",
+      "Open",
+      "Issued",
+      "Screening",
+      "Pending"
+    ],
+    "additional_statuses_seen_live": ["Accepted", "Appealed", "Canceled", "Ready to Issue", "Incomplete"]
+  },
+  "field_map": {
+    "externalId": "PERMITNUMBER",
+    "permitType": "PERMITTYPE",
+    "status": "PERMITSTATUS",
+    "description": "PROJECTDESCRIPTION",
+    "projectName": "PROJECTNAME",
+    "address": ["SITEADDRESS", "CITY", "ZIPCODE"],
+    "valuation": "VALUATION",
+    "units": "DWELLINGUNITSCREATED",
+    "applied": "APPLIEDDATE",
+    "issued": "ISSUEDDATE",
+    "parcel": "PARCELNUMBER",
+    "applicant": "CONTRACTOR (role primary_contractor)"
+  },
+  "county": "King",
+  "permitting_jurisdiction": "City of Bellevue",
+  "person_vs_business": "CONTRACTOR is a business-registration name (may embed an owner name, e.g. 'ADVANCED CONCEPTS LLC KOLTON RYAN PALMER'); emitted as-is as business identity, never split into a person record. No RCW list-of-individuals concern (public permit contractor of record).",
+  "robots_terms": "ArcGIS Hub open-data FeatureServer, documented public API (open data license). No auth, no robots restriction on the REST endpoint. Rate: bounded windowed pulls, SOURCE_USER_AGENT."
+}

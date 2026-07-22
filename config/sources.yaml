@@ -176,6 +176,33 @@ sources:
       Bounded paging at maxRecordCount 2000. ArcGIS Online public REST — no
       robots restriction on services6.arcgis.com query endpoints.
 
+  - key: bellevue_permits_arcgis
+    name: City of Bellevue Permits (ArcGIS Hub open data)
+    authority: City of Bellevue
+    priority: P1
+    landing_url: https://data-bellevue.opendata.arcgis.com/
+    access_url: https://services1.arcgis.com/EYzEZbDhXZjURPbP/arcgis/rest/services/Bellevue_Permits/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+    format: arcgis_json
+    access_class: arcgis
+    cadence: daily
+    county: King
+    permitting_jurisdiction: City of Bellevue
+    enabled: true
+    terms_reviewed_at: "2026-07-22"
+    robots_reviewed_at: "2026-07-22"
+    required_fields: [addressRaw, applicationDate]
+    notes: >-
+      Wave3 Puget Sound densification, verified live 2026-07-22. Bellevue's
+      ArcGIS Hub open-data FeatureServer (org EYzEZbDhXZjURPbP, layer
+      Bellevue_Permit_Data, maxRecordCount 2000) — the richest ArcGIS city in
+      the sweep: CONTRACTOR of record on EVERY row (primary trades-matching
+      signal), VALUATION (35,468 rows carry it all-time; populated at/after
+      issuance), DWELLINGUNITSCREATED, applied/issued/finaled dates, WGS84
+      point, PERMITSTATUS. Trailing 120-day window on APPLIEDDATE OR ISSUEDDATE
+      via the generic ArcgisPermitsAdapter (BELLEVUE_CONFIG). King county —
+      Bellevue is King's #2 job market after Seattle; routes to Solis as
+      King-suburb commercial. Public open-data REST, no auth/robots restriction.
+
   - key: pierce_permits_arcgis
     name: Pierce County Permits & Applications (PALS extract, ArcGIS)
     authority: Pierce County

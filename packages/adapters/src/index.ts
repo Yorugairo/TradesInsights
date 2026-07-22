@@ -15,6 +15,7 @@ import {
   SEATTLE_LAND_USE_CONFIG,
   SeattleSocrataAdapter,
 } from "./seattle-socrata.js";
+import { ArcgisPermitsAdapter, BELLEVUE_CONFIG } from "./arcgis-permits.js";
 import { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 import { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 import { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
@@ -73,6 +74,8 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   thurston_active_notices: () => new ThurstonActiveNoticesAdapter(),
   tumwater_development_arcgis: () => new TumwaterDevelopmentArcgisAdapter(),
   tumwater_development_review: () => new TumwaterDevelopmentReviewAdapter(),
+  // Wave3 — generic config-driven ArcGIS cities (arcgis-permits.ts).
+  bellevue_permits_arcgis: () => new ArcgisPermitsAdapter(BELLEVUE_CONFIG),
   pierce_permits_arcgis: () => new PiercePermitsArcgisAdapter(),
   pierce_pals_contractor: () => new PiercePalsContractorAdapter(),
   puyallup_permits_arcgis: () => new PuyallupPermitsArcgisAdapter(),
@@ -88,6 +91,7 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
   tacoma_solicitations: () => new TacomaSolicitationsAdapter(),
 };
+export { ArcgisPermitsAdapter, BELLEVUE_CONFIG } from "./arcgis-permits.js";
 export { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 export { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 export { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
