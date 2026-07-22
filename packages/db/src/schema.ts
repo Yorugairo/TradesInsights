@@ -190,6 +190,10 @@ export const projects = pgTable(
      * computed by the maintenance-chain corroboration pass (Phase 1 flywheel).
      * Rebuildable; NULL until derived — never a fabricated zero. */
     corroboration: jsonb("corroboration"),
+    /** Derived trade tags (string[]) from the SHARED registry vocabulary matched
+     * over PUBLIC permitType values (Phase 3 flywheel, project-trades.ts).
+     * Rebuildable; NULL until derived — never a fabricated empty list. */
+    tradeCodes: jsonb("trade_codes"),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
   },

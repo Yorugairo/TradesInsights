@@ -29,7 +29,7 @@ import {
   sources,
   type Db,
 } from "@otn/db";
-import { deriveCorroboration } from "@otn/resolution";
+import { deriveCorroboration, deriveProjectTrades } from "@otn/resolution";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toLowerCase();
@@ -588,6 +588,85 @@ describe("insights_public cockpit views (0025)", () => {
         INSERT INTO decision_labels (account_profile_id, opportunity_id, kind, decided_by, snapshot)
         VALUES (${accountAId}, ${oppAlphaId}, 'oops', 'test-user', '{}')`),
     ).rejects.toMatchObject({ cause: { code: "23514" } });
+  });
+
+  it("derives project trade codes from PUBLIC permitType only (0029)", async () => {
+    // Give two fixture records an authoritative permitType, then derive with a
+    // stub matcher (the SHARED-vocabulary matcher's interface).
+    await db.execute(sql`
+      UPDATE source_records
+      SET normalized_json = jsonb_set(normalized_json, '{permitType}', '"GLAZING PERMIT"')
+      WHERE external_id IN (${`alpha-pub-${RUN}`}, ${`echo-pub-${RUN}`})`);
+    const summary = await deriveProjectTrades(db, {
+      match: (text: string) => (text.includes("GLAZ") ? ["glazing"] : []),
+    });
+    expect(summary.permitTypesMatched).toBeGreaterThanOrEqual(1);
+    const rows = await viewRows<{ id: string; trade_codes: string[] | null }>(
+      `SELECT id, trade_codes FROM insights.projects WHERE id = ANY($1::uuid[])`,
+      [projectIds],
+    );
+    const byId = new Map(rows.map((r) => [r.id, r.trade_codes]));
+    expect(byId.get(projectIds[0]!)).toEqual(["glazing"]); // Alpha
+    expect(byId.get(projectIds[4]!)).toEqual(["glazing"]); // Echo
+    // Projects with no matching permitType stay NULL — never a fabricated [].
+    expect(byId.get(projectIds[3]!)).toBeNull(); // Delta
+  });
+
+  it("market_demand_v1 gates county×trade combos below 5 projects (0029)", async () => {
+    const servedTrade = `test_trade_served_${RUN}`;
+    const thinTrade = `test_trade_thin_${RUN}`;
+    // 5 fixture projects carry the served trade; only 4 carry the thin one.
+    await db.execute(sql`
+      UPDATE projects SET trade_codes = ${JSON.stringify([servedTrade])}::jsonb
+      WHERE id = ANY(${sql.raw(`ARRAY['${projectIds.join("','")}']::uuid[]`)})`);
+    await db.execute(sql`
+      UPDATE projects SET trade_codes = trade_codes || ${JSON.stringify([thinTrade])}::jsonb
+      WHERE id = ANY(${sql.raw(`ARRAY['${projectIds.slice(0, 4).join("','")}']::uuid[]`)})`);
+
+    const served = await viewRows<{ county: string; projects: string }>(
+      "SELECT county, projects FROM insights_public.market_demand_v1 WHERE trade_code = $1",
+      [servedTrade],
+    );
+    expect(served.length).toBeGreaterThanOrEqual(1);
+    expect(served[0]!.county).toBe("Thurston");
+    expect(served.reduce((n, r) => n + Number(r.projects), 0)).toBe(5);
+
+    const thin = await viewRows<Record<string, unknown>>(
+      "SELECT * FROM insights_public.market_demand_v1 WHERE trade_code = $1",
+      [thinTrade],
+    );
+    expect(thin).toHaveLength(0); // suppressed below the n≥5 combo gate
+  });
+
+  it("market_permit_speed_v1 serves a jurisdiction median only at ≥5 samples (0029)", async () => {
+    // Before adding samples: only Alpha has an applied→issued chain → suppressed.
+    const before = await viewRows<Record<string, unknown>>(
+      "SELECT * FROM insights_public.market_permit_speed_v1 WHERE permitting_jurisdiction = $1",
+      ["Cockpit Test City"],
+    );
+    expect(before).toHaveLength(0);
+
+    // Add confirmed applied→issued chains (10 days apart) to all 5 fixtures.
+    // (Alpha's original same-instant chain fails issued>applied on its own;
+    // min() per stage lands its sample on this 10-day chain.)
+    const t0 = new Date("2026-06-01T00:00:00Z");
+    const t1 = new Date("2026-06-11T00:00:00Z");
+    for (const projectId of projectIds) {
+      await db.execute(sql`
+        INSERT INTO project_events (project_id, source_record_id, event_type, observed_at, resulting_stage, confirmed)
+        VALUES (${projectId}, ${recordIds[0]}, 'application_observed', ${t0.toISOString()}, 'permit_applied', true),
+               (${projectId}, ${recordIds[0]}, 'issuance_observed', ${t1.toISOString()}, 'permit_issued', true)`);
+    }
+    const after = await viewRows<{ samples: string; median_days_to_issue: number }>(
+      "SELECT samples, median_days_to_issue FROM insights_public.market_permit_speed_v1 WHERE permitting_jurisdiction = $1",
+      ["Cockpit Test City"],
+    );
+    expect(after).toHaveLength(1);
+    expect(Number(after[0]!.samples)).toBeGreaterThanOrEqual(5);
+    // 4 chains at exactly 10 days + Alpha's same-instant fixture events; the
+    // median stays on the 10-day chains.
+    expect(after[0]!.median_days_to_issue).toBeGreaterThan(0);
+    expect(after[0]!.median_days_to_issue).toBeLessThanOrEqual(10.5);
   });
 
   it("reader role sees the views and NOTHING under insights.*", async () => {

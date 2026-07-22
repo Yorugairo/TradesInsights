@@ -844,6 +844,7 @@ export async function exportRegistryObservations(
   const facts = await db.execute(sql`
     SELECT o.registry_ref AS entity_id,
       count(DISTINCT p.id)::int AS project_count,
+      count(DISTINCT p.id) FILTER (WHERE p.last_seen_at >= now() - interval '12 months')::int AS project_count_12m,
       array_agg(DISTINCT p.county) AS counties,
       min(p.first_seen_at) AS first_seen,
       max(p.last_seen_at) AS last_seen,
@@ -876,6 +877,9 @@ export async function exportRegistryObservations(
         SOURCE_SYSTEM,
         JSON.stringify({
           project_count: Number(f["project_count"]),
+          // 12-month window for the registry's profile activity badge
+          // ("N permits in the last 12 months (via OTN Insights)").
+          project_count_12m: Number(f["project_count_12m"] ?? 0),
           counties: f["counties"],
           first_seen: f["first_seen"],
           last_seen: f["last_seen"],

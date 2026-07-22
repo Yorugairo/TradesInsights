@@ -6,9 +6,12 @@ import { loadSourcesConfig, type SourceConfig } from "@otn/config";
 import {
   applyRecordUpdates,
   buildDevelopments,
+  buildTradeMatcher,
   computeCampusVelocity,
   computeClusterVelocity,
+  deriveProjectTrades,
   exportRegistryObservations,
+  FALLBACK_TRADE_MATCHER,
   fetchRegistryIdentityRows,
   fetchTradeTaxonomy,
   generateRegistryObservations,
@@ -137,6 +140,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
     let registryLink;
     let registryObs;
     let registryExport;
+    let projectTrades;
     try {
       const registryRows = registryPool ? await fetchRegistryIdentityRows(registryPool) : null;
       // The SHARED trade vocabulary (registry_public.trades_taxonomy_v1). Null
@@ -146,6 +150,17 @@ export async function runMaintenance(logger: Logger): Promise<void> {
       registryLink = await linkRegistry(db, { fetchRows: async () => registryRows, logger });
       registryObs = await generateRegistryObservations(db, registryRows, { logger, tradeTaxonomy });
       registryExport = await exportRegistryObservations(db, registryPool, { logger });
+      // Market aggregates input (Phase 3): stamp projects with SHARED-vocabulary
+      // trade codes (permitType-only). Falls back to the built-in vocabulary
+      // when the registry taxonomy is unavailable — same semantics as the
+      // observation loop.
+      projectTrades = await deriveProjectTrades(
+        db,
+        tradeTaxonomy && tradeTaxonomy.length > 0
+          ? buildTradeMatcher(tradeTaxonomy)
+          : FALLBACK_TRADE_MATCHER,
+        { logger },
+      );
     } finally {
       await registryPool?.end();
     }
@@ -180,6 +195,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
         geocoded,
         stageLag,
         corroboration,
+        projectTrades,
         scored: scored.byAccount,
         tokenCleanup,
         registryLink: registryLink.skipped

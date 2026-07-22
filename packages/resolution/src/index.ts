@@ -12,3 +12,4 @@ export * from "./registry-link.js";
 export * from "./registry-observations.js";
 export * from "./trade-taxonomy.js";
 export * from "./corroboration.js";
+export * from "./project-trades.js";
