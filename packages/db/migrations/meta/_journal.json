@@ -197,6 +197,13 @@
       "when": 1784337000000,
       "tag": "0027_confidence_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784338000000,
+      "tag": "0028_gc_radar",
+      "breakpoints": true
     }
   ]
 }

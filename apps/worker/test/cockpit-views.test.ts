@@ -247,7 +247,21 @@ beforeAll(async () => {
 
   const [builders] = await db
     .insert(organizations)
-    .values({ canonicalName: `COCKPIT ${ORG_TAG} BUILDERS LLC`, verifiedAt: new Date() })
+    .values({
+      canonicalName: `COCKPIT ${ORG_TAG} BUILDERS LLC`,
+      verifiedAt: new Date(),
+      // Registry-bound with a cached identity snapshot: the GC Radar view
+      // (0028) must surface these WITHOUT touching registry_public.*.
+      registryRef: `test-entity-${RUN}`,
+      registryIdentityJson: {
+        canonical_name: "Cockpit Builders LLC",
+        ubi: "604000001",
+        contractor_numbers: ["COCKPBL001XX"],
+        google_rating: 4.6,
+        google_review_count: 12,
+        trade_codes: ["glazing"],
+      },
+    })
     .returning({ id: organizations.id });
   orgBuildersId = builders!.id;
   const [smith] = await db
@@ -492,6 +506,54 @@ describe("insights_public cockpit views (0025)", () => {
     const builders = rows.find((r) => r["gc_name"] === `COCKPIT ${ORG_TAG} BUILDERS LLC`)!;
     expect(Number(builders["projects"])).toBeGreaterThanOrEqual(2);
     expect(builders["verified"]).toBe(true);
+  });
+
+  it("GC Radar orgs view (0028): registry dossier + velocity, individuals never appear", async () => {
+    interface OrgRow {
+      organization_id: string;
+      org_name: string;
+      verified: boolean;
+      registry_linked: boolean;
+      registry_name: string | null;
+      ubi: string | null;
+      google_rating: number | null;
+      google_review_count: number | null;
+      trade_codes: string[] | null;
+      phone: string | null;
+      projects_total: string;
+      projects_12m: string;
+      projects_90d: string;
+      account_opportunities: string;
+      counties: string[];
+    }
+    const rows = await viewRows<OrgRow>(
+      "SELECT * FROM insights_public.cockpit_orgs_v1 WHERE account_key = $1",
+      [ACCOUNT_A],
+    );
+    const names = rows.map((r) => r.org_name);
+    expect(names).toContain(`COCKPIT ${ORG_TAG} BUILDERS LLC`);
+    // Individuals fail the business-entity gate — never a radar row.
+    expect(names).not.toContain("JOHN SMITH");
+
+    const builders = rows.find((r) => r.org_name === `COCKPIT ${ORG_TAG} BUILDERS LLC`)!;
+    expect(builders.organization_id).toBe(orgBuildersId);
+    expect(builders.verified).toBe(true);
+    // Registry identity from the CACHED snapshot (no registry_public.* reach).
+    expect(builders.registry_linked).toBe(true);
+    expect(builders.registry_name).toBe("Cockpit Builders LLC");
+    expect(builders.ubi).toBe("604000001");
+    expect(Number(builders.google_rating)).toBe(4.6);
+    expect(Number(builders.google_review_count)).toBe(12);
+    expect(builders.trade_codes).toEqual(["glazing"]);
+    // Global public-business phone only.
+    expect(builders.phone).toBe("+13605550123");
+    // Velocity: Alpha + Echo, both fresh fixtures → total = 12m = 90d = 2.
+    expect(Number(builders.projects_total)).toBe(2);
+    expect(Number(builders.projects_12m)).toBe(2);
+    expect(Number(builders.projects_90d)).toBe(2);
+    // Account overlap: Alpha is A's opportunity on a builders project.
+    expect(Number(builders.account_opportunities)).toBeGreaterThanOrEqual(1);
+    expect(builders.counties).toContain("Thurston");
   });
 
   it("rolls up account band counts", async () => {

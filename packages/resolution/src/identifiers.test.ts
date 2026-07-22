@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addressMatchKey,
+  addressMatchKeyCandidates,
   normalizeAddressUS,
   normalizePhoneUS,
   normalizeSourceEntityId,
@@ -101,5 +102,39 @@ describe("addressMatchKey (registry street+zip5 match key)", () => {
     const poBox = addressMatchKey("PO BOX 1234, OLYMPIA WA 98501");
     const street = addressMatchKey("500 MAIN ST, OLYMPIA WA 98501");
     expect(poBox).not.toBe(street);
+  });
+});
+
+describe("addressMatchKeyCandidates (comma-less city peeling — flywheel Phase 2)", () => {
+  it("peels the inline city off a comma-less mailing string down to the registry's street-only key", () => {
+    // Live dormancy case: org identifier has no commas, registry is street-only.
+    const candidates = addressMatchKeyCandidates("9680 153rd Ave NE REDMOND WA 98052");
+    expect(candidates).toContain("9680 153RD AVE NE REDMOND 98052"); // primary preserved
+    expect(candidates).toContain(addressMatchKey("9680 153RD AVE NE", "98052"));
+  });
+
+  it("stops peeling at a street suffix or directional (never eats the street tail)", () => {
+    const candidates = addressMatchKeyCandidates("16110 Woodinville Redmond Rd NE Woodinville WA 98072");
+    expect(candidates).toContain("16110 WOODINVILLE REDMOND RD NE 98072");
+    // "RD NE" tail survives — REDMOND inside the street name is untouched.
+    expect(candidates).not.toContain("16110 WOODINVILLE 98072");
+  });
+
+  it("comma'd strings return only the primary key (street line is already isolated)", () => {
+    expect(addressMatchKeyCandidates("1210 HOMANN DR SE, LACEY WA 98503")).toEqual([
+      "1210 HOMANN DR SE 98503",
+    ]);
+  });
+
+  it("fails closed: a street ending in a bare word keeps its city rather than guessing", () => {
+    // Peeling "SEATTLE" would leave "1234 BROADWAY" (2 tokens) — below the
+    // validity floor, so no variant is produced past it.
+    const candidates = addressMatchKeyCandidates("1234 BROADWAY SEATTLE WA 98122");
+    expect(candidates).toEqual(["1234 BROADWAY SEATTLE 98122"]);
+  });
+
+  it("returns [] when no primary key exists (no zip — never guessed)", () => {
+    expect(addressMatchKeyCandidates("1210 HOMANN DR SE")).toEqual([]);
+    expect(addressMatchKeyCandidates(null)).toEqual([]);
   });
 });

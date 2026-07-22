@@ -121,6 +121,8 @@ export interface OrganizationView {
   } | null;
   contacts: { name: string; role: string | null; email: string | null; sourceType: string; customerVerified: boolean }[];
   invitations: { id: string; projectName: string | null; invitationStatus: string; bidDueAt: string | null }[];
+  /** GC Radar (flywheel Phase 2): permit velocity from the shared record graph. */
+  activity: { projectsTotal: number; projects12m: number; projects90d: number };
 }
 
 export interface AccountOrgSummary {
@@ -177,7 +179,7 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
     | undefined;
   if (!org) return null;
 
-  const [roles, rel, contacts, invitations] = await Promise.all([
+  const [roles, rel, contacts, invitations, activity] = await Promise.all([
     db.execute(sql`
       SELECT pr.project_id, p.canonical_name AS project_name, pr.role, pr.confirmed
       FROM project_roles pr JOIN projects p ON p.id = pr.project_id
@@ -199,6 +201,12 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
       SELECT bi.id, p.canonical_name AS project_name, bi.invitation_status, bi.bid_due_at
       FROM bid_invitations bi LEFT JOIN projects p ON p.id = bi.project_id
       WHERE bi.account_profile_id = ${accountProfileId} AND bi.gc_organization_id = ${organizationId}`),
+    // Permit velocity from the shared graph (GC Radar): recent-window counts.
+    db.execute(sql`
+      SELECT count(DISTINCT pr.project_id)::int AS total,
+        count(DISTINCT pr.project_id) FILTER (WHERE pr.last_seen_at >= now() - interval '12 months')::int AS m12,
+        count(DISTINCT pr.project_id) FILTER (WHERE pr.last_seen_at >= now() - interval '90 days')::int AS d90
+      FROM project_roles pr WHERE pr.organization_id = ${organizationId}`),
   ]);
 
   const relRow = rel.rows[0] as
@@ -239,5 +247,13 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
       invitationStatus: i["invitation_status"] as string,
       bidDueAt: (i["bid_due_at"] as string | null) ?? null,
     })),
+    activity: (() => {
+      const a = activity.rows[0] as { total?: number; m12?: number; d90?: number } | undefined;
+      return {
+        projectsTotal: Number(a?.total ?? 0),
+        projects12m: Number(a?.m12 ?? 0),
+        projects90d: Number(a?.d90 ?? 0),
+      };
+    })(),
   };
 }

@@ -127,6 +127,51 @@ export function addressMatchKey(
   return `${streetKey} ${zip5}`;
 }
 
+/** Tokens that legitimately END a normalized street line — candidate
+ * generation stops peeling at these, so "…WOODINVILLE REDMOND RD NE" keeps
+ * its directional tail while a trailing comma-less CITY token ("REDMOND")
+ * is peeled off. Values of ADDRESS_ABBR plus common unabbreviated suffixes. */
+const STREET_TAIL_TOKENS = new Set<string>([...Object.values(ADDRESS_ABBR), "WAY", "LOOP"]);
+/** Cities are 1–3 words; never peel more than that. */
+const MAX_CITY_TOKENS = 3;
+
+/**
+ * Match-key CANDIDATES for one raw address (flywheel Phase 2 activation).
+ *
+ * `addressMatchKey` alone goes dormant on the comma-less full mailing strings
+ * many sources publish ("9680 153rd Ave NE REDMOND WA 98052"): it strips the
+ * trailing "WA 98052" but keeps the inline city, so the key never equals the
+ * registry's street-only form. This generates the primary key PLUS city-peeled
+ * variants for comma-less strings: trailing purely-alphabetic tokens that are
+ * NOT a street suffix/directional are peeled (max 3 — cities are 1–3 words),
+ * stopping at any digit-bearing or street-tail token, and never below the
+ * validity floor (≥3 tokens, a digit, ≥8 chars). Streets that END in a bare
+ * word ("1234 BROADWAY") keep their city and simply fail to match — fails
+ * closed, never guessed. Comma'd strings return the primary key only.
+ */
+export function addressMatchKeyCandidates(
+  address: string | null | undefined,
+  zip?: string | null | undefined,
+): string[] {
+  const primary = addressMatchKey(address, zip);
+  if (!primary) return [];
+  const out = [primary];
+  if (String(address).includes(",")) return out;
+  const tokens = primary.split(" ");
+  const zip5 = tokens.pop()!;
+  let toks = tokens;
+  for (let i = 0; i < MAX_CITY_TOKENS; i++) {
+    const last = toks[toks.length - 1]!;
+    if (/\d/.test(last) || STREET_TAIL_TOKENS.has(last)) break;
+    if (toks.length - 1 < 3) break;
+    toks = toks.slice(0, -1);
+    const street = toks.join(" ");
+    if (!/\d/.test(street) || street.length < 8) break;
+    out.push(`${street} ${zip5}`);
+  }
+  return out;
+}
+
 /** Normalize a source-namespaced entity id. The adapter owns the namespace
  * prefix (e.g. "pierce_pals:462942"); here we only trim and require a
  * namespace separator so an unqualified bare id can never pollute the key
@@ -282,10 +327,14 @@ export async function loadOrganizationAddresses(db: Db): Promise<Map<string, Set
     WHERE identifier_type = 'address'`);
   const map = new Map<string, Set<string>>();
   for (const r of res.rows as { organization_id: string; value_raw: string }[]) {
-    const key = addressMatchKey(r.value_raw);
-    if (!key) continue;
+    // Candidate keys (primary + city-peeled variants for comma-less mailing
+    // strings) so a "…AVE NE REDMOND WA 98052" org string can meet the
+    // registry's street-only "…AVE NE" + zip form. Fails closed: unpeelable
+    // strings just produce keys that match nothing.
+    const keys = addressMatchKeyCandidates(r.value_raw);
+    if (keys.length === 0) continue;
     const set = map.get(r.organization_id) ?? new Set<string>();
-    set.add(key);
+    for (const key of keys) set.add(key);
     map.set(r.organization_id, set);
   }
   return map;

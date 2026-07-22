@@ -56,8 +56,25 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
           {view.organization.registryIdentity["city"]
             ? ` · ${String(view.organization.registryIdentity["city"])}, ${String(view.organization.registryIdentity["state"] ?? "WA")}`
             : ""}
+          {view.organization.registryIdentity["google_rating"] != null
+            ? ` · ★ ${String(view.organization.registryIdentity["google_rating"])}${
+                view.organization.registryIdentity["google_review_count"] != null
+                  ? ` (${String(view.organization.registryIdentity["google_review_count"])} reviews)`
+                  : ""
+              }`
+            : ""}
+          {Array.isArray(view.organization.registryIdentity["trade_codes"]) &&
+          (view.organization.registryIdentity["trade_codes"] as string[]).length > 0
+            ? ` · Trades: ${(view.organization.registryIdentity["trade_codes"] as string[]).join(", ")}`
+            : ""}
         </p>
       )}
+
+      <p data-testid="org-activity">
+        Permit activity: {view.activity.projectsTotal} project
+        {view.activity.projectsTotal === 1 ? "" : "s"} on record · {view.activity.projects12m} in
+        the last 12 months · {view.activity.projects90d} in the last 90 days
+      </p>
 
       <h2>Your relationship</h2>
       <RelationshipActions organizationId={view.organization.id} current={view.relationship} />
