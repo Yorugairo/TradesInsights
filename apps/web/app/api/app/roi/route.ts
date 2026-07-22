@@ -3,6 +3,7 @@ import {
   detectionLagBySource,
   evidenceLeadTime,
   firstLookByCoverage,
+  outcomeAttribution,
   roiScorecard,
 } from "@otn/delivery";
 import { withAccount } from "../../../../lib/api.js";
@@ -14,11 +15,12 @@ export const GET = withAccount(async ({ db, account, req }) => {
   const days = Number(new URL(req.url).searchParams.get("days") ?? "90");
   const end = new Date();
   const start = new Date(end.getTime() - (Number.isFinite(days) ? days : 90) * 86_400_000);
-  const [scorecard, leadTime, detectionLag, firstLook] = await Promise.all([
+  const [scorecard, leadTime, detectionLag, firstLook, outcomes] = await Promise.all([
     roiScorecard(db, account.id, { start, end }),
     evidenceLeadTime(db, account.id),
     detectionLagBySource(db),
     firstLookByCoverage(db),
+    outcomeAttribution(db, account.id),
   ]);
-  return NextResponse.json({ ...scorecard, leadTime, detectionLag, firstLook });
+  return NextResponse.json({ ...scorecard, leadTime, detectionLag, firstLook, outcomes });
 });

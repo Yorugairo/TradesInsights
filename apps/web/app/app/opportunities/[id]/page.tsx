@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { DISPOSITION_REASONS, buildDecisionMemo } from "@otn/intelligence";
+import {
+  DISPOSITION_REASONS,
+  accountBidWindows,
+  bidTrackFor,
+  buildDecisionMemo,
+  classify,
+  type BidWindowStatus,
+  type ProjectFeatures,
+} from "@otn/intelligence";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { accountByKey, campusSiblings, opportunityDetail } from "../../../../lib/queries.js";
@@ -13,6 +21,14 @@ const CAPACITY_TONE: Record<string, "green" | "amber" | "red"> = {
   likely_too_large: "amber",
   excluded: "red",
   unknown: "amber",
+};
+
+const BID_WINDOW_TONE: Record<BidWindowStatus, "green" | "amber" | "red" | "gray"> = {
+  confirmed_open: "green",
+  open: "green",
+  opens_soon: "amber",
+  likely_closed: "red",
+  watch: "gray",
 };
 
 export const dynamic = "force-dynamic";
@@ -30,6 +46,33 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
   const memo = await buildDecisionMemo(db(), id);
   // #1 — active-campus siblings (derived campus_block; null when not in one).
   const campus = await campusSiblings(db(), o.project.id, o.project.campusBlock);
+
+  // Wave 2 E1 — the Bid Clock. TRADE-SCOPED: windows exist only for the
+  // account's capabilities that carry a stated timing model (drywall/painting
+  // → interior-finish); an unmodeled trade renders NOTHING here, never a
+  // borrowed clock. Same classify → track → window chain the digest/export use.
+  const capabilities = Array.isArray(account.capabilities) ? account.capabilities : [];
+  const bidCls = classify({
+    projectId: o.project.id,
+    county: o.project.county,
+    permittingJurisdiction: o.project.permittingJurisdiction,
+    city: o.project.city,
+    stage: o.project.stage,
+    text: o.project.bidText,
+    maxUnits: o.project.maxUnits,
+    maxValuation: o.project.maxValuation,
+    clusterSize: 0,
+    hasVelocitySignal: false,
+    orgs: [],
+    aGradeEvidence: 0,
+    lastMaterialChangeAt: null,
+  } satisfies ProjectFeatures);
+  const bidTrack = bidTrackFor(bidCls);
+  const bidWindows = accountBidWindows(capabilities, {
+    stage: o.project.stage,
+    track: bidTrack,
+    issuedAt: o.project.latestIssueDate ? new Date(o.project.latestIssueDate) : null,
+  });
 
   const rationale = o.rationale as {
     components?: Record<string, number>;
@@ -55,6 +98,33 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
         · Units: {o.project.maxUnits ?? "—"} · Valuation: {fmtMoney(o.project.maxValuation)} ·{" "}
         <Link href={`/app/projects/${o.project.id}`}>project page</Link>
       </p>
+
+      {bidWindows.length > 0 && (
+        <section
+          data-testid="bid-clock"
+          style={{
+            border: "1px solid #c8d8ea",
+            background: "#f3f8fd",
+            borderRadius: 8,
+            padding: "1rem",
+            margin: "1rem 0",
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>
+            Bid clock <Badge tone="gray">{bidTrack} track</Badge>
+          </h2>
+          {bidWindows.map((w) => (
+            <p key={w.trade} data-testid={`bid-window-${w.trade}`} style={{ margin: "0.4rem 0" }}>
+              <strong style={{ textTransform: "capitalize" }}>{w.trade}</strong>{" "}
+              <Badge tone={BID_WINDOW_TONE[w.status]}>{w.status.replace(/_/g, " ")}</Badge> {w.note}
+            </p>
+          ))}
+          <p style={{ fontSize: "0.8rem", color: "#6b6b6b", marginBottom: 0 }}>
+            Typical-sequencing inference for your trades only — never a promise. A stated bid
+            solicitation on record always overrides this model.
+          </p>
+        </section>
+      )}
 
       {o.brief && (
         <section
@@ -167,6 +237,41 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           : "—"}
         {rationale?.signals?.length ? ` — signals: ${rationale.signals.join(", ")}` : ""}
       </p>
+
+      {o.corroboration && (
+        <section
+          data-testid="corroboration-panel"
+          style={{ border: "1px solid #ddd", borderRadius: 8, padding: "1rem", margin: "1rem 0" }}
+        >
+          <h2 style={{ marginTop: 0 }}>Corroboration</h2>
+          <p>
+            {(o.corroboration.sources?.length ?? 0) >= 2 ? (
+              <>
+                Seen independently in <strong>{o.corroboration.sources!.length}</strong> public
+                sources: {o.corroboration.sources!.join(", ")}.
+              </>
+            ) : (
+              <>Single public source so far{o.corroboration.sources?.length ? ` (${o.corroboration.sources[0]})` : ""}.</>
+            )}{" "}
+            {typeof o.corroboration.stageDepth === "number" && o.corroboration.stageDepth > 0 && (
+              <>Lifecycle confirmed through {o.corroboration.stageDepth} distinct stage{o.corroboration.stageDepth === 1 ? "" : "s"}.</>
+            )}
+          </p>
+          {(o.corroboration.contradictions?.length ?? 0) > 0 && (
+            <div data-testid="corroboration-contradictions">
+              <strong>Conflicting statements on record (both values shown — never resolved for you):</strong>
+              <ul style={{ marginTop: "0.25rem" }}>
+                {o.corroboration.contradictions!.map((c, i) => (
+                  <li key={i}>
+                    <code>{c.field}</code> stated as{" "}
+                    {c.values.map((v) => JSON.stringify(v)).join(" and ")} by different records
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       <h2>Confirmed facts vs. inferences</h2>
       {o.extraction ? (

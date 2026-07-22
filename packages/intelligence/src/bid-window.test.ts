@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { bidTrackFor, drywallBidWindow, tradeBidWindow, tradeBidWindows } from "./bid-window.js";
+import {
+  accountBidWindows,
+  bidTrackFor,
+  drywallBidWindow,
+  tradeBidWindow,
+  tradeBidWindows,
+  windowTradesFor,
+} from "./bid-window.js";
 
 const NOW = new Date("2026-07-17T00:00:00Z");
 const weeksAgo = (w: number) => new Date(NOW.getTime() - w * 7 * 86_400_000);
@@ -179,6 +186,50 @@ describe("tradeBidWindows — both Solis trades at once", () => {
     expect(both.map((w) => w.trade)).toEqual(["drywall", "paint"]);
     expect(both[0]!.status).toBe("open");
     expect(both[1]!.status).toBe("opens_soon");
+  });
+});
+
+describe("trade scoping (owner directive 2026-07-22) — windows only for modeled trades", () => {
+  const openInput = {
+    stage: "permit_issued",
+    track: "residential" as const,
+    issuedAt: weeksAgo(6),
+    now: NOW,
+  };
+
+  it("maps Solis capabilities (drywall, painting) to both modeled trades, drywall first", () => {
+    expect(windowTradesFor(["drywall", "painting"])).toEqual(["drywall", "paint"]);
+    expect(windowTradesFor(["painting", "drywall"])).toEqual(["drywall", "paint"]);
+  });
+
+  it("unmodeled trades map to NOTHING — never a borrowed clock", () => {
+    expect(windowTradesFor(["electrical"])).toEqual([]);
+    expect(windowTradesFor(["excavation", "roofing", "hvac"])).toEqual([]);
+  });
+
+  it("mixed capabilities scope to the modeled subset only", () => {
+    expect(windowTradesFor(["electrical", "painting"])).toEqual(["paint"]);
+  });
+
+  it("dedupes paint/painting and survives junk entries", () => {
+    expect(windowTradesFor(["paint", "painting", 42, null, undefined])).toEqual(["paint"]);
+    expect(windowTradesFor([])).toEqual([]);
+  });
+
+  it("interior-finish account gets per-trade windows (drywall open at wk 6)", () => {
+    const windows = accountBidWindows(["drywall", "painting"], openInput);
+    expect(windows.map((w) => w.trade)).toEqual(["drywall", "paint"]);
+    expect(windows[0]!.status).toBe("open");
+  });
+
+  it("an electrical account gets an EMPTY array — honest nothing", () => {
+    expect(accountBidWindows(["electrical"], openInput)).toEqual([]);
+  });
+
+  it("paint-only account gets only the paint window", () => {
+    const windows = accountBidWindows(["painting"], openInput);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.trade).toBe("paint");
   });
 });
 

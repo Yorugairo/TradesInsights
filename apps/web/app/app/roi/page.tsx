@@ -3,6 +3,7 @@ import {
   detectionLagBySource,
   evidenceLeadTime,
   firstLookByCoverage,
+  outcomeAttribution,
   roiScorecard,
 } from "@otn/delivery";
 import { currentSession } from "../../../lib/auth.js";
@@ -24,10 +25,11 @@ export default async function RoiPage() {
   const end = new Date();
   const start = new Date(end.getTime() - 90 * 86_400_000);
   const s = await roiScorecard(db(), account.id, { start, end });
-  const [lead, lag, firstLook] = await Promise.all([
+  const [lead, lag, firstLook, outcomes] = await Promise.all([
     evidenceLeadTime(db(), account.id),
     detectionLagBySource(db()),
     firstLookByCoverage(db()),
+    outcomeAttribution(db(), account.id),
   ]);
   const d = (v: number | null): string => (v === null ? "—" : `${v} d`);
 
@@ -68,6 +70,61 @@ export default async function RoiPage() {
           ))}
         </tbody>
       </table>
+
+      <h2>Outcomes — from your own decisions</h2>
+      <p style={{ color: "#666" }}>
+        Rolled up from the decision ledger: every won / lost / no-bid you recorded, with the
+        snapshot taken at decision time. The win rate stays hidden until 5 decided bids — never a
+        thin percentage.
+      </p>
+      {outcomes.decided === 0 ? (
+        <p data-testid="outcomes-empty">No decided outcomes yet — mark pursuits won / lost / no-bid and this fills in.</p>
+      ) : (
+        <>
+          <table style={table} data-testid="outcomes-table">
+            <tbody>
+              <tr>
+                <td style={cell}>Decided (won / lost / no-bid)</td>
+                <td style={{ ...cell, fontWeight: 600 }}>
+                  {outcomes.decided} ({outcomes.wins} / {outcomes.losses} / {outcomes.noBids})
+                </td>
+              </tr>
+              <tr>
+                <td style={cell}>Win rate (of decided bids)</td>
+                <td style={{ ...cell, fontWeight: 600 }}>{pct(outcomes.winRate)}</td>
+              </tr>
+              <tr>
+                <td style={cell}>Won contract value (as recorded)</td>
+                <td style={{ ...cell, fontWeight: 600 }}>{fmtMoney(outcomes.wonValue)}</td>
+              </tr>
+            </tbody>
+          </table>
+          {outcomes.byCounty.length > 0 && (
+            <table style={table} data-testid="outcomes-by-county">
+              <thead>
+                <tr>
+                  <th style={cell}>County</th>
+                  <th style={cell}>Won</th>
+                  <th style={cell}>Lost</th>
+                  <th style={cell}>No-bid</th>
+                  <th style={cell}>Won value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outcomes.byCounty.map((b) => (
+                  <tr key={b.key}>
+                    <td style={cell}>{b.key}</td>
+                    <td style={cell}>{b.wins}</td>
+                    <td style={cell}>{b.losses}</td>
+                    <td style={cell}>{b.noBids}</td>
+                    <td style={cell}>{b.wonValue ? fmtMoney(b.wonValue) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
 
       <h2>Lead time (backtest over stored events)</h2>
       <p style={{ color: "#666" }}>

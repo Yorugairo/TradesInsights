@@ -122,6 +122,80 @@ export async function roiScorecard(
   };
 }
 
+export interface OutcomeBucket {
+  key: string;
+  wins: number;
+  losses: number;
+  noBids: number;
+  wonValue: number;
+}
+
+export interface OutcomeAttribution {
+  decided: number;
+  wins: number;
+  losses: number;
+  noBids: number;
+  /** wins / (wins + losses); null below 5 decided bids (never a thin rate). */
+  winRate: number | null;
+  wonValue: number;
+  byCounty: OutcomeBucket[];
+  byRoute: OutcomeBucket[];
+}
+
+const WIN_RATE_MIN_DECIDED = 5;
+
+/**
+ * Wave 2 E3 — outcome attribution from the decision-label ledger (Phase 4
+ * `pursuit_outcome` snapshots: what the human saw AT decision time, never a
+ * re-derivation). All-time, account-scoped; honest-sparse: with few labels the
+ * counts are simply small and the win rate stays null.
+ */
+export async function outcomeAttribution(db: Db, accountProfileId: string): Promise<OutcomeAttribution> {
+  const res = await db.execute(sql`
+    SELECT COALESCE(snapshot ->> 'county', 'unknown') AS county,
+      COALESCE(snapshot ->> 'route', 'unrouted') AS route,
+      snapshot ->> 'outcome' AS outcome,
+      snapshot ->> 'outcomeValue' AS outcome_value
+    FROM decision_labels
+    WHERE account_profile_id = ${accountProfileId} AND kind = 'pursuit_outcome'`);
+
+  const totals = { decided: 0, wins: 0, losses: 0, noBids: 0, wonValue: 0 };
+  const byCounty = new Map<string, OutcomeBucket>();
+  const byRoute = new Map<string, OutcomeBucket>();
+  const bucket = (m: Map<string, OutcomeBucket>, key: string): OutcomeBucket => {
+    const b = m.get(key) ?? { key, wins: 0, losses: 0, noBids: 0, wonValue: 0 };
+    m.set(key, b);
+    return b;
+  };
+  for (const raw of res.rows as { county: string; route: string; outcome: string | null; outcome_value: string | null }[]) {
+    const outcome = raw.outcome;
+    if (outcome !== "won" && outcome !== "lost" && outcome !== "no_bid") continue;
+    totals.decided += 1;
+    const value = raw.outcome_value === null ? 0 : Number(raw.outcome_value) || 0;
+    for (const b of [bucket(byCounty, raw.county), bucket(byRoute, raw.route)]) {
+      if (outcome === "won") {
+        b.wins += 1;
+        b.wonValue += value;
+      } else if (outcome === "lost") b.losses += 1;
+      else b.noBids += 1;
+    }
+    if (outcome === "won") {
+      totals.wins += 1;
+      totals.wonValue += value;
+    } else if (outcome === "lost") totals.losses += 1;
+    else totals.noBids += 1;
+  }
+  const decidedBids = totals.wins + totals.losses;
+  const sort = (m: Map<string, OutcomeBucket>) =>
+    [...m.values()].sort((a, b) => b.wins + b.losses + b.noBids - (a.wins + a.losses + a.noBids));
+  return {
+    ...totals,
+    winRate: decidedBids >= WIN_RATE_MIN_DECIDED ? Math.round((totals.wins / decidedBids) * 1000) / 1000 : null,
+    byCounty: sort(byCounty),
+    byRoute: sort(byRoute),
+  };
+}
+
 /** Record a human-attributed outcome. Attributable revenue only when influencedByOtn. */
 export async function addOutcome(
   db: Db,

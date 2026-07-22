@@ -123,6 +123,23 @@ export interface OrganizationView {
   invitations: { id: string; projectName: string | null; invitationStatus: string; bidDueAt: string | null }[];
   /** GC Radar (flywheel Phase 2): permit velocity from the shared record graph. */
   activity: { projectsTotal: number; projects12m: number; projects90d: number };
+  /** Wave 2 E2 (GC copilot) — THIS ACCOUNT's working history with the org:
+   * its opportunities on projects where the org holds a role, with pursuit
+   * state/outcome when one exists. Account-scoped by construction; newest
+   * first, bounded. */
+  workingHistory: {
+    opportunityId: string;
+    projectName: string;
+    county: string;
+    stage: string;
+    opportunityState: string;
+    score: number | null;
+    pursuitState: string | null;
+    outcomeValue: number | null;
+    /** The score-neutral warm-relationship signal on this opportunity. */
+    warmGcActive: boolean;
+    lastActivityAt: string | null;
+  }[];
 }
 
 export interface AccountOrgSummary {
@@ -209,6 +226,26 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
       FROM project_roles pr WHERE pr.organization_id = ${organizationId}`),
   ]);
 
+  // Wave 2 E2 — working history: the account's opportunities on this org's
+  // projects (EXISTS avoids multi-role fanout), joined to the account's
+  // pursuit when one exists. At most one pursuit per (account, opportunity).
+  const history = await db.execute(sql`
+    SELECT o.id, p.canonical_name AS project_name, p.county, p.current_stage,
+      o.state, o.current_score,
+      COALESCE(o.rationale_json -> 'signals' ? 'warm_gc_active', false) AS warm_gc,
+      pu.state AS pursuit_state, pu.outcome_value,
+      o.last_material_change_at
+    FROM opportunities o
+    JOIN projects p ON p.id = o.project_id
+    LEFT JOIN pursuits pu
+      ON pu.opportunity_id = o.id AND pu.account_profile_id = o.account_profile_id
+    WHERE o.account_profile_id = ${accountProfileId}
+      AND EXISTS (
+        SELECT 1 FROM project_roles pr
+        WHERE pr.project_id = o.project_id AND pr.organization_id = ${organizationId})
+    ORDER BY o.last_material_change_at DESC NULLS LAST, o.id
+    LIMIT 20`);
+
   const relRow = rel.rows[0] as
     | { relationship_state: string; preferred: boolean; blocked: boolean; relationship_owner_user_id: string | null }
     | undefined;
@@ -255,5 +292,17 @@ export async function getOrganizationView(db: Db, organizationId: string, accoun
         projects90d: Number(a?.d90 ?? 0),
       };
     })(),
+    workingHistory: (history.rows as Record<string, unknown>[]).map((h) => ({
+      opportunityId: h["id"] as string,
+      projectName: h["project_name"] as string,
+      county: h["county"] as string,
+      stage: h["current_stage"] as string,
+      opportunityState: h["state"] as string,
+      score: h["current_score"] === null ? null : Number(h["current_score"]),
+      pursuitState: (h["pursuit_state"] as string | null) ?? null,
+      outcomeValue: h["outcome_value"] === null || h["outcome_value"] === undefined ? null : Number(h["outcome_value"]),
+      warmGcActive: Boolean(h["warm_gc"]),
+      lastActivityAt: (h["last_material_change_at"] as string | null) ?? null,
+    })),
   };
 }

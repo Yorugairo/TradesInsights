@@ -200,7 +200,17 @@ export interface OpportunityDetail {
     maxUnits: number | null;
     maxValuation: number | null;
     campusBlock: string | null;
+    /** Concatenated title/description text of active records (bid-window classify input). */
+    bidText: string;
+    /** Latest stated permit issue date across active records (never inferred). */
+    latestIssueDate: string | null;
   };
+  /** Phase-1 corroboration jsonb ({sources, stageDepth, contradictions}) or null (unknown ≠ zero). */
+  corroboration: {
+    sources?: string[];
+    stageDepth?: number;
+    contradictions?: { field: string; values: unknown[]; recordIds: string[] }[];
+  } | null;
   roles: RoleView[];
   evidence: EvidenceView[];
   timeline: TimelineEvent[];
@@ -247,13 +257,17 @@ export async function opportunityDetail(
     SELECT o.id, o.state, o.route, o.current_score, o.score_version, o.rationale_json,
       o.last_material_change_at,
       p.id AS project_id, p.canonical_name, p.county, p.permitting_jurisdiction, p.city,
-      p.address_normalized, p.parcel_ids, p.current_stage, p.campus_block,
-      rec.max_units, rec.max_valuation
+      p.address_normalized, p.parcel_ids, p.current_stage, p.campus_block, p.corroboration,
+      rec.max_units, rec.max_valuation, rec.bid_text, rec.latest_issue_date
     FROM opportunities o
     JOIN projects p ON p.id = o.project_id
     LEFT JOIN LATERAL (
       SELECT max((sr.normalized_json->>'units')::numeric)::float AS max_units,
-        max((sr.normalized_json->>'valuationUsd')::numeric)::float AS max_valuation
+        max((sr.normalized_json->>'valuationUsd')::numeric)::float AS max_valuation,
+        lower(string_agg(concat_ws(' ',
+          sr.normalized_json->>'title', left(sr.normalized_json->>'description', 800)), ' ')) AS bid_text,
+        max(sr.normalized_json->>'issueDate') FILTER (
+          WHERE sr.normalized_json->>'issueDate' ~ '^\d{4}-\d{2}-\d{2}') AS latest_issue_date
       FROM record_resolutions rr JOIN source_records sr ON sr.id = rr.source_record_id
       WHERE rr.project_id = p.id AND rr.status = 'active'
     ) rec ON true
@@ -293,7 +307,10 @@ export async function opportunityDetail(
       maxUnits: r["max_units"] === null ? null : Number(r["max_units"]),
       maxValuation: r["max_valuation"] === null ? null : Number(r["max_valuation"]),
       campusBlock: (r["campus_block"] as string | null) ?? null,
+      bidText: (r["bid_text"] as string | null) ?? (r["canonical_name"] as string).toLowerCase(),
+      latestIssueDate: (r["latest_issue_date"] as string | null) ?? null,
     },
+    corroboration: (r["corroboration"] as OpportunityDetail["corroboration"]) ?? null,
     roles,
     evidence,
     timeline,

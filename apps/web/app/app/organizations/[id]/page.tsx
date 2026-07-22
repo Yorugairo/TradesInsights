@@ -79,6 +79,59 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
       <h2>Your relationship</h2>
       <RelationshipActions organizationId={view.organization.id} current={view.relationship} />
 
+      <h2>Working history with {view.organization.name}</h2>
+      <p style={{ color: "#666" }}>
+        Your opportunities on this GC&apos;s projects — open the opportunity for the memo, brief,
+        and outreach draft.
+      </p>
+      <table style={table} data-testid="working-history">
+        <thead>
+          <tr>
+            <th style={cell}>Project</th>
+            <th style={cell}>County</th>
+            <th style={cell}>Stage</th>
+            <th style={cell}>Score</th>
+            <th style={cell}>Status</th>
+            <th style={cell}>Last activity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {view.workingHistory.map((h) => (
+            <tr key={h.opportunityId}>
+              <td style={cell}>
+                <Link href={`/app/opportunities/${h.opportunityId}`}>{h.projectName}</Link>{" "}
+                {h.warmGcActive && <Badge tone="green">warm relationship</Badge>}
+              </td>
+              <td style={cell}>{h.county}</td>
+              <td style={cell}>{h.stage.replaceAll("_", " ")}</td>
+              <td style={cell}>{h.score ?? "—"}</td>
+              <td style={cell}>
+                {h.pursuitState ? (
+                  <Badge
+                    tone={
+                      h.pursuitState === "won" ? "green" : h.pursuitState === "lost" || h.pursuitState === "no_bid" ? "red" : "amber"
+                    }
+                  >
+                    pursuit: {h.pursuitState.replaceAll("_", " ")}
+                    {h.pursuitState === "won" && h.outcomeValue ? ` (${`$${Math.round(h.outcomeValue).toLocaleString("en-US")}`})` : ""}
+                  </Badge>
+                ) : (
+                  <Badge tone="gray">{h.opportunityState.replaceAll("_", " ")}</Badge>
+                )}
+              </td>
+              <td style={cell}>{fmtDate(h.lastActivityAt)}</td>
+            </tr>
+          ))}
+          {view.workingHistory.length === 0 && (
+            <tr>
+              <td style={cell} colSpan={6}>
+                No shared opportunities yet — when this GC&apos;s projects route to you, they appear here.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
       <h2>Public roles (shared record graph)</h2>
       <ul data-testid="org-public-roles">
         {view.publicRoles.map((r, i) => (

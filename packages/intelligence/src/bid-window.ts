@@ -236,6 +236,47 @@ export function tradeBidWindows(input: {
   }));
 }
 
+/**
+ * TRADE SCOPING (owner directive 2026-07-22): the windows above encode the
+ * INTERIOR-FINISH model Solis stated for drywall + painting. Other trades bid
+ * on different clocks (an excavator is pre-permit; an electrician follows
+ * rough-in), so a window claim is made ONLY for account capabilities mapped
+ * here. An account whose trades have no model gets NO windows — never another
+ * trade's borrowed clock. Extend only with customer/owner-stated models.
+ */
+export const CAPABILITY_TRADE_WINDOWS: Record<string, InteriorTrade> = {
+  drywall: "drywall",
+  painting: "paint",
+  paint: "paint",
+};
+
+/** The modeled window trades for an account's capabilities_json list
+ * (deduped, drywall first — structural before finish). Empty = no model. */
+export function windowTradesFor(capabilities: readonly unknown[]): InteriorTrade[] {
+  const out: InteriorTrade[] = [];
+  for (const c of capabilities) {
+    if (typeof c !== "string") continue;
+    const trade = CAPABILITY_TRADE_WINDOWS[c.toLowerCase().trim()];
+    if (trade && !out.includes(trade)) out.push(trade);
+  }
+  return out.sort((a, b) => (a === b ? 0 : a === "drywall" ? -1 : 1));
+}
+
+/**
+ * The account-scoped bid windows: one entry per MODELED account trade, in the
+ * same shape as tradeBidWindows. Empty array when the account holds no modeled
+ * trade — callers render nothing (honest empty), never a fallback window.
+ */
+export function accountBidWindows(
+  capabilities: readonly unknown[],
+  input: { stage: string; track: BidTrack; issuedAt: Date | null; now?: Date },
+): ({ trade: InteriorTrade } & BidWindow)[] {
+  return windowTradesFor(capabilities).map((trade) => ({
+    trade,
+    ...tradeBidWindow({ ...input, trade }),
+  }));
+}
+
 /** Back-compat name used by earlier tests/callers — the drywall window. */
 export function drywallBidWindow(input: {
   stage: string;
