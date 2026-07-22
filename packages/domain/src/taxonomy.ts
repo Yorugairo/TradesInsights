@@ -53,7 +53,24 @@ export const EVENT_TYPES = [
 export const EventTypeSchema = z.enum(EVENT_TYPES);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
-export const COUNTIES = ["Thurston", "Pierce", "Lewis", "King"] as const;
+// Puget Sound densification (Wave 3): the four pilot counties plus the western/
+// eastern WA counties whose CLEAN permit sources are onboarded in this wave
+// (Snohomish, Kitsap, Clark, Spokane). Additive — existing county behavior and
+// the frozen §12.3 scorer are untouched; scoring is county-string-tolerant
+// (`solisGeography` returns a 0.8 default for any non-pilot county), so records
+// in the new counties validate and flow through the existing default path.
+// NOTE (owner, §12.3): distant new-county jobs currently score at that 0.8
+// geography default — HIGHER than King's calibrated 0.6 — pending calibration.
+export const COUNTIES = [
+  "Thurston",
+  "Pierce",
+  "Lewis",
+  "King",
+  "Snohomish",
+  "Kitsap",
+  "Clark",
+  "Spokane",
+] as const;
 export const CountySchema = z.enum(COUNTIES);
 export type County = z.infer<typeof CountySchema>;
 
