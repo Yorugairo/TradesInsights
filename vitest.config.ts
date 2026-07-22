@@ -49,6 +49,10 @@ export default defineConfig({
       // (insights,public,extensions) — all Insights tables live in the
       // `insights` schema (Part E co-location).
       DATABASE_URL: testDatabaseUrl(),
+      // Capture-fed adapters (Olympia/Tumwater) must DEAD-LETTER in tests: an
+      // operator's staged genuine-browser captures (.env OTN_CAPTURE_DIR) are a
+      // runtime concern and would make fetch() resolve, breaking the gate tests.
+      OTN_CAPTURE_DIR: "",
       OBJECT_STORAGE_ENDPOINT:
         process.env.OBJECT_STORAGE_ENDPOINT ?? "http://localhost:9000",
       OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",

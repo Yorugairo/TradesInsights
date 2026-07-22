@@ -38,6 +38,7 @@ function easyWinCfg(over: Partial<EasyWinConfig> = {}): EasyWinConfig {
 function candidate(over: Partial<CandidateRow> = {}): CandidateRow {
   return {
     id: "opp-1",
+    corroboration: null,
     project_id: "proj-1",
     canonical_name: "Test Interior TI",
     county: "Thurston",

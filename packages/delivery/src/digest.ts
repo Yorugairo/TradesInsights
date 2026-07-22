@@ -72,6 +72,10 @@ export interface DigestItem {
   /** #1 — active-campus context: this project is one of `projectCount` on one
    * parcel block (derived campus_block). Null when not in an active campus. */
   campus: { block: string; projectCount: number } | null;
+  /** Phase 1 flywheel — distinct PUBLIC sources corroborating this project
+   * (derived; disclosed as "seen independently in N sources"). Null until the
+   * corroboration pass has run — unknown, never a fabricated count. */
+  corroboratedSources: number | null;
   /** P2.1 — deterministic "winnable now" cut (stage/age/valuation/GC/radius). */
   easyWin: boolean;
   /** WS-B — the project's general contractor (strongest role: primary_contractor
@@ -180,6 +184,9 @@ export interface CandidateRow {
   last_material_change_at: string | null;
   has_org: boolean;
   dist_m: number | null;
+  /** Phase 1 flywheel — derived cross-reference summary (corroboration pass);
+   * null until derived (never a fabricated zero). */
+  corroboration: { sourceCount?: number; stageDepth?: number; contradictions?: unknown[] } | null;
 }
 
 /** P2.1 easy-win config (delivery_config_json.easy_win; provisional pre-calibration). */
@@ -228,7 +235,7 @@ async function loadCandidates(
   const res = await db.execute(sql`
     SELECT o.id, o.project_id, p.canonical_name, p.county, p.permitting_jurisdiction,
       p.current_stage, o.current_score, o.route, o.state, o.rationale_json, p.campus_block,
-      o.last_material_change_at,
+      p.corroboration, o.last_material_change_at,
       COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation,
       rec.latest_issue_date,
       EXISTS (SELECT 1 FROM project_roles pr WHERE pr.project_id = p.id
@@ -607,6 +614,7 @@ async function buildItem(
     maxValuation: c.max_valuation === null ? null : Number(c.max_valuation),
     stage: c.current_stage,
     text: c.text ?? "",
+    hasFactContradiction: (c.corroboration?.contradictions?.length ?? 0) > 0,
   });
   const facts = extraction?.extraction.facts ?? [];
   const inferences = extraction?.extraction.inferences ?? [];
@@ -674,6 +682,7 @@ async function buildItem(
     sourceLinks: links,
     unitCountDisagreement: unitDisagreement,
     campus,
+    corroboratedSources: c.corroboration?.sourceCount ?? null,
     // v1.7.0 consistency: a "⚡ Winnable now" item needs at least one trade
     // window that isn't likely-closed (empty windows = non-interior route,
     // where the cut applies unchanged).

@@ -13,6 +13,7 @@ import {
   fetchTradeTaxonomy,
   generateRegistryObservations,
   geocodeProjects,
+  deriveCorroboration,
   linkRegistry,
   materializeProjectGeometry,
   resolveUnresolved,
@@ -120,6 +121,10 @@ export async function runMaintenance(logger: Logger): Promise<void> {
     const materialized = await materializeProjectGeometry(db, { logger });
     const geocoded = await geocodeProjects(db, { limit: NIGHTLY_GEOCODE_LIMIT, logger });
     const stageLag = await computeStageLagStats(db, { logger });
+    // Phase 1 flywheel: derive per-project corroboration (distinct public
+    // sources, stage depth, material contradictions) BEFORE scoreAll so the
+    // score-neutral corroboration signals ride on this run's rationale.
+    const corroboration = await deriveCorroboration(db, { logger });
 
     // Registry seam: bind by strong identifier, then regenerate the reviewed
     // observation queue (binding candidates, phone adoption, alias/trade
@@ -174,6 +179,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
         materialized,
         geocoded,
         stageLag,
+        corroboration,
         scored: scored.byAccount,
         tokenCleanup,
         registryLink: registryLink.skipped

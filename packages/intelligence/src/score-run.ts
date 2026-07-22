@@ -65,6 +65,7 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       COALESCE(dev.member_count, 1) AS cluster_size,
       COALESCE(vel.has_velocity, false) AS has_velocity,
       p.campus_block,
+      p.corroboration,
       COALESCE(rec.text, lower(p.canonical_name)) AS text,
       rec.max_units,
       rec.max_valuation,
@@ -142,6 +143,22 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       // Derived active-campus membership (#1) — conditional spread keeps the
       // field absent (not undefined) under exactOptionalPropertyTypes.
       ...(r["campus_block"] ? { campusBlock: r["campus_block"] as string } : {}),
+      // Phase 1 flywheel — corroboration (score-neutral signals only). Absent
+      // when the derivation has not run for this project.
+      ...(r["corroboration"]
+        ? (() => {
+            const c = r["corroboration"] as {
+              sourceCount?: number;
+              stageDepth?: number;
+              contradictions?: unknown[];
+            };
+            return {
+              corroborationSourceCount: c.sourceCount ?? null,
+              corroborationStageDepth: c.stageDepth ?? null,
+              hasFactContradiction: (c.contradictions?.length ?? 0) > 0,
+            };
+          })()
+        : {}),
       orgs:
         (r["orgs"] as {
           name: string;

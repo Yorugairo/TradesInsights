@@ -13,18 +13,53 @@ const bodySchema = z.object({
   notes: z.string().max(1000).optional(),
 });
 
+/** Body state → decision_labels.kind (CHECK-constrained, migration 0027). */
+const LABEL_KIND: Record<string, string> = {
+  promoted: "promote",
+  dismissed: "dismiss",
+  rescore: "rescore",
+};
+
 // POST /api/app/opportunities/{id}/state
 export const POST = withAccount<{ id: string }>(async ({ db, session, account, params, req }) => {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError(400, "invalid state body");
   const { state, reason, notes } = parsed.data;
 
+  // Phase 1 flywheel — snapshot BEFORE the update: the calibration label must
+  // record what the human actually saw when deciding (score, band, signals,
+  // corroboration), never a later re-derivation.
+  const seen = await db.execute(sql`
+    SELECT o.state AS prior_state, o.current_score, o.route, o.score_version,
+           o.rationale_json -> 'signals' AS signals,
+           p.county, p.current_stage, p.corroboration
+    FROM opportunities o JOIN projects p ON p.id = o.project_id
+    WHERE o.id = ${params.id} AND o.account_profile_id = ${account.id}`);
+  if (seen.rows.length === 0) return jsonError(404, "opportunity not found");
+  const s = seen.rows[0] as Record<string, unknown>;
+
   const target = state === "rescore" ? "weekly_digest" : state;
-  const updated = await db.execute(sql`
+  await db.execute(sql`
     UPDATE opportunities SET state = ${target}
-    WHERE id = ${params.id} AND account_profile_id = ${account.id}
-    RETURNING id`);
-  if (updated.rows.length === 0) return jsonError(404, "opportunity not found");
+    WHERE id = ${params.id} AND account_profile_id = ${account.id}`);
+
+  // Append-only label — EVERY decision (promotes included; they were
+  // previously unrecorded, evaporating exactly the labels §12.3 calibration
+  // needs most).
+  const snapshot = {
+    priorState: s["prior_state"] ?? null,
+    score: s["current_score"] ?? null,
+    route: s["route"] ?? null,
+    scoreVersion: s["score_version"] ?? null,
+    signals: s["signals"] ?? [],
+    county: s["county"] ?? null,
+    stage: s["current_stage"] ?? null,
+    corroboration: s["corroboration"] ?? null,
+  };
+  await db.execute(sql`
+    INSERT INTO decision_labels (account_profile_id, opportunity_id, kind, decided_by, snapshot, reason, notes)
+    VALUES (${account.id}, ${params.id}, ${LABEL_KIND[state]}, ${session.accountKey},
+            ${JSON.stringify(snapshot)}, ${reason ?? null}, ${notes ?? null})`);
 
   if (state === "dismissed" && (reason || notes)) {
     await db.execute(sql`

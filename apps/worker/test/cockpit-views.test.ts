@@ -19,6 +19,7 @@ import {
   opportunities,
   organizationContacts,
   organizations,
+  projectEvents,
   projectRoles,
   projects,
   pursuits,
@@ -28,6 +29,7 @@ import {
   sources,
   type Db,
 } from "@otn/db";
+import { deriveCorroboration } from "@otn/resolution";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toLowerCase();
@@ -38,6 +40,7 @@ const ORG_TAG = RUN.replace(/[0-9]/g, (d) => "ghijklmnop".charAt(Number(d))).toU
 let db: Db;
 let pool: pg.Pool;
 let publicSourceId: string;
+let publicSource2Id: string;
 let privateSourceId: string;
 let accountAId: string;
 let accountBId: string;
@@ -172,7 +175,27 @@ beforeAll(async () => {
     .returning({ id: sources.id });
   privateSourceId = privateSource!.id;
 
+  // Second PUBLIC source: corroborates Alpha (distinct publisher) and states a
+  // MATERIALLY lower valuation (300k vs 500k) — a contradiction the derivation
+  // must flag from PUBLIC records only (the 9.99M private record never counts).
+  const [publicSource2] = await db
+    .insert(sources)
+    .values({
+      key: `test_cockpit_pub2_${RUN}`,
+      name: "Cockpit Second Public",
+      authority: "Test fixture",
+      priority: "P2",
+      landingUrl: "https://public2.invalid/cockpit",
+      format: "json_export",
+      accessClass: "fixture",
+      cadence: "on_demand",
+      enabled: false,
+    })
+    .returning({ id: sources.id });
+  publicSource2Id = publicSource2!.id;
+
   const pubArtifact = await mkArtifact(publicSourceId, "pub");
+  const pub2Artifact = await mkArtifact(publicSource2Id, "pub2");
   const privArtifact = await mkArtifact(privateSourceId, "priv");
 
   // P1 Alpha: public grounding + a PRIVATE record with a larger valuation that
@@ -182,10 +205,21 @@ beforeAll(async () => {
     title: "Alpha",
     valuationUsd: 500000,
   });
+  // Corroborating public record (keeps max_valuation at 500k; 500k > 300k×1.25
+  // → material contradiction).
+  await mkRecord(publicSource2Id, pub2Artifact, alphaId, `alpha-pub2-${RUN}`, {
+    title: "Alpha corroborating",
+    valuationUsd: 300000,
+  });
   await mkRecord(privateSourceId, privArtifact, alphaId, `alpha-priv-${RUN}`, {
     title: "Alpha private",
     valuationUsd: 9999999,
   });
+  // Confirmed lifecycle chain (stage depth 2) for Alpha.
+  await db.insert(projectEvents).values([
+    { projectId: alphaId, sourceRecordId: alphaPubRecord, eventType: "application_observed", observedAt: new Date(), resultingStage: "permit_applied", confirmed: true },
+    { projectId: alphaId, sourceRecordId: alphaPubRecord, eventType: "issuance_observed", observedAt: new Date(), resultingStage: "permit_issued", confirmed: true },
+  ]);
 
   // P2 Bravo: grounded ONLY in the private source — must never surface at all.
   const bravoId = await mkProject(`Cockpit Bravo ${RUN}`);
@@ -287,10 +321,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.execute(sql`DELETE FROM decision_labels WHERE account_profile_id IN (${accountAId}, ${accountBId})`);
   await db.execute(sql`DELETE FROM pursuits WHERE account_profile_id IN (${accountAId}, ${accountBId})`);
   await db.execute(sql`DELETE FROM deliveries WHERE account_profile_id IN (${accountAId}, ${accountBId})`);
   await db.execute(sql`DELETE FROM opportunities WHERE account_profile_id IN (${accountAId}, ${accountBId})`);
   await db.execute(sql`DELETE FROM organization_contacts WHERE organization_id IN (${orgBuildersId}, ${orgSmithId})`);
+  if (projectIds.length > 0) {
+    await db.execute(sql`DELETE FROM project_events WHERE project_id IN ${sql.raw(`('${projectIds.join("','")}')`)}`);
+  }
   await deleteTestProjects(db, projectIds);
   await db.execute(sql`DELETE FROM organizations WHERE id IN (${orgBuildersId}, ${orgSmithId})`);
   if (recordIds.length > 0) {
@@ -299,8 +337,8 @@ afterAll(async () => {
   if (artifactIds.length > 0) {
     await db.execute(sql`DELETE FROM raw_artifacts WHERE id IN ${sql.raw(`('${artifactIds.join("','")}')`)}`);
   }
-  await db.execute(sql`DELETE FROM source_runs WHERE source_id = ${privateSourceId}`);
-  await db.execute(sql`DELETE FROM sources WHERE id = ${privateSourceId}`);
+  await db.execute(sql`DELETE FROM source_runs WHERE source_id IN (${privateSourceId}, ${publicSource2Id})`);
+  await db.execute(sql`DELETE FROM sources WHERE id IN (${privateSourceId}, ${publicSource2Id})`);
   await db.execute(sql`DELETE FROM account_profiles WHERE id IN (${accountAId}, ${accountBId})`);
   await pool.end();
 });
@@ -383,6 +421,36 @@ describe("insights_public cockpit views (0025)", () => {
     expect(delta?.is_easy_win).toBe(false);
   });
 
+  it("derives corroboration from PUBLIC sources only and exposes it in the view", async () => {
+    const summary = await deriveCorroboration(db);
+    expect(summary.projectsDerived).toBeGreaterThan(0);
+
+    interface CorrRow {
+      opportunity_id: string;
+      project_name: string;
+      corroborated_source_count: number | null;
+      stage_depth: number | null;
+      has_contradiction: boolean;
+    }
+    const rows = await viewRows<CorrRow>(
+      "SELECT opportunity_id, project_name, corroborated_source_count, stage_depth, has_contradiction FROM insights_public.cockpit_opportunities_v1 WHERE account_key = $1",
+      [ACCOUNT_A],
+    );
+    const alpha = rows.find((r) => r.opportunity_id === oppAlphaId)!;
+    // Two distinct PUBLIC publishers — the private inbox record never counts.
+    expect(Number(alpha.corroborated_source_count)).toBe(2);
+    // Confirmed permit_applied → permit_issued chain.
+    expect(Number(alpha.stage_depth)).toBe(2);
+    // 500k vs 300k across PUBLIC records is material (>1.25×); the 9.99M
+    // private valuation is excluded from contradiction detection entirely.
+    expect(alpha.has_contradiction).toBe(true);
+
+    const delta = rows.find((r) => r.project_name === `Cockpit Delta ${RUN}`)!;
+    expect(Number(delta.corroborated_source_count)).toBe(1);
+    expect(Number(delta.stage_depth)).toBe(0);
+    expect(delta.has_contradiction).toBe(false);
+  });
+
   it("discloses withheld digest counts from the LATEST delivery", async () => {
     const rows = await viewRows<Record<string, unknown>>(
       "SELECT * FROM insights_public.cockpit_digest_status_v1 WHERE account_key = $1",
@@ -437,6 +505,27 @@ describe("insights_public cockpit views (0025)", () => {
     expect(Number(account["opportunities_promoted"])).toBe(1);
     expect(Number(account["opportunities_new"])).toBe(1);
     expect(Number(account["opportunities_active"])).toBe(3);
+  });
+
+  it("decision_labels round-trips a snapshot and rejects unknown kinds (0027)", async () => {
+    const snapshot = { priorState: "priority_review", score: 88, signals: ["corroborated_multi_source"], county: "Thurston" };
+    await db.execute(sql`
+      INSERT INTO decision_labels (account_profile_id, opportunity_id, kind, decided_by, snapshot)
+      VALUES (${accountAId}, ${oppAlphaId}, 'promote', 'test-user', ${JSON.stringify(snapshot)})`);
+    const rows = await viewRows<{ kind: string; snapshot: Record<string, unknown> }>(
+      "SELECT kind, snapshot FROM insights.decision_labels WHERE opportunity_id = $1",
+      [oppAlphaId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("promote");
+    // The label records what the human SAW — copied, not re-derived.
+    expect(rows[0]!.snapshot).toEqual(snapshot);
+    // Unknown kinds are rejected by the DB CHECK (append-only ledger integrity).
+    await expect(
+      db.execute(sql`
+        INSERT INTO decision_labels (account_profile_id, opportunity_id, kind, decided_by, snapshot)
+        VALUES (${accountAId}, ${oppAlphaId}, 'oops', 'test-user', '{}')`),
+    ).rejects.toMatchObject({ cause: { code: "23514" } });
   });
 
   it("reader role sees the views and NOTHING under insights.*", async () => {

@@ -186,6 +186,10 @@ export const projects = pgTable(
     /** Derived active-campus membership ('<county>:<block>'), stamped/cleared
      * by computeCampusVelocity — rebuildable, like development_id. */
     campusBlock: text("campus_block"),
+    /** Derived cross-reference summary ({sourceCount, stageDepth, contradictions})
+     * computed by the maintenance-chain corroboration pass (Phase 1 flywheel).
+     * Rebuildable; NULL until derived — never a fabricated zero. */
+    corroboration: jsonb("corroboration"),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
   },
@@ -428,6 +432,33 @@ export const opportunityDecisionMemos = pgTable(
   (t) => [
     uniqueIndex("opportunity_decision_memos_version_ux").on(t.opportunityId, t.decisionVersion),
     index("opportunity_decision_memos_opp_ix").on(t.opportunityId),
+  ],
+);
+
+/**
+ * Flywheel Phase 1 — append-only label ledger for §12.3 calibration. EVERY
+ * human opportunity decision (promote / dismiss / rescore; later
+ * pursuit_outcome) is recorded with a feature `snapshot` copied AT DECISION
+ * TIME (score, state, route, signals, county, stage, corroboration) so
+ * calibration runs on what the human actually saw, never a re-derivation.
+ */
+export const decisionLabels = pgTable(
+  "decision_labels",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    opportunityId: uuid("opportunity_id").notNull().references(() => opportunities.id),
+    /** promote | dismiss | rescore | pursuit_outcome (DB CHECK, migration 0027). */
+    kind: text("kind").notNull(),
+    decidedBy: text("decided_by").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+    snapshot: jsonb("snapshot").notNull(),
+    reason: text("reason"),
+    notes: text("notes"),
+  },
+  (t) => [
+    index("decision_labels_account_ix").on(t.accountProfileId, t.decidedAt),
+    index("decision_labels_opportunity_ix").on(t.opportunityId),
   ],
 );
 

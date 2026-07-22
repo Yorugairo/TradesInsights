@@ -692,3 +692,48 @@ describe("WS-B — gc_quality + trade_match are score-NEUTRAL signals (§12.3)",
     expect(r.signals).not.toContain("trade_match");
   });
 });
+
+describe("corroboration signals (Phase 1 flywheel — §12.3 score-neutral)", () => {
+  const CORR = {
+    corroborationSourceCount: 3,
+    corroborationStageDepth: 2,
+    hasFactContradiction: true,
+  } as const;
+
+  it("emits all three signals WITHOUT changing any account's score, state, or route", () => {
+    const base = features({ text: "tenant improvement drywall interior buildout" });
+    const withCorr = features({ text: "tenant improvement drywall interior buildout", ...CORR });
+    const plain = routeProject(base, ACCOUNTS);
+    const corroborated = routeProject(withCorr, ACCOUNTS);
+    expect(plain.length).toBeGreaterThan(0);
+    expect(corroborated.length).toBe(plain.length);
+    for (let i = 0; i < plain.length; i++) {
+      // §12.3 freeze: byte-identical score/state/route with the fields present.
+      expect(corroborated[i]!.score).toBe(plain[i]!.score);
+      expect(corroborated[i]!.state).toBe(plain[i]!.state);
+      expect(corroborated[i]!.route).toBe(plain[i]!.route);
+      expect(corroborated[i]!.signals).toContain("corroborated_multi_source");
+      expect(corroborated[i]!.signals).toContain("lifecycle_progressing");
+      expect(corroborated[i]!.signals).toContain("fact_contradiction");
+      expect(plain[i]!.signals).not.toContain("corroborated_multi_source");
+      expect(plain[i]!.signals).not.toContain("lifecycle_progressing");
+      expect(plain[i]!.signals).not.toContain("fact_contradiction");
+    }
+  });
+
+  it("stays silent at single-source, shallow depth, and no contradiction", () => {
+    const f = features({
+      text: "tenant improvement drywall interior buildout",
+      corroborationSourceCount: 1,
+      corroborationStageDepth: 1,
+      hasFactContradiction: false,
+    });
+    const routes = routeProject(f, ACCOUNTS);
+    expect(routes.length).toBeGreaterThan(0);
+    for (const r of routes) {
+      expect(r.signals).not.toContain("corroborated_multi_source");
+      expect(r.signals).not.toContain("lifecycle_progressing");
+      expect(r.signals).not.toContain("fact_contradiction");
+    }
+  });
+});

@@ -176,6 +176,13 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
   const campus = item.campus
     ? `<p><strong>Active campus:</strong> one of ${item.campus.projectCount} active projects on parcel block ${esc(item.campus.block)} — one site, one relationship.</p>`
     : "";
+  // Phase 1 flywheel — corroboration disclosure: independent publishers
+  // describing the same project is stated, never implied. Single-source and
+  // underived projects show nothing (no fabricated confidence).
+  const corroborated =
+    item.corroboratedSources !== null && item.corroboratedSources >= 2
+      ? `<p><strong>Corroborated:</strong> seen independently in ${item.corroboratedSources} public sources.</p>`
+      : "";
   const links = item.sourceLinks
     .map((l) => `<a href="${esc(l.url)}">${esc(l.label)}</a>`)
     .join(" · ");
@@ -195,7 +202,7 @@ function itemHtml(item: DigestItem, opts: RenderOptions = {}): string {
     <p><strong>${esc(item.projectName)}</strong><br/>${esc(humanStage(item.stage))} · ${esc(humanPlace(item.county, item.jurisdiction))} · score ${item.score ?? "—"}</p>
     ${brief}${bidWindow}<p><strong>What changed:</strong> ${esc(item.whatChanged).replace(/_/g, " ")}</p>
     <p><strong>Why it fits:</strong> ${esc(item.whyItFits)}</p>
-    ${gcLine(item.generalContractor)}${campus}${facts}${inferences}${missing}${unitConflict}
+    ${gcLine(item.generalContractor)}${campus}${corroborated}${facts}${inferences}${missing}${unitConflict}
     ${outreach}<p><strong>Next step:</strong> ${esc(item.nextAction)}</p>
     ${actionButtons(item.opportunityId, opts)}
     <p>Sources: ${links || "—"}</p>

@@ -82,6 +82,14 @@ export interface ProjectFeatures {
   }[];
   aGradeEvidence: number;
   lastMaterialChangeAt: Date | null;
+  /** Phase 1 flywheel — derived corroboration (projects.corroboration).
+   * Absent on frozen eval examples → no signal, no score change; feeds ONLY
+   * the score-neutral corroborated_multi_source / lifecycle_progressing /
+   * fact_contradiction signals appended AFTER each router computes its score
+   * (§12.3 stays frozen by construction). */
+  corroborationSourceCount?: number | null;
+  corroborationStageDepth?: number | null;
+  hasFactContradiction?: boolean;
 }
 
 export interface RouteResult {
@@ -620,6 +628,15 @@ const ROUTERS: Record<
   solis_interiors: routeSolis,
 };
 
+/** Phase 1 flywheel — account-agnostic corroboration signals, appended AFTER a
+ * router has computed its score so they are score-neutral BY CONSTRUCTION
+ * (§12.3: rationale/digest disclosure only, never a weight). */
+function appendCorroborationSignals(signals: string[], f: ProjectFeatures): void {
+  if ((f.corroborationSourceCount ?? 0) >= 2) signals.push("corroborated_multi_source");
+  if ((f.corroborationStageDepth ?? 0) >= 2) signals.push("lifecycle_progressing");
+  if (f.hasFactContradiction) signals.push("fact_contradiction");
+}
+
 /** Route a project against every active account. */
 export function routeProject(
   f: ProjectFeatures,
@@ -632,7 +649,10 @@ export function routeProject(
     const router = ROUTERS[acct.key];
     if (!router) continue;
     const result = router(f, acct, now);
-    if (result) out.push(result);
+    if (result) {
+      appendCorroborationSignals(result.signals, f);
+      out.push(result);
+    }
   }
   return out;
 }

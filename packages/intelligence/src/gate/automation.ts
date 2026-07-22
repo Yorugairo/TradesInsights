@@ -13,7 +13,7 @@ import type { GateResult } from "./gate.js";
  * opportunity (state = promoted).
  */
 
-export const AUTOMATION_POLICY_VERSION = "1.0.0";
+export const AUTOMATION_POLICY_VERSION = "1.1.0";
 
 /** Facts below this confidence are not "high confidence" (spec §21 M4.3). */
 export const AUTO_INCLUDE_CONFIDENCE_MIN = 0.9;
@@ -34,6 +34,10 @@ export interface InclusionInput {
   maxValuation: number | null;
   stage: string;
   text: string;
+  /** Phase 1 flywheel — the project's public sources state the same numeric
+   * fact MATERIALLY differently (corroboration pass). The digest never picks
+   * a winner between conflicting stated facts, so a human decides. */
+  hasFactContradiction?: boolean;
 }
 
 export interface InclusionDecision {
@@ -96,6 +100,9 @@ export function decideInclusion(input: InclusionInput): InclusionDecision {
     ) {
       reasons.push("not_independently_verified");
     }
+    // Conflicting stated facts (v1.1.0): auto-inclusion would require silently
+    // preferring one source's number over another's — that is a human call.
+    if (input.hasFactContradiction) reasons.push("fact_contradiction");
   }
 
   return {
