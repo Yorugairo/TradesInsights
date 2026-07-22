@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADDRESS_SHARED_MIN_NAME_SIMILARITY,
   AUTO_ACCEPT_MIN_RATE,
   buildRegistryAddressIndex,
+  buildRegistryDomainIndex,
+  buildRegistryGooglePhoneIndex,
   computeTrust,
   crossNameKey,
+  GOOGLE_PHONE_IDENTIFIER_COMPONENT,
   laplaceAcceptRate,
   matchOrgByAddress,
   PHONE_MATCH_MIN_NAME_SIMILARITY,
@@ -118,7 +122,7 @@ describe("registry address match (binding_address_match, injected rows)", () => 
     expect(hit!.sim).toBeGreaterThanOrEqual(PHONE_MATCH_MIN_NAME_SIMILARITY);
   });
 
-  it("drops a shared-building address (2+ entities) as a non-unique key", () => {
+  it("disambiguates a shared-building address by clear name dominance (4B.3)", () => {
     const suiteMate = regRow({
       entityId: "other-tenant",
       canonicalName: "Other Tenant LLC",
@@ -126,8 +130,45 @@ describe("registry address match (binding_address_match, injected rows)", () => 
       registeredPostalCode: "98503",
     });
     const byAddress = buildRegistryAddressIndex([LACEY, suiteMate]);
-    expect(byAddress.get(ORG_KEY)).toBeNull(); // collision → dropped
-    expect(matchOrgByAddress("Lacey Glass Inc", new Set([ORG_KEY]), byAddress)).toBeNull();
+    expect(byAddress.get(ORG_KEY)).toHaveLength(2); // bucket kept, not dropped
+    const hit = matchOrgByAddress("Lacey Glass Inc", new Set([ORG_KEY]), byAddress);
+    expect(hit?.row.entityId).toBe("lacey-glass");
+    expect(hit?.bucketSize).toBe(2);
+    expect(hit!.sim).toBeGreaterThanOrEqual(ADDRESS_SHARED_MIN_NAME_SIMILARITY);
+  });
+
+  it("refuses a shared address when no name clearly dominates (floor or margin)", () => {
+    // Two glass companies in one suite block: near-tie sims — WHICH one is the
+    // org? Unanswerable, so the bucket yields nothing.
+    const glassTwin = regRow({
+      entityId: "glass-twin",
+      canonicalName: "Lacey Glass Co",
+      registeredAddress: "1210 HOMANN DR SE",
+      registeredPostalCode: "98503",
+    });
+    const byAddress = buildRegistryAddressIndex([LACEY, glassTwin]);
+    expect(matchOrgByAddress("Lacey Glass", new Set([ORG_KEY]), byAddress)).toBeNull();
+    // And a weak best (below the 0.5 shared floor) fails even when dominant.
+    const stranger = regRow({
+      entityId: "stranger",
+      canonicalName: "Zephyr Plumbing And Rooter",
+      registeredAddress: "1210 HOMANN DR SE",
+      registeredPostalCode: "98503",
+    });
+    const byAddress2 = buildRegistryAddressIndex([LACEY, stranger]);
+    expect(matchOrgByAddress("Cascade Roofing Northwest", new Set([ORG_KEY]), byAddress2)).toBeNull();
+  });
+
+  it("indexes suite-noise candidate variants on the registry side too (round 2)", () => {
+    const withUnit = regRow({
+      entityId: "unit-entity",
+      canonicalName: "Unit Entity LLC",
+      registeredAddress: "1210 HOMANN DR SE 210",
+      registeredPostalCode: "98503",
+    });
+    const byAddress = buildRegistryAddressIndex([withUnit]);
+    // The unit-peeled variant meets the org's street-only key form.
+    expect(byAddress.get("1210 HOMANN DR SE 98503")?.[0]?.entityId).toBe("unit-entity");
   });
 
   it("does NOT match a foreign name at the same address (below the name gate)", () => {
@@ -139,5 +180,62 @@ describe("registry address match (binding_address_match, injected rows)", () => 
     const noZip = regRow({ entityId: "x", canonicalName: "X", registeredAddress: "1 A ST", registeredPostalCode: null });
     const byAddress = buildRegistryAddressIndex([noZip]);
     expect(byAddress.size).toBe(0);
+  });
+});
+
+describe("google-phone index (binding_google_phone_match, 4B.2)", () => {
+  const byPhone = (rows: RegistryIdentityRow[]) => {
+    const m = new Map<string, RegistryIdentityRow | null>();
+    for (const r of rows) {
+      if (!r.phone) continue;
+      m.set(r.phone, m.has(r.phone) ? null : r);
+    }
+    return m;
+  };
+
+  it("indexes a unique google phone (normalized) for its entity", () => {
+    const row = regRow({ entityId: "g1", canonicalName: "G One", googlePhone: "(360) 555-0100" });
+    const idx = buildRegistryGooglePhoneIndex([row], byPhone([row]));
+    expect(idx.get("3605550100")?.entityId).toBe("g1");
+  });
+
+  it("poisons a google phone that collides with a DIFFERENT entity's L&I phone", () => {
+    const lniOwner = regRow({ entityId: "owner", canonicalName: "Owner", phone: "3605550100" });
+    const pretender = regRow({ entityId: "pretender", canonicalName: "P", googlePhone: "360-555-0100" });
+    const rows = [lniOwner, pretender];
+    const idx = buildRegistryGooglePhoneIndex(rows, byPhone(rows));
+    expect(idx.get("3605550100")).toBeNull();
+  });
+
+  it("keeps a google phone equal to the SAME entity's own L&I phone, drops shared ones", () => {
+    const self = regRow({ entityId: "self", canonicalName: "Self", phone: "3605550100", googlePhone: "3605550100" });
+    const idx = buildRegistryGooglePhoneIndex([self], byPhone([self]));
+    expect(idx.get("3605550100")?.entityId).toBe("self");
+    const twinA = regRow({ entityId: "a", googlePhone: "3605550101" });
+    const twinB = regRow({ entityId: "b", googlePhone: "3605550101" });
+    const idx2 = buildRegistryGooglePhoneIndex([twinA, twinB], byPhone([twinA, twinB]));
+    expect(idx2.get("3605550101")).toBeNull();
+  });
+
+  it("de-rates the identifier component versus the L&I channel", () => {
+    expect(GOOGLE_PHONE_IDENTIFIER_COMPONENT).toBeLessThan(1);
+    expect(GOOGLE_PHONE_IDENTIFIER_COMPONENT).toBeGreaterThan(0.5);
+  });
+});
+
+describe("root-domain index (binding_domain_match, Phase 4 enablement)", () => {
+  it("indexes a unique normalized root domain; both sides fold identically", () => {
+    const row = regRow({ entityId: "d1", canonicalName: "NW Mechanical", rootDomain: "https://www.nwmechanical.com/" });
+    const idx = buildRegistryDomainIndex([row]);
+    expect(idx.get("nwmechanical.com")?.entityId).toBe("d1");
+  });
+
+  it("drops shared domains and denylisted platform hosts — fails closed", () => {
+    const a = regRow({ entityId: "a", rootDomain: "shared-brand.com" });
+    const b = regRow({ entityId: "b", rootDomain: "www.shared-brand.com" });
+    const idx = buildRegistryDomainIndex([a, b]);
+    expect(idx.get("shared-brand.com")).toBeNull();
+    const fb = regRow({ entityId: "fb", rootDomain: "facebook.com/somebiz" });
+    expect(buildRegistryDomainIndex([fb]).size).toBe(0);
   });
 });

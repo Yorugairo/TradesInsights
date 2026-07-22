@@ -957,11 +957,16 @@ export const organizationIdentifiers = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
     organizationId: uuid("organization_id").notNull().references(() => organizations.id),
-    /** phone | ubi | contractor_number | email | address | source_entity_id */
+    /** phone | ubi | contractor_number | email | address | source_entity_id | root_domain */
     identifierType: text("identifier_type").notNull(),
     valueRaw: text("value_raw"),
     valueNormalized: text("value_normalized").notNull(),
-    sourceRecordId: uuid("source_record_id").notNull().references(() => sourceRecords.id),
+    /** Nullable since 0030: NULL only for provenance='registry_accept' rows
+     * (accept-side strong-key backfeed) — source-evidence rows keep it
+     * mandatory via a row CHECK. */
+    sourceRecordId: uuid("source_record_id").references(() => sourceRecords.id),
+    /** 'source_evidence' (default) | 'registry_accept' (0030). */
+    provenance: text("provenance").notNull().default("source_evidence"),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().default(sql`now()`),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().default(sql`now()`),
   },

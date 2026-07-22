@@ -156,6 +156,25 @@ describe("registry observation loop", () => {
     expect(org!.registry_ref).toBe(ENTITY);
     expect(org!.registry_ref_method).toBe("name_review_confirmed");
     expect(org!.registry_identity_json?.["phone"]).toBe("3605550142");
+
+    // 4B.4 — the accept backfeeds the entity's strong keys (NULL-only) with
+    // registry_accept provenance, so the nightly strong-key link / WS-B.4
+    // fire for this contractor's subsequent records.
+    const [keys] = (await db.execute(sql`
+      SELECT ubi, contractor_registration FROM organizations WHERE id = ${orgId}`)).rows as {
+      ubi: string | null; contractor_registration: string | null;
+    }[];
+    expect(keys!.ubi).toBe("600000001");
+    expect(keys!.contractor_registration).toBe(`REGOB${RUN.slice(0, 6)}`.toUpperCase());
+    const idRows = (await db.execute(sql`
+      SELECT identifier_type, value_normalized, provenance, source_record_id
+      FROM organization_identifiers
+      WHERE organization_id = ${orgId} AND provenance = 'registry_accept'
+      ORDER BY identifier_type`)).rows as {
+      identifier_type: string; value_normalized: string; provenance: string; source_record_id: string | null;
+    }[];
+    expect(idRows.map((r) => r.identifier_type)).toEqual(["contractor_number", "ubi"]);
+    expect(idRows.every((r) => r.source_record_id === null)).toBe(true);
   });
 
   it("next pass generates phone adoption + trade evidence for the bound org", async () => {

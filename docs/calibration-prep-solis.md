@@ -133,4 +133,78 @@ follow-ups.
 
 ---
 
+## 5. Label ledger — what the humans actually decided (flywheel Phases 1–4)
+
+Every decision since Phase 1 lands in `decision_labels` (migration 0027) with a
+snapshot of what the human SAW at decision time (score, band, signals,
+corroboration) — plus, since Phase 4, pursuit outcomes (won / lost / no_bid).
+These queries are run LIVE at the session; this doc ships queries, not stale
+numbers.
+
+```sql
+-- Volume by kind
+SELECT kind, count(*) FROM decision_labels GROUP BY kind ORDER BY kind;
+
+-- Promote/dismiss by score decile — the core calibration curve
+SELECT width_bucket((snapshot->>'score')::numeric, 0, 100, 10) AS decile,
+       count(*) FILTER (WHERE kind = 'promote') AS promotes,
+       count(*) FILTER (WHERE kind = 'dismiss') AS dismisses
+FROM decision_labels WHERE kind IN ('promote', 'dismiss')
+GROUP BY 1 ORDER BY 1;
+
+-- Which disclosed signals precede a dismissal
+SELECT s.value ->> 'key' AS signal, count(*)
+FROM decision_labels d, jsonb_array_elements(d.snapshot->'signals') s
+WHERE d.kind = 'dismiss' GROUP BY 1 ORDER BY 2 DESC;
+
+-- Pursuit outcomes (4A.2): what the score said when the human called it
+SELECT snapshot->>'outcome' AS outcome, count(*),
+       round(avg((snapshot->>'score')::numeric), 1) AS avg_score_at_decision,
+       round(avg((snapshot->>'outcomeValue')::numeric)) AS avg_value
+FROM decision_labels WHERE kind = 'pursuit_outcome' GROUP BY 1 ORDER BY 1;
+
+-- Per-account precision headline (priority-band dismiss rate = FP proxy;
+-- promoted-then-lost is nuance, not error)
+SELECT ap.key,
+       round(100.0 * count(*) FILTER (WHERE d.kind = 'dismiss')
+             / NULLIF(count(*) FILTER (WHERE d.kind IN ('promote','dismiss')), 0), 1) AS dismiss_pct,
+       count(*) FILTER (WHERE d.kind IN ('promote','dismiss')) AS decided
+FROM decision_labels d JOIN account_profiles ap ON ap.id = d.account_profile_id
+GROUP BY ap.key;
+```
+
+## 6. Matching evidence — `pnpm --filter @otn/worker match:audit` (4B.5)
+
+Run at the session. Prints, per observation rule (`binding_name_exact`,
+`binding_phone_match`, `binding_google_phone_match`, `binding_address_match`,
+`binding_domain_match`, `phone_from_lni`, `phone_from_google`,
+`alias_name_variant`, `trade_*`): queued/pending/accepted/rejected/auto counts,
+the HUMAN-reviewed Laplace accept rate (exactly the `ruleHistory` trust
+component the next generation pass uses), trust min/median/max, and the
+near-floor band `[0.55, 0.65)` — the population a `MIN_QUEUE_TRUST` change
+would admit or evict.
+
+Decisions this evidence supports (never automatic):
+- lower/raise `MIN_QUEUE_TRUST` per observed precision of the near-floor band;
+- promote a rule toward auto-accept only when its HUMAN history clears the
+  existing gates (≥10 decisions, ≥95% accepts — identity bindings stay human
+  forever);
+- de-rate or retire a rule whose accept rate stays poor after real volume.
+
+## 7. §12.3 weight-change protocol (freeze-lift criteria)
+
+Weights are frozen until this session. To change any:
+1. Name the label evidence (§5) motivating each proposed change.
+2. Apply on a branch; run `pnpm eval:run` — re-baseline the gates deliberately
+   with the owner present, never silently.
+3. Update the score-neutrality pins in the same commit as the weights.
+4. Freeze lifts only when ≥1 account has ≥50 decided labels.
+
+Standing constraints calibration does NOT touch: identity bindings never
+auto-accept; unknown = null; contradictions cite both values; the registry's
+Contractor Activity Score (display-side, Phase 4A.1) is never an input to
+opportunity scoring.
+
+---
+
 *Regenerate all numbers: `cd apps/worker && set -a && . ../../.env && set +a && pnpm exec tsx calibration-sensitivity.mts`.*

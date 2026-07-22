@@ -143,7 +143,7 @@ async function upsertOrganizationsAndRoles(
     // licence / mailing address / source entity id — optional, additive) with
     // this record as evidence; strong keys backfeed onto the organization for
     // the registry link.
-    if (org.phone || org.ubi || org.contractorLicense || org.address || org.sourceEntityId) {
+    if (org.phone || org.ubi || org.contractorLicense || org.address || org.sourceEntityId || org.website) {
       await persistOrganizationIdentifiers(db, orgId, row.id, org);
     }
     const [existingRole] = await db

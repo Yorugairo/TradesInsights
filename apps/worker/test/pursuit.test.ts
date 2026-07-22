@@ -94,6 +94,7 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM pursuit_tasks WHERE pursuit_id IN ${ownPursuits}`);
   await db.execute(sql`DELETE FROM pursuit_transitions WHERE pursuit_id IN ${ownPursuits}`);
   await db.execute(sql`DELETE FROM pursuits WHERE account_profile_id = ${accountId}`);
+  await db.execute(sql`DELETE FROM decision_labels WHERE account_profile_id = ${accountId}`);
   await db.execute(sql`DELETE FROM opportunities WHERE account_profile_id = ${accountId}`);
   await deleteTestProjects(db, [projectId, project2Id]);
   await db.execute(sql`DELETE FROM account_profiles WHERE id = ${accountId}`);
@@ -144,6 +145,24 @@ describe("S2 pursuit state machine", () => {
     expect(p.state).toBe("won");
     expect(Number(p.submitted_value)).toBe(240000);
     expect(Number(p.outcome_value)).toBe(240000);
+  });
+
+  it("won emits a pursuit_outcome decision label with the decision-time snapshot (4A.2)", async () => {
+    const labels = (await db.execute(sql`
+      SELECT kind, decided_by, reason, snapshot FROM decision_labels
+      WHERE account_profile_id = ${accountId} AND opportunity_id = ${oppId} AND kind = 'pursuit_outcome'`)).rows as {
+      kind: string; decided_by: string; reason: string | null; snapshot: Record<string, unknown>;
+    }[];
+    expect(labels).toHaveLength(1);
+    expect(labels[0]!.reason).toBe("low bid");
+    expect(labels[0]!.snapshot["outcome"]).toBe("won");
+    expect(labels[0]!.snapshot["fromState"]).toBe("submitted");
+    expect(Number(labels[0]!.snapshot["score"])).toBe(84);
+    expect(Number(labels[0]!.snapshot["outcomeValue"])).toBe(240000);
+    // Non-outcome transitions never label: the whole walk produced exactly one.
+    const all = (await db.execute(sql`
+      SELECT count(*) AS n FROM decision_labels WHERE account_profile_id = ${accountId}`)).rows as { n: string }[];
+    expect(Number(all[0]!.n)).toBe(1);
   });
 
   it("records every transition (auditable history)", async () => {

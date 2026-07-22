@@ -598,6 +598,7 @@ describe("insights_public cockpit views (0025)", () => {
       SET normalized_json = jsonb_set(normalized_json, '{permitType}', '"GLAZING PERMIT"')
       WHERE external_id IN (${`alpha-pub-${RUN}`}, ${`echo-pub-${RUN}`})`);
     const summary = await deriveProjectTrades(db, {
+      codes: ["glazing"],
       match: (text: string) => (text.includes("GLAZ") ? ["glazing"] : []),
     });
     expect(summary.permitTypesMatched).toBeGreaterThanOrEqual(1);

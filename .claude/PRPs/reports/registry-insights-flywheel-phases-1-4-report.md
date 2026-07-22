@@ -81,4 +81,39 @@ Typecheck 0 errors both repos · Insights suite 678/678 · eval GATES PASS byte-
 
 **Known data limitation (not a bug):** `market_demand_v1` months bucket on `first_seen_at`, and the corpus was rebuilt 2026-07-21/22 — so every combo currently shows ONE month. Trend lines accrue forward from now; history is never fabricated backwards.
 
-## Phase 4 — pending (§12.3-gated for scoring-adjacent parts)
+## Phase 4 — COMPLETE (owner-approved scope: 4A + 4B matching-strength + root-domain enablement)
+
+**Plan**: `.claude/PRPs/plans/registry-insights-flywheel-phase4.plan.md` (self-contained Phase 4 PRP integrating the original 4A scope with the owner-accepted 4B package and the root-domain override — "the integration of these two projects into one is your perogative").
+
+### Tasks
+| # | Task | Status | Notes |
+|---|---|---|---|
+| 1 | Migration 0030 `identifier_lanes` | done | +`root_domain` identifier class; +`provenance` (`source_evidence`\|`registry_accept`); `source_record_id` nullable ONLY for registry_accept rows (row CHECK — the no-claim-without-a-source invariant is narrowed, not dropped). Applied local + hosted (journal idx 30). |
+| 2 | 4B.1 phone extension strip | done | Trailing `x102`/`ext. 5`/`#12` stripped before digit reduction — the 13-digits→null bug is dead; implausible counts still rejected. |
+| 3 | 4B.3 address keys round 2 | done | Placeholder rejection (`NONE`/`N/A`/`UNKNOWN`/`SAME`/`TBD`); ONE trailing unit-looking token peeled when preceded by a street-tail token, over every candidate (comma'd strings included), floor enforced, Set-deduped. |
+| 4 | Root-domain lane | done | `normalizeRootDomain` (scheme/userinfo/path/port/www stripped; NO eTLD+1 — both sides fold identically, fail-closed; platform-host denylist incl. subdomains); optional `website` on parser organizations[] (skip-safe, no adapter emits yet) → `root_domain` identifier rows; `loadOrganizationDomains`. |
+| 5 | 4B.3 shared-bucket matching | done | `buildRegistryAddressIndex` → candidate keys on the REGISTRY side too, buckets kept (dedup by entityId); `matchOrgByAddress` single-row keeps the ≥0.3 gate, shared rows need best ≥0.5 AND ≥0.2 dominance margin; `shared_address_bucket_size` in payload. |
+| 6 | 4B.2 + domain rules | done | `buildRegistryGooglePhoneIndex` (unique-only, poisoned vs ANY other entity's L&I phone) → `binding_google_phone_match`, identifier 0.75 (de-rated, `phone_from_google` precedent); `buildRegistryDomainIndex` → `binding_domain_match`, identifier 1, name-gated. Both ride observation type `binding_name_match` ⇒ structurally excluded from auto-accept; branch order L&I name/phone → google phone → address → domain; dedupe key unchanged. |
+| 7 | 4B.4 accept-side backfeed | done | `backfeedAcceptedIdentity` in `decideRegistryObservation` accept: NULL-only `organizations.ubi`/`contractor_registration` + identifier upserts with `provenance='registry_accept'`, `source_record_id NULL`. DB test proves stamp + provenance + no-overwrite (org2's pre-existing UBI survives a later conflicting accept — conflicts stay for review). |
+| 8 | 4B.5 telemetry + `match:audit` | done | `GenerateSummary.belowFloor` + `byRule`; new worker CLI prints per-rule queued/pending/accepted/rejected/auto, HUMAN Laplace rate (= the live ruleHistory component), trust min/median/max, near-floor band. Ran read-only against hosted: 261 `binding_name_exact` + 1 `binding_address_match` pending. |
+| 9 | 4A.2 pursuit outcomes | done | `transitionPursuit` won/lost/no_bid → append-only `decision_labels kind='pursuit_outcome'` (kind was already CHECK-admitted by 0027) with the decision-time snapshot (opp score/route/signals/county/stage/corroboration + pursuit values); HUMAN_ONLY already guarantees a human actor; UI affordance already existed (pursuits/[id]/actions.tsx transition select). Test: won ⇒ exactly one label with snapshot; non-outcome transitions ⇒ none. |
+| 10 | 4A.3 calibration prep | done | `docs/calibration-prep-solis.md` gained §5–7 (label-ledger queries, per-account precision readout, match:audit walkthrough, §12.3 weight-change protocol + freeze-lift criteria) APPENDED — the owner's 2026-07-17/20 decided sections untouched. Queries validated executable against the hosted DB (ledger currently empty — honest: labels accrue as the owner reviews). |
+| 11 | 4A.1 Contractor Activity Score | done | `registry_internal.contractor_activity_score_v1` (migration `20260722120000` + byte-identical baseline patch 29 + census row; APPLIED LIVE, ledger-recorded): round(100×(0.5·permit + 0.3·credential + 0.2·web)) per trades tenant via settings-UBI → identity → activity contract views; INNER join = sample gate (no rollup ⇒ no row ⇒ unscored, never 0). Directory: LEFT JOIN + `activity_score DESC NULLS LAST` (non-trades verticals byte-order-identical — their join is all NULLs), disclosure line, per-card chip; profile: score panel with per-component basis inside the Permit activity section; 4 pSEO-gate pins. NEVER read by Insights. |
+| 12 | Close-out | done | Hosted: 0030 verified live (provenance column + nullable source_record_id), registry view applied + probed; ONE maintenance pass (Governance #7) — clean, no score drift (Solis 3,044/477 unchanged from pre-pass), new rules 0 new candidates (correct: no org domain evidence yet; dedupe holds), export honestly 0 facts. Both trunks committed + pushed; STATUS + memory updated. |
+
+### Validation
+| Level | Status | Notes |
+|---|---|---|
+| Typecheck | Pass | 0 errors, 11/11 packages (one pre-existing Phase 3 test stub missing `TradeMatcher.codes` fixed in passing) |
+| Insights suite | Pass | **699/699** (88 files) — +9 identifiers tests, +8 registry-observations pure tests, +1 backfeed DB assertion block, +1 pursuit-outcome label test |
+| Eval gates | Pass | **Byte-identical** (precision 1.0 / recall 0.9609375, same 5 missed ids) — §12.3 frozen through all four phases |
+| Registry | Pass | tsc clean · test:security 64/64 · pSEO gate zero failures (4 new pins) · BOTH site-key builds green |
+| Hosted | Pass | 0030 + `20260722120000` applied, ledger-recorded; `match:audit` live output captured |
+
+### Deviations
+1. **Registry migration named `20260722120000`** (date-accurate) instead of the plan's `20260723090000`.
+2. **Test placement**: the old "shared address dropped" pure test was REWRITTEN to the new dominance contract (planned behavior change); google-phone/domain rule coverage ships as exported pure index builders (`buildRegistryGooglePhoneIndex`/`buildRegistryDomainIndex`) + tests, mirroring how the address matcher is tested — the DB-coupled branch wiring is covered by typecheck + the hosted pass, same as Phase 2.2's precedent.
+3. **`calibration-prep-solis.md` was appended, not created** — the file already existed with owner-decided content (2026-07-17/20 sections preserved verbatim).
+
+### Known live-state fact (not a bug)
+`trades_activity_v1` and therefore the Activity Score view are currently **0 rows**: the only bound org is SOLIS INTERIORS itself (the customer's own org, 0 permit roles), so the facts export honestly exports nothing. The whole loop is wired: each owner accept from the **262-candidate review queue** now (a) binds, (b) backfeeds strong keys (4B.4), (c) exports partner facts on the next pass → profile badge + Activity Score light up. The human review gate is the flywheel's crank, by design.

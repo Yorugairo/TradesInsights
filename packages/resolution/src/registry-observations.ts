@@ -32,7 +32,15 @@
  */
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
-import { addressMatchKey, loadOrganizationAddresses, loadOrganizationPhones } from "./identifiers.js";
+import {
+  addressMatchKeyCandidates,
+  backfeedAcceptedIdentity,
+  loadOrganizationAddresses,
+  loadOrganizationDomains,
+  loadOrganizationPhones,
+  normalizePhoneUS,
+  normalizeRootDomain,
+} from "./identifiers.js";
 import { nameSimilarity, orgNameKey } from "./normalize.js";
 import { identitySnapshot, type RegistryIdentityRow } from "./registry-link.js";
 import {
@@ -79,6 +87,19 @@ export const TRUST_WEIGHTS: Record<keyof TrustComponents, number> = {
  * (phones get recycled and shared; a phone with a foreign name is noise). */
 export const PHONE_MATCH_MIN_NAME_SIMILARITY = 0.3;
 
+/** A SHARED registered address (2+ entities at one key — suite blocks, shared
+ * buildings) can still disambiguate when ONE name clearly dominates: the best
+ * name similarity must clear this floor AND beat the runner-up by the margin
+ * below. Otherwise the bucket stays unmatchable (pre-Phase-4 behavior). */
+export const ADDRESS_SHARED_MIN_NAME_SIMILARITY = 0.5;
+export const ADDRESS_DOMINANCE_MARGIN = 0.2;
+
+/** Identifier component for a google-phone match (4B.2): DE-RATED versus the
+ * L&I registered phone's 1.0 — a Google Business profile phone is
+ * account-entered, not L&I-verified (mirrors the phone_from_google adoption
+ * precedent: distinct channel, own rule history, never inherits L&I trust). */
+export const GOOGLE_PHONE_IDENTIFIER_COMPONENT = 0.75;
+
 /** Deterministic weighted trust ∈ [0,1]; stored beside its components. */
 export function computeTrust(c: TrustComponents): number {
   let score = 0;
@@ -122,42 +143,97 @@ export function crossNameKey(raw: string): string {
 }
 
 /**
- * Registry address index: `addressMatchKey(street, zip5)` → row, UNIQUE keys
- * only. A key shared by 2+ entities (a shared building or suite block) cannot
- * disambiguate and is dropped to null — exactly the unique-phone guard at the
- * `byPhone` build. Pure over rows so the matcher is unit-testable with injected
+ * Registry address index: candidate match keys (primary + city/unit-noise
+ * peels, 4B.3 — BOTH sides now generate candidates so suite-noise variants
+ * meet) → ALL rows registered at that key. Shared keys keep their bucket
+ * instead of dropping to null: `matchOrgByAddress` disambiguates by name
+ * dominance. Pure over rows so the matcher is unit-testable with injected
  * `RegistryIdentityRow[]` (no DB), mirroring registry-link's pure matcher.
  */
-export function buildRegistryAddressIndex(
+/**
+ * Google Business phone index (4B.2) — SECONDARY channel, unique-only, and
+ * poisoned when the number collides with ANY L&I phone of a different entity
+ * (call-tracking / recycled numbers must never cross-identify). Pure over rows.
+ */
+export function buildRegistryGooglePhoneIndex(
+  rows: RegistryIdentityRow[],
+  byPhone: Map<string, RegistryIdentityRow | null>,
+): Map<string, RegistryIdentityRow | null> {
+  const byGooglePhone = new Map<string, RegistryIdentityRow | null>();
+  for (const row of rows) {
+    const gp = normalizePhoneUS(row.googlePhone);
+    if (!gp) continue;
+    const lni = byPhone.get(gp);
+    if (byPhone.has(gp) && (lni == null || lni.entityId !== row.entityId)) {
+      byGooglePhone.set(gp, null);
+      continue;
+    }
+    byGooglePhone.set(gp, byGooglePhone.has(gp) ? null : row);
+  }
+  return byGooglePhone;
+}
+
+/**
+ * Root-domain index (Phase 4 enablement — the contract column was dormant
+ * since registry-link.ts surfaced it): unique-only; both sides fold through
+ * normalizeRootDomain (denylist included) so a drifting registry form can't
+ * silently mismatch. Pure over rows.
+ */
+export function buildRegistryDomainIndex(
   rows: RegistryIdentityRow[],
 ): Map<string, RegistryIdentityRow | null> {
-  const byAddress = new Map<string, RegistryIdentityRow | null>();
+  const byDomain = new Map<string, RegistryIdentityRow | null>();
   for (const row of rows) {
-    const key = addressMatchKey(row.registeredAddress, row.registeredPostalCode);
-    if (!key) continue;
-    byAddress.set(key, byAddress.has(key) ? null : row);
+    const domain = normalizeRootDomain(row.rootDomain);
+    if (!domain) continue;
+    byDomain.set(domain, byDomain.has(domain) ? null : row);
+  }
+  return byDomain;
+}
+
+export function buildRegistryAddressIndex(
+  rows: RegistryIdentityRow[],
+): Map<string, RegistryIdentityRow[]> {
+  const byAddress = new Map<string, RegistryIdentityRow[]>();
+  for (const row of rows) {
+    for (const key of addressMatchKeyCandidates(row.registeredAddress, row.registeredPostalCode)) {
+      const bucket = byAddress.get(key);
+      if (!bucket) byAddress.set(key, [row]);
+      else if (!bucket.some((r) => r.entityId === row.entityId)) bucket.push(row);
+    }
   }
   return byAddress;
 }
 
 /**
- * Best UNIQUE-address hit for an org, gated on name agreement: registered
- * addresses are shared among suite-mates, so a foreign name at the same address
- * is noise (mirrors the phone-match name gate). Returns null when nothing clears
- * the gate. Never binds on its own — the caller queues it for human review.
+ * Best address hit for an org, gated on name agreement. A single-entity key
+ * keeps the original ≥0.3 gate; a SHARED key (2+ entities — suite blocks)
+ * requires clear name dominance (best ≥ ADDRESS_SHARED_MIN_NAME_SIMILARITY and
+ * ≥ ADDRESS_DOMINANCE_MARGIN above the runner-up) — a near-tie cannot say
+ * WHICH suite-mate the org is, so it stays unmatched (fails closed). Returns
+ * null when nothing clears its gate. Never binds on its own — the caller
+ * queues it for human review.
  */
 export function matchOrgByAddress(
   orgName: string,
   addressKeys: Set<string>,
-  byAddress: Map<string, RegistryIdentityRow | null>,
-): { row: RegistryIdentityRow; sim: number } | null {
-  let best: { row: RegistryIdentityRow; sim: number } | null = null;
+  byAddress: Map<string, RegistryIdentityRow[]>,
+): { row: RegistryIdentityRow; sim: number; bucketSize: number } | null {
+  let best: { row: RegistryIdentityRow; sim: number; bucketSize: number } | null = null;
   for (const key of addressKeys) {
-    const row = byAddress.get(key);
-    if (!row) continue; // absent, or a shared (non-unique) address key
-    const sim = nameSimilarity(orgName, row.canonicalName ?? "");
-    if (sim >= PHONE_MATCH_MIN_NAME_SIMILARITY && (best === null || sim > best.sim)) {
-      best = { row, sim };
+    const bucket = byAddress.get(key);
+    if (!bucket || bucket.length === 0) continue;
+    const ranked = bucket
+      .map((row) => ({ row, sim: nameSimilarity(orgName, row.canonicalName ?? "") }))
+      .sort((a, b) => b.sim - a.sim);
+    const top = ranked[0]!;
+    const clears =
+      bucket.length === 1
+        ? top.sim >= PHONE_MATCH_MIN_NAME_SIMILARITY
+        : top.sim >= ADDRESS_SHARED_MIN_NAME_SIMILARITY &&
+          top.sim - ranked[1]!.sim >= ADDRESS_DOMINANCE_MARGIN;
+    if (clears && (best === null || top.sim > best.sim)) {
+      best = { row: top.row, sim: top.sim, bucketSize: bucket.length };
     }
   }
   return best;
@@ -231,6 +307,11 @@ export interface GenerateSummary {
   aliasExports: number;
   tradeExports: number;
   autoAccepted: number;
+  /** 4B.5 telemetry: candidates computed but below MIN_QUEUE_TRUST (per rule),
+   * and NEW rows actually queued per rule this pass. Feeds match:audit so
+   * floor/weight tuning at the §12.3 calibration session is evidence-driven. */
+  belowFloor: number;
+  byRule: Record<string, number>;
 }
 
 interface PendingInsert {
@@ -263,6 +344,7 @@ export async function generateRegistryObservations(
 ): Promise<GenerateSummary> {
   const summary: GenerateSummary = {
     skipped: false, bindingCandidates: 0, phoneAdoptions: 0, aliasExports: 0, tradeExports: 0, autoAccepted: 0,
+    belowFloor: 0, byRule: {},
   };
   if (registryRows === null) {
     summary.skipped = true;
@@ -299,18 +381,24 @@ export async function generateRegistryObservations(
     if (!row.phone) continue;
     byPhone.set(row.phone, byPhone.has(row.phone) ? null : row);
   }
+  // Secondary match-key indexes (4B.2 + Phase 4 domain enablement).
+  const byGooglePhone = buildRegistryGooglePhoneIndex(registryRows, byPhone);
+  const byDomain = buildRegistryDomainIndex(registryRows);
   // Evidence-backed phones per org (organization_identifiers, migration 0023).
   const orgPhones = await loadOrganizationPhones(db);
-  // Registry address index (unique street+zip5 keys) + evidence-backed org
-  // addresses (migration 0024) — the no-phone/no-UBI match path.
+  // Registry address index (candidate street+zip5 keys, shared buckets kept)
+  // + evidence-backed org addresses (migration 0024) — the no-phone/no-UBI
+  // match path. Org root domains (migration 0030) feed the domain rule.
   const byAddress = buildRegistryAddressIndex(registryRows);
   const orgAddresses = await loadOrganizationAddresses(db);
+  const orgDomains = await loadOrganizationDomains(db);
 
   // ── binding_name_match: unbound orgs vs registry (name key, phone-aware) ──
   const unbound = (await loadOrgFacts(db)).filter((o) => o.registry_ref === null);
   for (const org of unbound) {
     const phones = orgPhones.get(org.id) ?? new Set<string>();
     const addresses = orgAddresses.get(org.id) ?? new Set<string>();
+    const domains = orgDomains.get(org.id) ?? new Set<string>();
     const key = crossNameKey(org.canonical_name);
     const nameHits = key && key.split(" ").length >= 2 ? byNameKey.get(key) : undefined;
 
@@ -351,9 +439,32 @@ export async function generateRegistryObservations(
         ruleKey = "binding_phone_match";
       }
     }
-    // No name/phone hit — try the registered-address match (no-phone owners /
-    // developers whose name drifts). Gated on name agreement + a UNIQUE registry
-    // address; NEVER auto-binds (binding_name_match is excluded from auto-accept).
+    // No L&I name/phone hit — Google Business phone (4B.2). SECONDARY channel:
+    // same name gate as the L&I phone path, DE-RATED identifier component,
+    // distinct rule key so it earns its own reviewed accept history.
+    let matchedGooglePhone: string | null = null;
+    if (!hit && phones.size > 0) {
+      let best: { row: RegistryIdentityRow; sim: number; phone: string } | null = null;
+      for (const p of phones) {
+        const row = byGooglePhone.get(p);
+        if (!row) continue;
+        const sim = nameSimilarity(org.canonical_name, row.canonicalName ?? "");
+        if (sim >= PHONE_MATCH_MIN_NAME_SIMILARITY && (best === null || sim > best.sim)) {
+          best = { row, sim, phone: p };
+        }
+      }
+      if (best) {
+        hit = best.row;
+        nameComponent = best.sim;
+        identifier = GOOGLE_PHONE_IDENTIFIER_COMPONENT;
+        ruleKey = "binding_google_phone_match";
+        matchedGooglePhone = best.phone;
+      }
+    }
+    // Registered-address match (no-phone owners / developers whose name
+    // drifts). Name-gated; shared buckets need name dominance (4B.3); NEVER
+    // auto-binds (binding_name_match is excluded from auto-accept).
+    let addressBucketSize: number | null = null;
     if (!hit && addresses.size > 0) {
       const addrHit = matchOrgByAddress(org.canonical_name, addresses, byAddress);
       if (addrHit) {
@@ -361,6 +472,29 @@ export async function generateRegistryObservations(
         nameComponent = addrHit.sim;
         identifier = 1; // the registered address IS the matched L&I identifier
         ruleKey = "binding_address_match";
+        addressBucketSize = addrHit.bucketSize;
+      }
+    }
+    // Root-domain match (Phase 4 enablement): a UNIQUE, denylisted-clean
+    // registered website root domain is entity-specific; still name-gated and
+    // review-only like every binding rule.
+    let matchedDomain: string | null = null;
+    if (!hit && domains.size > 0) {
+      let best: { row: RegistryIdentityRow; sim: number; domain: string } | null = null;
+      for (const d of domains) {
+        const row = byDomain.get(d);
+        if (!row) continue;
+        const sim = nameSimilarity(org.canonical_name, row.canonicalName ?? "");
+        if (sim >= PHONE_MATCH_MIN_NAME_SIMILARITY && (best === null || sim > best.sim)) {
+          best = { row, sim, domain: d };
+        }
+      }
+      if (best) {
+        hit = best.row;
+        nameComponent = best.sim;
+        identifier = 1; // the registered website root domain IS the matched identifier
+        ruleKey = "binding_domain_match";
+        matchedDomain = best.domain;
       }
     }
     if (!hit || !ruleKey) continue;
@@ -396,6 +530,13 @@ export async function generateRegistryObservations(
           ruleKey === "binding_address_match"
             ? [hit.registeredAddress, hit.registeredPostalCode].filter(Boolean).join(" ")
             : null,
+        // 4B.3: a shared-address match tells the reviewer HOW shared the key
+        // was (1 = unique; ≥2 = dominance-disambiguated suite block).
+        shared_address_bucket_size: addressBucketSize,
+        // 4B.2 / Phase 4 domain rule: the matched secondary-channel value.
+        registry_google_phone: matchedGooglePhone,
+        domain_evidence: domains.size > 0 ? [...domains] : [],
+        registry_root_domain: matchedDomain,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
         role_records: org.record_count,
@@ -619,7 +760,10 @@ export async function generateRegistryObservations(
   // ── persist (dedupe; decided rows never resurrected) + auto-accept ──
   for (const ins of inserts) {
     const trust = computeTrust(ins.components);
-    if (trust < MIN_QUEUE_TRUST) continue;
+    if (trust < MIN_QUEUE_TRUST) {
+      summary.belowFloor += 1;
+      continue;
+    }
     const h = history.get(ins.ruleKey);
     const autoAccept =
       ins.observationType !== "binding_name_match" &&
@@ -640,6 +784,7 @@ export async function generateRegistryObservations(
       ON CONFLICT (dedupe_key) DO NOTHING
       RETURNING id`);
     if (res.rows.length === 0) continue;
+    summary.byRule[ins.ruleKey] = (summary.byRule[ins.ruleKey] ?? 0) + 1;
     if (autoAccept) summary.autoAccepted += 1;
     if (ins.observationType === "binding_name_match") summary.bindingCandidates += 1;
     else if (ins.observationType === "phone_adoption") summary.phoneAdoptions += 1;
@@ -654,6 +799,8 @@ export async function generateRegistryObservations(
       aliasExports: summary.aliasExports,
       tradeExports: summary.tradeExports,
       autoAccepted: summary.autoAccepted,
+      belowFloor: summary.belowFloor,
+      byRule: summary.byRule,
     },
     "registry-observations generated",
   );
@@ -751,6 +898,15 @@ export async function decideRegistryObservation(
           registry_linked_at = now(),
           registry_identity_json = ${snapshot ? JSON.stringify(snapshot) : null}::jsonb
       WHERE id = ${row.organization_id}`);
+    // 4B.4 — the learning fix: stamp the accepted entity's strong keys
+    // (UBI / contractor numbers) onto the org, NULL-only with
+    // provenance 'registry_accept', so the nightly strong-key link and the
+    // WS-B.4 resolver tier fire for this contractor's subsequent records.
+    await backfeedAcceptedIdentity(
+      db,
+      row.organization_id,
+      (snapshot as Record<string, unknown> | null) ?? null,
+    );
     applied = "bound_organization";
   } else if (row.observation_type === "phone_adoption") {
     const phone = String(row.payload_json["phone"] ?? "");

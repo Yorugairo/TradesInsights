@@ -11,10 +11,14 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
 
 /** Normalize a US phone to bare 10 digits (strip punctuation and a leading 1).
- * Returns null when the result is not a plausible 10-digit US number. */
+ * A TRAILING extension suffix ("x102", "ext. 5", "#12") is stripped first —
+ * otherwise its digits fold in and a perfectly good number dies at the
+ * 10-digit gate ("360-555-0123 x102" → 13 digits → null). Returns null when
+ * the result is not a plausible 10-digit US number. */
 export function normalizePhoneUS(raw: string | null | undefined): string | null {
   if (raw == null) return null;
-  let digits = String(raw).replace(/\D/g, "");
+  const cleaned = String(raw).replace(/\s*(?:x|ext\.?|extension|#)\s*\d{1,6}\s*$/i, "");
+  let digits = cleaned.replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
   return digits.length === 10 ? digits : null;
 }
@@ -108,6 +112,10 @@ export function addressMatchKey(
 ): string | null {
   if (address == null) return null;
   const raw = String(address);
+  // Placeholder strings some portals emit instead of leaving the field blank
+  // ("NONE", "N/A", "SAME", …) are not addresses — reject before any zip in the
+  // tail can smuggle one past the validity floor (4B.3).
+  if (/^\s*(?:NONE|N\/?A|UNKNOWN|SAME|TBD|NULL)\b/i.test(raw)) return null;
   // zip5 from the explicit arg, else the LAST 5-digit group inline — never the
   // first, because a street NUMBER can be 5 digits ("33820 WEYERHAEUSER WAY").
   const explicitZip = String(zip ?? "").match(/\b(\d{5})(?:-\d{4})?\b/)?.[1] ?? null;
@@ -147,7 +155,8 @@ const MAX_CITY_TOKENS = 3;
  * stopping at any digit-bearing or street-tail token, and never below the
  * validity floor (≥3 tokens, a digit, ≥8 chars). Streets that END in a bare
  * word ("1234 BROADWAY") keep their city and simply fail to match — fails
- * closed, never guessed. Comma'd strings return the primary key only.
+ * closed, never guessed. Comma'd strings skip the city peel (the comma already
+ * isolated the street line) but still get the unit-noise peel below.
  */
 export function addressMatchKeyCandidates(
   address: string | null | undefined,
@@ -156,18 +165,44 @@ export function addressMatchKeyCandidates(
   const primary = addressMatchKey(address, zip);
   if (!primary) return [];
   const out = [primary];
-  if (String(address).includes(",")) return out;
-  const tokens = primary.split(" ");
-  const zip5 = tokens.pop()!;
-  let toks = tokens;
-  for (let i = 0; i < MAX_CITY_TOKENS; i++) {
-    const last = toks[toks.length - 1]!;
-    if (/\d/.test(last) || STREET_TAIL_TOKENS.has(last)) break;
-    if (toks.length - 1 < 3) break;
-    toks = toks.slice(0, -1);
-    const street = toks.join(" ");
-    if (!/\d/.test(street) || street.length < 8) break;
-    out.push(`${street} ${zip5}`);
+  if (!String(address).includes(",")) {
+    const tokens = primary.split(" ");
+    const zip5 = tokens.pop()!;
+    let toks = tokens;
+    for (let i = 0; i < MAX_CITY_TOKENS; i++) {
+      const last = toks[toks.length - 1]!;
+      if (/\d/.test(last) || STREET_TAIL_TOKENS.has(last)) break;
+      if (toks.length - 1 < 3) break;
+      toks = toks.slice(0, -1);
+      const street = toks.join(" ");
+      if (!/\d/.test(street) || street.length < 8) break;
+      out.push(`${street} ${zip5}`);
+    }
+  }
+  // Unit-noise peel (4B.3, round 2): a bare suite/unit number WITHOUT its
+  // designator survives normalizeAddressUS ("1210 HOMANN DR SE 210" — the
+  // "STE" was never printed). When a candidate's street part ends
+  // `<street suffix/directional> <short unit-looking token>`, also offer the
+  // variant with that ONE trailing token peeled. Runs over every candidate so
+  // far (comma'd strings included — suite noise survives commas), floor
+  // enforced, Set-deduped. Fails closed: streets that genuinely end in a
+  // number ("HIGHWAY 99" → tail token IS the name) keep their primary form
+  // in the list, so a wrong peel can only add a key that matches nothing.
+  const seen = new Set(out);
+  for (const key of [...out]) {
+    const toks = key.split(" ");
+    const zip5 = toks.pop()!;
+    const last = toks[toks.length - 1];
+    const prev = toks[toks.length - 2];
+    const unitish = last != null && ((/\d/.test(last) && last.length <= 6) || last.length === 1);
+    if (!unitish || prev == null || !STREET_TAIL_TOKENS.has(prev)) continue;
+    const street = toks.slice(0, -1).join(" ");
+    if (toks.length - 1 < 3 || !/\d/.test(street) || street.length < 8) continue;
+    const peeled = `${street} ${zip5}`;
+    if (!seen.has(peeled)) {
+      seen.add(peeled);
+      out.push(peeled);
+    }
   }
   return out;
 }
@@ -183,12 +218,53 @@ export function normalizeSourceEntityId(raw: string | null | undefined): string 
   return v;
 }
 
+/** Platform/social hosts a business "website" field often points at — they
+ * identify the PLATFORM, not the business, so they can never be a match key.
+ * Checked against the full host after www-strip (subdomains included). */
+const SHARED_HOST_DENYLIST = new Set([
+  "facebook.com", "instagram.com", "google.com", "yelp.com", "angi.com",
+  "homeadvisor.com", "thumbtack.com", "linkedin.com", "nextdoor.com",
+  "bbb.org", "yellowpages.com", "houzz.com", "porch.com",
+]);
+
+/**
+ * Normalize a website value to its root-domain match key (Phase 4, the demand
+ * side of binding_domain_match): lowercase host with scheme, credentials,
+ * port, path/query and a leading "www." stripped. Deliberately NO eTLD+1
+ * folding (that needs a public-suffix list to be correct) — BOTH sides fold
+ * through this same function, so a subdomain-vs-apex mismatch simply fails to
+ * match rather than ever matching wrongly. Null for IPs, platform hosts
+ * (denylist, subdomains included), and anything that isn't a plausible host.
+ */
+export function normalizeRootDomain(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  let host = String(raw).trim().toLowerCase();
+  if (!host) return null;
+  host = host.replace(/^[a-z][a-z0-9+.-]*:\/\//, ""); // scheme
+  host = host.replace(/^[^/@\s]+@/, "");              // userinfo
+  host = host.split(/[/?#]/, 1)[0]!;                  // path/query/fragment
+  host = host.replace(/:\d+$/, "");                   // port
+  host = host.replace(/^www\./, "");
+  host = host.replace(/\.$/, "");
+  if (!host.includes(".") || /\s/.test(host)) return null;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return null; // IPv4
+  if (!/^[a-z0-9.-]+$/.test(host) || host.length < 4) return null;
+  for (const blocked of SHARED_HOST_DENYLIST) {
+    if (host === blocked || host.endsWith(`.${blocked}`)) return null;
+  }
+  return host;
+}
+
 export interface OrgIdentifierInput {
   phone?: string | undefined;
   ubi?: string | undefined;
   contractorLicense?: string | undefined;
   address?: string | undefined;
   sourceEntityId?: string | undefined;
+  /** Business website as published by the source; reduced to a root-domain
+   * match key. Skip-safe: no parser emits it yet — the lane lights up as
+   * sources start publishing websites. */
+  website?: string | undefined;
 }
 
 /**
@@ -216,6 +292,10 @@ export async function persistOrganizationIdentifiers(
   const sourceEntityId = normalizeSourceEntityId(input.sourceEntityId);
   if (sourceEntityId && input.sourceEntityId) {
     rows.push({ type: "source_entity_id", raw: input.sourceEntityId, normalized: sourceEntityId });
+  }
+  const rootDomain = normalizeRootDomain(input.website);
+  if (rootDomain && input.website) {
+    rows.push({ type: "root_domain", raw: input.website, normalized: rootDomain });
   }
 
   let upserted = 0;
@@ -338,4 +418,73 @@ export async function loadOrganizationAddresses(db: Db): Promise<Map<string, Set
     map.set(r.organization_id, set);
   }
   return map;
+}
+
+/** Evidence-backed root domains per organization (input to the
+ * binding_domain_match rule). Values were normalized on write; re-normalizing
+ * here is a no-op for well-formed rows and drops any legacy junk. */
+export async function loadOrganizationDomains(db: Db): Promise<Map<string, Set<string>>> {
+  const res = await db.execute(sql`
+    SELECT organization_id, value_normalized FROM organization_identifiers
+    WHERE identifier_type = 'root_domain'`);
+  const map = new Map<string, Set<string>>();
+  for (const r of res.rows as { organization_id: string; value_normalized: string }[]) {
+    const domain = normalizeRootDomain(r.value_normalized);
+    if (!domain) continue;
+    const set = map.get(r.organization_id) ?? new Set<string>();
+    set.add(domain);
+    map.set(r.organization_id, set);
+  }
+  return map;
+}
+
+/**
+ * 4B.4 — the accept-side learning fix. When a HUMAN accepts a binding
+ * observation, stamp the registry entity's strong keys (UBI / contractor
+ * numbers, from the accepted payload's identity snapshot) onto the org —
+ * NULL-only on `organizations`, upserted into `organization_identifiers` with
+ * `provenance = 'registry_accept'` (no source record; the accepted, human-
+ * reviewed binding IS the provenance). Until now an accept set registry_ref +
+ * snapshot but NOT these keys, so the nightly strong-key link and the WS-B.4
+ * resolver tier never fired for subsequent records of the same contractor.
+ * Never overwrites: conflicting existing values stay for the review queue.
+ */
+export async function backfeedAcceptedIdentity(
+  db: Db,
+  organizationId: string,
+  snapshot: Record<string, unknown> | null | undefined,
+): Promise<{ stamped: number }> {
+  if (snapshot == null) return { stamped: 0 };
+  const ubi = alnumUpper(snapshot["ubi"] as string | null | undefined);
+  const rawNumbers = Array.isArray(snapshot["contractor_numbers"])
+    ? (snapshot["contractor_numbers"] as unknown[])
+    : [];
+  const licenses = rawNumbers
+    .map((v) => alnumUpper(typeof v === "string" ? v : null))
+    .filter((v): v is string => v !== null);
+
+  const rows: { type: string; normalized: string }[] = [];
+  if (ubi && ubi.length >= 7) rows.push({ type: "ubi", normalized: ubi });
+  for (const license of licenses) rows.push({ type: "contractor_number", normalized: license });
+
+  let stamped = 0;
+  for (const row of rows) {
+    await db.execute(sql`
+      INSERT INTO organization_identifiers
+        (organization_id, identifier_type, value_raw, value_normalized, source_record_id, provenance)
+      VALUES (${organizationId}, ${row.type}, ${row.normalized}, ${row.normalized}, NULL, 'registry_accept')
+      ON CONFLICT (organization_id, identifier_type, value_normalized)
+      DO UPDATE SET last_seen_at = now()`);
+    stamped += 1;
+  }
+  if (ubi && ubi.length >= 7) {
+    await db.execute(sql`
+      UPDATE organizations SET ubi = ${ubi} WHERE id = ${organizationId} AND ubi IS NULL`);
+  }
+  if (licenses.length > 0) {
+    await db.execute(sql`
+      UPDATE organizations SET contractor_registration = ${licenses[0]!}
+      WHERE id = ${organizationId} AND contractor_registration IS NULL`);
+  }
+  return { stamped };
 }

@@ -70,6 +70,11 @@ export const NormalizedSourceRecordSchema = z
         // publisher's own authority, immune to name-string drift. Not a
         // cross-registry key — the adapter owns the namespace prefix.
         sourceEntityId: z.string().min(1).optional(),
+        // Business website as published by the source, reduced at persist time
+        // to a root-domain match key against the registry's registered website
+        // (trades_identity_v1.root_domain). Additive and skip-safe: no adapter
+        // emits it yet — the lane lights up as sources publish websites.
+        website: z.string().min(4).optional(),
       }),
     ),
     sourceUrl: z.string().url(),

@@ -81,6 +81,9 @@ interface PursuitRow {
   opportunity_id: string;
   state: PursuitState;
   owner_user_id: string;
+  estimated_contract_value: number | null;
+  submitted_value: number | null;
+  outcome_value: number | null;
 }
 
 async function loadPursuit(db: Db, pursuitId: string): Promise<PursuitRow | null> {
@@ -151,6 +154,21 @@ export async function transitionPursuit(
     throw new PursuitError("missing_follow_up", "follow_up requires an owner and a date");
   }
 
+  // Phase 4 (4A.2) — pursuit outcomes are calibration gold: snapshot what the
+  // opportunity looked like BEFORE this outcome lands (state-route precedent:
+  // the label records what the human saw, never a later re-derivation).
+  const isOutcome = to === "won" || to === "lost" || to === "no_bid";
+  let outcomeSeen: Record<string, unknown> | null = null;
+  if (isOutcome) {
+    const seen = await db.execute(sql`
+      SELECT o.state AS opp_state, o.current_score, o.route, o.score_version,
+             o.rationale_json -> 'signals' AS signals,
+             pr.county, pr.current_stage, pr.corroboration
+      FROM opportunities o JOIN projects pr ON pr.id = o.project_id
+      WHERE o.id = ${p.opportunity_id}`);
+    outcomeSeen = (seen.rows[0] as Record<string, unknown> | undefined) ?? null;
+  }
+
   // Value side-effects (deterministic mapping from the transition metadata).
   const valueCol =
     to === "estimating" ? "estimated_contract_value"
@@ -176,6 +194,31 @@ export async function transitionPursuit(
   // column twice in one UPDATE).
   if (valueCol && value !== null) {
     await db.execute(sql`UPDATE pursuits SET ${sql.raw(valueCol)} = ${value} WHERE id = ${pursuitId}`);
+  }
+
+  // 4A.2 — append-only pursuit_outcome label (§12.3 calibration input). HUMAN_ONLY
+  // already guarantees these states carry a human decision; `reason` is
+  // validated non-empty above for all three outcome states.
+  if (isOutcome) {
+    const snapshot = {
+      outcome: to,
+      fromState: from,
+      estimatedContractValue: p.estimated_contract_value ?? null,
+      submittedValue: p.submitted_value ?? null,
+      outcomeValue: value ?? p.outcome_value ?? null,
+      oppState: outcomeSeen?.["opp_state"] ?? null,
+      score: outcomeSeen?.["current_score"] ?? null,
+      route: outcomeSeen?.["route"] ?? null,
+      scoreVersion: outcomeSeen?.["score_version"] ?? null,
+      signals: outcomeSeen?.["signals"] ?? [],
+      county: outcomeSeen?.["county"] ?? null,
+      stage: outcomeSeen?.["current_stage"] ?? null,
+      corroboration: outcomeSeen?.["corroboration"] ?? null,
+    };
+    await db.execute(sql`
+      INSERT INTO decision_labels (account_profile_id, opportunity_id, kind, decided_by, snapshot, reason, notes)
+      VALUES (${p.account_profile_id}, ${p.opportunity_id}, 'pursuit_outcome',
+              ${input.actorId ?? "account"}, ${JSON.stringify(snapshot)}, ${input.reason ?? null}, NULL)`);
   }
 }
 

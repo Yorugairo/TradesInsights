@@ -4,6 +4,7 @@ import {
   addressMatchKeyCandidates,
   normalizeAddressUS,
   normalizePhoneUS,
+  normalizeRootDomain,
   normalizeSourceEntityId,
 } from "./identifiers.js";
 
@@ -136,5 +137,72 @@ describe("addressMatchKeyCandidates (comma-less city peeling — flywheel Phase 
   it("returns [] when no primary key exists (no zip — never guessed)", () => {
     expect(addressMatchKeyCandidates("1210 HOMANN DR SE")).toEqual([]);
     expect(addressMatchKeyCandidates(null)).toEqual([]);
+  });
+});
+
+describe("normalizePhoneUS extension stripping (flywheel Phase 4, 4B.1)", () => {
+  it("strips trailing extension suffixes before the 10-digit gate", () => {
+    expect(normalizePhoneUS("360-555-0123 x102")).toBe("3605550123");
+    expect(normalizePhoneUS("(360) 555-0123 ext. 5")).toBe("3605550123");
+    expect(normalizePhoneUS("360 555 0123 EXT 44")).toBe("3605550123");
+    expect(normalizePhoneUS("+1 360 555 0123 #12")).toBe("3605550123");
+    expect(normalizePhoneUS("3605550123x102")).toBe("3605550123");
+  });
+
+  it("still rejects genuinely implausible digit counts", () => {
+    expect(normalizePhoneUS("36055501234567")).toBeNull(); // 14 digits, no ext marker
+    expect(normalizePhoneUS("555-0123 x102")).toBeNull(); // 7 digits after strip
+  });
+});
+
+describe("addressMatchKey placeholder rejection (4B.3)", () => {
+  it("rejects portal placeholder strings even when a zip rides in the tail", () => {
+    expect(addressMatchKey("NONE, TACOMA WA 98402")).toBeNull();
+    expect(addressMatchKey("N/A 98501")).toBeNull();
+    expect(addressMatchKey("UNKNOWN, OLYMPIA WA 98501")).toBeNull();
+    expect(addressMatchKeyCandidates("NONE, TACOMA WA 98402")).toEqual([]);
+  });
+
+  it("does not reject real streets that merely start with a similar word", () => {
+    // "NONEWAUM LN" must survive — the guard is a word-boundary prefix test.
+    expect(addressMatchKey("123 NONEWAUM LN, ENUMCLAW WA 98022")).not.toBeNull();
+  });
+});
+
+describe("addressMatchKeyCandidates unit-noise peeling (4B.3 round 2)", () => {
+  it("offers a variant with a bare trailing suite number peeled after a street tail token", () => {
+    const candidates = addressMatchKeyCandidates("1210 HOMANN DR SE 210, LACEY WA 98503");
+    expect(candidates).toContain("1210 HOMANN DR SE 210 98503"); // primary preserved
+    expect(candidates).toContain("1210 HOMANN DR SE 98503"); // unit-peeled variant
+  });
+
+  it("combines with city peeling on comma-less strings", () => {
+    const candidates = addressMatchKeyCandidates("9680 153rd Ave NE B2 REDMOND WA 98052");
+    expect(candidates).toContain("9680 153RD AVE NE B2 98052"); // city peeled
+    expect(candidates).toContain("9680 153RD AVE NE 98052"); // city + unit peeled
+  });
+
+  it("never peels when the preceding token is not a street tail (fails closed)", () => {
+    // "1234 BROADWAY 210": prev token "BROADWAY" is no suffix/directional.
+    const candidates = addressMatchKeyCandidates("1234 BROADWAY 210, SEATTLE WA 98122");
+    expect(candidates).toEqual(["1234 BROADWAY 210 98122"]);
+  });
+});
+
+describe("normalizeRootDomain (Phase 4 root-domain lane)", () => {
+  it("reduces a website value to a lowercase host without scheme/www/path/port", () => {
+    expect(normalizeRootDomain("https://www.NWMechanical.com/about?x=1")).toBe("nwmechanical.com");
+    expect(normalizeRootDomain("http://example.com:8080/")).toBe("example.com");
+    expect(normalizeRootDomain("example.com.")).toBe("example.com");
+    expect(normalizeRootDomain("sub.example.com")).toBe("sub.example.com"); // no eTLD+1 guessing
+  });
+
+  it("rejects platform hosts, IPs, and non-hosts — fails closed", () => {
+    expect(normalizeRootDomain("facebook.com/nwmech")).toBeNull();
+    expect(normalizeRootDomain("https://www.m.facebook.com/nwmech")).toBeNull(); // subdomain of denylisted
+    expect(normalizeRootDomain("10.0.0.1")).toBeNull();
+    expect(normalizeRootDomain("nw mechanical")).toBeNull();
+    expect(normalizeRootDomain("localhost")).toBeNull(); // no dot
+    expect(normalizeRootDomain(null)).toBeNull();
   });
 });
