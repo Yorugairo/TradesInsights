@@ -484,7 +484,13 @@ describe("google_phone adoption (L&I phone absent — secondary channel)", () =>
     expect(after[0]!.n).toBe(1);
   });
 
-  it("does NOT adopt the Google phone when the L&I phone is present (L&I authoritative)", async () => {
+  // BEHAVIOR CHANGE 2026-07-23 (owner-directed): this previously asserted that a
+  // Google phone is SUPPRESSED whenever an L&I phone exists. That made the lane
+  // dead code — 0 of 25,545 registry entities have a Google phone without an L&I
+  // phone — while hiding the genuinely useful case: the two numbers DISAGREEING,
+  // which is evidence the L&I registration went stale. Both now surface as
+  // separate contacts; L&I is still never replaced or overwritten.
+  it("surfaces BOTH the L&I phone and a DIVERGENT Google phone (L&I never replaced)", async () => {
     const withLni: RegistryIdentityRow[] = [{ ...rows[0]!, phone: "3601112222" }];
     await gdb.execute(sql`
       DELETE FROM registry_observations WHERE organization_id = ${gOrgId} AND observation_type = 'phone_adoption'`);
@@ -496,10 +502,30 @@ describe("google_phone adoption (L&I phone absent — secondary channel)", () =>
         SELECT rule_key, payload_json FROM registry_observations
         WHERE organization_id = ${gOrgId} AND observation_type = 'phone_adoption'`)
     ).rows as { rule_key: string; payload_json: Record<string, unknown> }[];
-    // Exactly the L&I phone is adopted; the Google phone is never a second contact.
+    expect(adoptions).toHaveLength(2);
+    const byRule = new Map(adoptions.map((a) => [a.rule_key, a.payload_json]));
+    expect(byRule.get("phone_from_lni")?.["phone"]).toBe("3601112222");
+    // The divergent Google number rides its OWN rule key, so it earns an
+    // independent accept history instead of inheriting the L&I rule's trust.
+    const divergent = byRule.get("phone_from_google_divergent");
+    expect(divergent?.["phone"]).toBe(G_GOOGLE_PHONE);
+    expect(divergent?.["diverges_from_lni"]).toBe(true);
+    // The reviewer sees both numbers without leaving the queue.
+    expect(divergent?.["lni_phone"]).toBe("3601112222");
+  });
+
+  it("does NOT double-surface when the Google phone EQUALS the L&I phone", async () => {
+    const agreeing: RegistryIdentityRow[] = [{ ...rows[0]!, phone: G_GOOGLE_PHONE }];
+    await gdb.execute(sql`
+      DELETE FROM registry_observations WHERE organization_id = ${gOrgId} AND observation_type = 'phone_adoption'`);
+    await generateRegistryObservations(gdb, agreeing);
+    const adoptions = (
+      await gdb.execute(sql`
+        SELECT rule_key FROM registry_observations
+        WHERE organization_id = ${gOrgId} AND observation_type = 'phone_adoption'`)
+    ).rows as { rule_key: string }[];
     expect(adoptions).toHaveLength(1);
     expect(adoptions[0]!.rule_key).toBe("phone_from_lni");
-    expect(adoptions[0]!.payload_json["phone"]).toBe("3601112222");
   });
 });
 
@@ -803,4 +829,79 @@ describe("binding_alias_exact — matching on a name the org was ALSO published 
     const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
     expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
   });
+
+describe("registry-side DBA aliases (contract column `aliases`) as match keys", () => {
+  // The org's CANONICAL name matches no registry canonical — it matches a DBA
+  // the registry entity also trades under (the Phase 2 payload: one UBI holding
+  // several licences under different registered names).
+  const R_ENTITY = randomUUID();
+  const dbaRow = (over: Partial<RegistryIdentityRow> = {}): RegistryIdentityRow => ({
+    entityId: R_ENTITY,
+    ubi: "603888222",
+    contractorNumbers: null,
+    canonicalName: `Gene Johnsn Plb Htg ${ARUN}`,
+    canonicalNameNormalized: `GENE JOHNSN PLB HTG ${ARUN}`,
+    phone: null,
+    cityToken: "tacoma",
+    stateCode: "WA",
+    registeredAddress: null,
+    registeredPostalCode: null,
+    aliases: [`Ridgeline Exteriors ${ARUN}`],
+    ...over,
+  });
+
+  it("matches an org whose canonical equals the entity's DBA", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    await generateRegistryObservations(adb, [dbaRow()]);
+
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    const bind = pending.find((o) => o.organizationId === aOrgId);
+    expect(bind).toBeDefined();
+    expect(bind!.registryEntityId).toBe(R_ENTITY);
+    // Reached through the ordinary name path — an alias key is a name key.
+    expect(bind!.ruleKey).toBe("binding_name_exact");
+    expect(bind!.trustComponents["name"]).toBe(1);
+  });
+
+  it("stays ONE candidate when the entity reaches the key by canonical AND alias", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    // Legal-suffix variant folds to the SAME cross-key as the canonical; the
+    // entity must not look like a 2-entity collision and be dropped.
+    const summary = await generateRegistryObservations(adb, [
+      dbaRow({
+        canonicalName: `Ridgeline Exteriors ${ARUN}`,
+        canonicalNameNormalized: `RIDGELINE EXTERIORS ${ARUN}`,
+        aliases: [`Ridgeline Exteriors ${ARUN} LLC`, `Ridgeline Exteriors ${ARUN}`],
+      }),
+    ]);
+    expect(summary.bindingCandidates).toBe(1);
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    expect(pending.filter((o) => o.organizationId === aOrgId)).toHaveLength(1);
+  });
+
+  it("fails closed when a DBA collides with ANOTHER entity's canonical name", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    // Entity 2's canonical IS entity 1's alias — no single reviewable suggestion.
+    await generateRegistryObservations(adb, [
+      dbaRow(),
+      dbaRow({
+        entityId: randomUUID(),
+        ubi: "603888223",
+        canonicalName: `Ridgeline Exteriors ${ARUN}`,
+        canonicalNameNormalized: `RIDGELINE EXTERIORS ${ARUN}`,
+        aliases: null,
+      }),
+    ]);
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
+  });
+
+  it("degrades to canonical-only when the contract has no aliases column", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    const { aliases: _omitted, ...noAliasColumn } = dbaRow();
+    await generateRegistryObservations(adb, [noAliasColumn as RegistryIdentityRow]);
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
+  });
+});
 });

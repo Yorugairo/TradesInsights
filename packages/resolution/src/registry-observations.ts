@@ -11,6 +11,13 @@
  *                       ALWAYS human — never auto-accepted.
  *   phone_adoption      bound org: registry L&I phone → a GLOBAL public_business
  *                       contact (the paying accounts' bucket). Accept applies it.
+ *                       The entity's Google Business phone is an INDEPENDENT lane
+ *                       (not an else-branch): when it DIFFERS from L&I it is
+ *                       surfaced under its own `phone_from_google_divergent` rule
+ *                       key, adding a second contact rather than replacing the
+ *                       L&I one. L&I stays authoritative; a consistently-accepted
+ *                       divergence is the loop learning that the registered
+ *                       number went stale.
  *   alias_export        bound org: Insights name variant → registry alias.
  *   trade_export        bound org: trade evidence from the SHARED registry trade
  *                       vocabulary (registry_public.trades_taxonomy_v1) matched
@@ -435,13 +442,30 @@ export async function generateRegistryObservations(
   // one Insights name matching MULTIPLE registry entities is not reviewable
   // as a single suggestion and must wait for a stronger key).
   const byNameKey = new Map<string, RegistryIdentityRow[]>();
-  for (const row of registryRows) {
-    if (!row.canonicalName) continue;
-    const key = crossNameKey(row.canonicalName);
-    if (!key) continue;
+  const addNameKey = (key: string, row: RegistryIdentityRow): void => {
+    if (!key) return;
     const bucket = byNameKey.get(key);
-    if (bucket) bucket.push(row);
-    else byNameKey.set(key, [row]);
+    if (!bucket) {
+      byNameKey.set(key, [row]);
+      return;
+    }
+    // Dedupe by ENTITY: one entity reaching a key by two routes (canonical and
+    // its own alias, or two aliases folding together) is still one candidate.
+    // Without this it would look like a 2-entity collision and be dropped.
+    if (bucket.some((r) => r.entityId === row.entityId)) return;
+    bucket.push(row);
+  };
+  for (const row of registryRows) {
+    if (row.canonicalName) addNameKey(crossNameKey(row.canonicalName), row);
+    // Registry DBAs (contract column `aliases`, L&I alias_type='dba') are match
+    // keys in their own right: a permit naming "Fox Plumbing & Heating" must
+    // reach the entity canonically named "Gene Johnsn Plb Htg Cl Elc LLC". They
+    // enter the SAME index, so an alias colliding with another entity's
+    // canonical name makes the key ambiguous and it is dropped — an alias never
+    // silently outranks a canonical match.
+    for (const alias of row.aliases ?? []) {
+      if (typeof alias === "string" && alias.length > 0) addNameKey(crossNameKey(alias), row);
+    }
   }
   const byEntity = new Map(registryRows.map((r) => [r.entityId, r]));
 
@@ -744,31 +768,53 @@ export async function generateRegistryObservations(
         components,
         dedupeKey: `phone:${org.id}:${row.phone}`,
       });
-    } else if (row.googlePhone) {
-      // L&I phone is ABSENT — surface the entity's SECONDARY Google Business phone
-      // (the registry gates it to accepted, publicly-surfaceable links). L&I stays
-      // authoritative, so this path only runs when there is no L&I phone to adopt;
-      // Google phone NEVER overwrites an L&I phone. A DISTINCT rule key means
-      // Google adoptions build their OWN reviewed accept history before any
-      // auto-accept — they never inherit the L&I rule's trust.
+    }
+
+    // Google Business phone — an INDEPENDENT lane, not an `else` of the L&I one.
+    //
+    // It was previously `else if (row.phone)`, which made it dead code: no entity
+    // has a Google phone without also having an L&I phone (verified live
+    // 2026-07-23: 0 of 25,545), so the branch could never be reached. Yet a
+    // DIVERGENCE between the two is exactly the interesting signal — L&I
+    // registrations go stale while the Google listing tracks the number the
+    // business actually answers. Suppressing it hid ~800 such entities.
+    //
+    // Both numbers now surface as SEPARATE contacts: `organization_contacts` is
+    // deduped by phone and the dedupeKey is phone-scoped, so this ADDS a contact
+    // and never replaces the L&I one. L&I remains authoritative everywhere.
+    //
+    // The divergent case gets its OWN rule key so it builds an independent
+    // reviewed accept history — operators consistently accepting it IS the
+    // system learning "the Google number is the live one". It never inherits the
+    // L&I rule's trust, and it stays review-gated until that history is earned.
+    const googlePhoneNormalized = normalizePhoneUS(row.googlePhone);
+    if (googlePhoneNormalized && googlePhoneNormalized !== normalizePhoneUS(row.phone)) {
+      const divergesFromLni = row.phone !== null && row.phone !== undefined;
+      const ruleKey = divergesFromLni ? "phone_from_google_divergent" : "phone_from_google";
       const components: TrustComponents = {
         name: 1, // binding already reviewed or strong-key exact
         identifier: 1, // an accepted Google Business profile phone for this entity
         locality: 1, // the phone belongs to exactly this bound entity
         role: org.role_weight,
         corroboration: 1,
-        ruleHistory: rate("phone_from_google"),
+        ruleHistory: rate(ruleKey),
       };
       inserts.push({
         observationType: "phone_adoption",
         organizationId: org.id,
         registryEntityId: row.entityId,
-        ruleKey: "phone_from_google",
+        ruleKey,
         payload: {
           phone: row.googlePhone,
           registry_name: row.canonicalName,
-          role: "Google Business phone",
+          role: divergesFromLni
+            ? "Google Business phone (differs from L&I)"
+            : "Google Business phone",
           source: "google_business",
+          // The reviewer sees BOTH numbers, so "which is live?" is answerable
+          // without leaving the queue. Null when L&I has no phone at all.
+          lni_phone: row.phone ?? null,
+          diverges_from_lni: divergesFromLni,
         },
         components,
         dedupeKey: `phone:${org.id}:${row.googlePhone}`,
