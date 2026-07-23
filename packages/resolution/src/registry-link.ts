@@ -64,6 +64,12 @@ export interface RegistryIdentityRow {
   /** The entity's authoritative L&I trade codes, primary-first (e.g. ["drywall"]).
    * Drives the score-neutral `trade_match` signal + display; never a match key. */
   tradeCodes?: string[] | null;
+  /** Other registered business names this entity operates under, from L&I
+   * (`alias_type = 'dba'`): one UBI often holds several licences under different
+   * names and mint kept only one. UNLIKE the signals above these ARE match keys —
+   * a permit naming a DBA must be able to reach the entity. Optional/null-safe so
+   * an older contract without the column degrades to canonical-only matching. */
+  aliases?: string[] | null;
 }
 
 /** Public identity snapshot cached on organizations.registry_identity_json. */
@@ -198,13 +204,26 @@ export interface RegistryLinkOptions {
  * needs; the reader role has SELECT on the view alone (contract boundary).
  */
 export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise<RegistryIdentityRow[]> {
-  const res = await pool.query(
+  const columns = (withAliases: boolean): string =>
     `SELECT entity_id, ubi, contractor_numbers, canonical_name, canonical_name_normalized,
             phone, city_token, state_code, registered_address, registered_postal_code,
             status, record_count, root_domain, first_minted_at,
-            google_phone, google_rating, google_review_count, trade_codes
-       FROM registry_public.trades_identity_v1`,
-  );
+            google_phone, google_rating, google_review_count, trade_codes${withAliases ? ", aliases" : ""}
+       FROM registry_public.trades_identity_v1`;
+
+  // `aliases` is the newest contract column. If Insights deploys ahead of the
+  // registry migration that adds it, selecting it would throw 42703 and take the
+  // WHOLE registry read down (silently skipping binding). Fall back to the
+  // pre-alias column list instead: the alias lane goes quiet, everything else
+  // keeps working. Only 42703 is swallowed — a real connection or permission
+  // error still propagates.
+  let res: { rows: Record<string, unknown>[] };
+  try {
+    res = await pool.query(columns(true));
+  } catch (err) {
+    if ((err as { code?: string } | null)?.code !== "42703") throw err;
+    res = await pool.query(columns(false));
+  }
   return res.rows.map((r: Record<string, unknown>) => ({
     entityId: r["entity_id"] as string,
     ubi: (r["ubi"] as string | null) ?? null,
@@ -224,6 +243,7 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     googleRating: r["google_rating"] == null ? null : Number(r["google_rating"]),
     googleReviewCount: r["google_review_count"] == null ? null : Number(r["google_review_count"]),
     tradeCodes: (r["trade_codes"] as string[] | null) ?? null,
+    aliases: (r["aliases"] as string[] | null) ?? null,
   }));
 }
 
