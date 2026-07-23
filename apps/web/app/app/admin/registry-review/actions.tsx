@@ -29,6 +29,21 @@ export interface EvidenceView {
   /** The org name-variant that produced a binding_alias_exact hit (null else) —
    * the reviewer has to see WHICH name matched, since it isn't the org's own. */
   matchedAlias: string | null;
+  /** The registry-side name `nameSimilarity` was actually diffed against — null
+   * when that's just the canonical (registry_name), so this only appears when
+   * it's telling you something extra: the match came through a DBA/brand. */
+  matchedRegistryName: string | null;
+  /** The specific operating brand this candidate binds to (a multi-brand
+   * entity may have several) and that brand's OWN licence — null for a
+   * non-name-keyed match (phone/address/domain), which identifies the
+   * enterprise, not a specific brand within it. */
+  matchedBrandName: string | null;
+  matchedBrandLicence: string | null;
+  /** The BRAND's own phone, from its OWN L&I record — NOT the entity-level
+   * `registryPhone` above. Showing the entity's number as if it belonged to
+   * this brand was a real live-review bug (2026-07-23): "Rescue Rooter" and
+   * its parent entity "Blue Flame" have two different phone numbers on file. */
+  matchedBrandPhone: string | null;
   localities: string[];
   roleRecords: number | null;
 }
@@ -97,10 +112,23 @@ function ruleMix(rows: ReviewRow[]): string {
 
 function Evidence({ e }: { e: EvidenceView }) {
   const lines: string[] = [];
-  if (e.nameSimilarity !== null) lines.push(`name ${e.nameSimilarity.toFixed(2)}`);
+  // Name similarity is diffed against matchedRegistryName when the match came
+  // through a DBA/brand — showing WHICH name it's really comparing against, so
+  // "0.00" reads as "compared to a different name" instead of "weak match".
+  if (e.nameSimilarity !== null) {
+    const vs = e.matchedRegistryName ? ` (vs "${e.matchedRegistryName}")` : "";
+    lines.push(`name ${e.nameSimilarity.toFixed(2)}${vs}`);
+  }
+  if (e.matchedBrandName) {
+    const lic = e.matchedBrandLicence ? ` · licence ${e.matchedBrandLicence}` : "";
+    lines.push(`brand "${e.matchedBrandName}"${lic}`);
+  }
+  // Brand phone and entity phone are DIFFERENT numbers on a multi-brand
+  // entity — never merge these into one line.
+  if (e.matchedBrandPhone) lines.push(`brand phone ${e.matchedBrandPhone}`);
   if (e.registryPhone) {
     const org = e.orgPhones[0] ? `${e.orgPhones[0]} ` : "";
-    lines.push(`phone ${org}vs L&I ${e.registryPhone} ${e.phoneAgrees ? "✓" : "✗"}`);
+    lines.push(`entity phone ${org}vs L&I ${e.registryPhone} ${e.phoneAgrees ? "✓" : "✗"}`);
   }
   if (e.registryGooglePhone) lines.push(`google phone ${e.registryGooglePhone}`);
   if (e.registryAddress) {

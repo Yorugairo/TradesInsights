@@ -152,7 +152,13 @@ export default async function RegistryReviewPage({
 function describe(o: Observation): string {
   const p = o.payload;
   if (o.observationType === "binding_name_match") {
-    return `Bind "${String(p["org_name"] ?? "")}" → registry "${String(p["registry_name"] ?? "")}" (${String(p["registry_city"] ?? "?")})`;
+    // When the match landed on a DBA/brand rather than the entity's canonical
+    // name, say so up front — "→ registry Fischer Services" alone hid that the
+    // actual match was "2 Sons Plumbing", a name the reviewer never sees
+    // otherwise unless they open the evidence line.
+    const brand = p["matched_brand_name"] ?? p["matched_registry_name"];
+    const via = brand ? ` (as "${String(brand)}")` : "";
+    return `Bind "${String(p["org_name"] ?? "")}" → registry "${String(p["registry_name"] ?? "")}"${via} (${String(p["registry_city"] ?? "?")})`;
   }
   if (o.observationType === "phone_adoption") {
     return `Adopt L&I phone ${String(p["phone"] ?? "")} for ${o.organizationName}`;
@@ -182,6 +188,16 @@ function extractEvidence(o: Observation): EvidenceView | null {
     orgDomains: strArr(p["domain_evidence"]),
     registryRootDomain: strOrNull(p["registry_root_domain"]),
     matchedAlias: strOrNull(p["matched_alias"]),
+    // Which registry-side NAME actually matched (differs from registry_name
+    // whenever the hit came through a DBA/brand, not the canonical), and which
+    // BRAND — with the brand's OWN licence and OWN phone, never the entity's.
+    // Surfacing these is the fix for two live-review findings (2026-07-23):
+    // name_similarity silently comparing against the wrong name, and a
+    // sibling brand's phone displaying as if it were the matched brand's own.
+    matchedRegistryName: strOrNull(p["matched_registry_name"]),
+    matchedBrandName: strOrNull(p["matched_brand_name"]),
+    matchedBrandLicence: strOrNull(p["matched_brand_licence"]),
+    matchedBrandPhone: strOrNull(p["matched_brand_phone"]),
     localities: strArr(p["org_localities"]),
     roleRecords: numOrNull(p["role_records"]),
   };

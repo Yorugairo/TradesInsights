@@ -938,18 +938,35 @@ describe("registry-side DBA aliases (contract column `aliases`) as match keys", 
         contractor_registration = NULL, ubi = NULL WHERE id = ${aOrgId}`);
 
     // The entity holds THREE licences; the org matched the "Ridgeline" brand.
+    // Phones are distinct per brand — the fixture for the name-similarity /
+    // brand-phone display fix below reuses this exact shape.
     const multiBrand = dbaRow({
+      phone: "2535551000", // entity-level (the canonical record's phone)
       contractorNumbers: ["SIBLINGA111", "RIDGELINEB222", "SIBLINGC333"],
       brands: [
-        { name: `Gene Johnsn Plb Htg ${ARUN}`, licence: "SIBLINGA111", isCanonical: true },
-        { name: `Ridgeline Exteriors ${ARUN}`, licence: "RIDGELINEB222", isCanonical: false },
-        { name: `Other Sibling ${ARUN}`, licence: "SIBLINGC333", isCanonical: false },
+        { name: `Gene Johnsn Plb Htg ${ARUN}`, licence: "SIBLINGA111", phone: "2535551000", isCanonical: true },
+        { name: `Ridgeline Exteriors ${ARUN}`, licence: "RIDGELINEB222", phone: "2535552000", isCanonical: false },
+        { name: `Other Sibling ${ARUN}`, licence: "SIBLINGC333", phone: "2535553000", isCanonical: false },
       ],
     });
     await generateRegistryObservations(adb, [multiBrand]);
     const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
     const bind = pending.find((o) => o.organizationId === aOrgId)!;
     expect(bind.payload["matched_brand_licence"]).toBe("RIDGELINEB222");
+
+    // The display-layer fix (2026-07-23, "Rescue Rooter" bug): the org's
+    // canonical name IS the matched brand's name verbatim (`RIDGELINE
+    // EXTERIORS ${ARUN}` vs `Ridgeline Exteriors ${ARUN}`), so similarity
+    // against the CORRECT comparison is 1 — but against the entity's
+    // canonical ("Gene Johnsn Plb Htg", zero token overlap) it would be ~0.
+    // This is the exact shape of the live bug: a near-perfect match reading
+    // as near-zero because the payload always diffed against the wrong name.
+    expect(bind.payload["name_similarity"]).toBe(1);
+    expect(bind.payload["matched_registry_name"]).toBe(`Ridgeline Exteriors ${ARUN}`);
+    // The brand's OWN phone — distinct from the entity-level `registry_phone`
+    // (the canonical record's number), never conflated with a sibling's.
+    expect(bind.payload["matched_brand_phone"]).toBe("2535552000");
+    expect(bind.payload["registry_phone"]).toBe("2535551000");
 
     await decideRegistryObservation(adb, bind.id, "accept", { decidedBy: "test:brand" });
 

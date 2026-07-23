@@ -395,6 +395,47 @@ export interface GenerateSummary {
   byRule: Record<string, number>;
 }
 
+/**
+ * Resolve the registry-side NAME STRING that actually produced a name-key
+ * match, so `name_similarity` — and the reviewer-facing "vs" comparison —
+ * reflects what was really matched instead of always the entity's canonical
+ * name.
+ *
+ * Bug this closes (found in live review, 2026-07-23): a match reached through
+ * a DBA/brand still always diffed the org against `hit.canonicalName`. "2 SONS
+ * PLUMBING LLC" matched the alias "2 Sons Plumbing" (near-identical) but the
+ * entity's canonical is "Fischer Services" (zero overlap) — the ONLY name ever
+ * shown to a reviewer — so a near-perfect match displayed as `name_similarity:
+ * 0`, reading as weak evidence when the underlying bind was exact
+ * (`trustComponents.name` was already correctly 1; this is a display-layer fix
+ * only, the trust score and tier were never wrong).
+ *
+ * `key` must be the EFFECTIVE key that produced the hit — the org's own
+ * canonical key for `binding_name_exact`/`binding_name_phone` (matched via
+ * `byNameKey`, which holds both the registry canonical and its aliases), or
+ * the org's alias key for `binding_alias_exact`. Other rules (phone/address/
+ * domain match) are not name-keyed — callers should skip this and keep
+ * comparing to canonical, which is what those rules actually did.
+ *
+ * Resolution order: exact canonical match (cheap, common) → the brand
+ * attribution already computed for this hit (fast path) → a linear scan of
+ * `hit.aliases` for a string sharing the key (covers rollout skew where the
+ * contract has `aliases` but not yet `brands`) → canonical as a last resort so
+ * an attribution gap never throws, only degrades to the pre-fix behavior.
+ */
+export function resolveMatchedRegistryName(
+  hit: RegistryIdentityRow,
+  key: string,
+  matchedBrand: RegistryBrand | null,
+): string {
+  if (hit.canonicalName && crossNameKey(hit.canonicalName) === key) return hit.canonicalName;
+  if (matchedBrand) return matchedBrand.name;
+  for (const alias of hit.aliases ?? []) {
+    if (typeof alias === "string" && crossNameKey(alias) === key) return alias;
+  }
+  return hit.canonicalName ?? "";
+}
+
 interface PendingInsert {
   observationType: ObservationType;
   organizationId: string;
@@ -704,11 +745,37 @@ export async function generateRegistryObservations(
     }
     if (!hit || !ruleKey) continue;
 
-    // Which operating brand did this match land on? Only a NAME-keyed hit can
-    // say: a phone/address/domain hit identifies the enterprise, not the brand,
-    // and is left null rather than defaulting to the canonical (which would
-    // stamp the wrong licence and fuse brands).
-    const matchedBrand = brandByEntityKey.get(hit.entityId)?.get(key) ?? null;
+    // The EFFECTIVE key that produced this match. binding_name_exact/
+    // binding_name_phone matched via `key` (byNameKey, which holds the
+    // registry canonical AND its aliases); binding_alias_exact matched via the
+    // ORG'S OWN alias key (`matchedAlias`) — NOT `key`, which is the org's
+    // canonical and (by construction of the alias_exact branch above) never
+    // matched anything on this entity. Every other rule (phone/address/domain
+    // match) is a similarity match, not an exact-key one, so it has no single
+    // "effective key" — left null, which correctly disables brand attribution
+    // for those rules (a phone/address hit identifies the enterprise, not a
+    // specific brand within it).
+    const effectiveMatchKey =
+      ruleKey === "binding_alias_exact"
+        ? matchedAlias
+        : ruleKey === "binding_name_exact" || ruleKey === "binding_name_phone"
+          ? key
+          : null;
+
+    // Which operating brand did this match land on? Looked up by the EFFECTIVE
+    // key (not always `key` — see above), so an alias_exact match can find its
+    // brand too, not just the direct byNameKey path.
+    const matchedBrand = effectiveMatchKey
+      ? (brandByEntityKey.get(hit.entityId)?.get(effectiveMatchKey) ?? null)
+      : null;
+    // The registry-side NAME STRING that actually matched — what
+    // name_similarity below compares against, instead of always the entity's
+    // canonical name (see resolveMatchedRegistryName doc for the bug this
+    // closes). Non-name-keyed rules keep comparing to canonical, matching
+    // their pre-existing (correct) behavior.
+    const matchedRegistryName = effectiveMatchKey
+      ? resolveMatchedRegistryName(hit, effectiveMatchKey, matchedBrand)
+      : (hit.canonicalName ?? "");
     const locality = hit.cityToken && org.localities.some((l) => l.includes(hit.cityToken!)) ? 1 : 0.3;
     const components: TrustComponents = {
       name: nameComponent,
@@ -750,7 +817,18 @@ export async function generateRegistryObservations(
       payload: {
         org_name: org.canonical_name,
         registry_name: hit.canonicalName,
-        name_similarity: nameSimilarity(org.canonical_name, hit.canonicalName ?? ""),
+        // Compared against the name that ACTUALLY matched (matchedRegistryName)
+        // — not always the canonical. See resolveMatchedRegistryName's doc for
+        // the bug this closes: a near-perfect alias/brand match used to display
+        // as a near-zero similarity because it was always diffed against the
+        // entity's unrelated canonical name.
+        name_similarity: nameSimilarity(org.canonical_name, matchedRegistryName),
+        // Only populated when the matched name differs from the canonical —
+        // null means "matched the canonical itself, nothing extra to show".
+        matched_registry_name:
+          matchedRegistryName.length > 0 && matchedRegistryName !== (hit.canonicalName ?? "")
+            ? matchedRegistryName
+            : null,
         phone_evidence: phones.size > 0 ? [...phones] : [],
         registry_phone: hit.phone,
         phone_agrees: hit.phone !== null && phones.has(hit.phone),
@@ -773,6 +851,12 @@ export async function generateRegistryObservations(
         // what the accept stamps instead of the entity's whole licence array.
         matched_brand_name: matchedBrand?.name ?? null,
         matched_brand_licence: matchedBrand?.licence ?? null,
+        // The BRAND's own phone (its own L&I record) — distinct from
+        // `registry_phone` above, which is always the ENTITY's primary-record
+        // phone. Conflating the two is exactly the Rescue Rooter bug: a
+        // reviewer saw the parent's number displayed for a sibling brand that
+        // has its own, different number on file.
+        matched_brand_phone: matchedBrand?.phone ?? null,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
         role_records: org.record_count,

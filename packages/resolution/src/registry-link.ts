@@ -84,6 +84,14 @@ export interface RegistryBrand {
   /** The brand's own contractor licence. Null when L&I published none — unknown,
    * never inferred from a sibling brand. */
   licence: string | null;
+  /** The brand's OWN phone, from ITS OWN L&I record — NOT the entity's primary
+   * phone (`RegistryIdentityRow.phone`). A multi-brand entity's canonical
+   * record's phone belongs to that one brand, not the others; showing it as
+   * evidence for a different brand is exactly the bug this field fixes (a
+   * reviewer saw the parent's number displayed for a sibling brand that has
+   * its own, different number on file). Null when that record carries none —
+   * unknown, never inferred from a sibling. */
+  phone: string | null;
   /** True for the entity's canonical name; false for a DBA. */
   isCanonical: boolean;
 }
@@ -296,6 +304,7 @@ function parseBrands(raw: unknown): RegistryBrand[] | null {
     brands.push({
       name,
       licence: typeof rec["licence"] === "string" && rec["licence"].length > 0 ? rec["licence"] : null,
+      phone: typeof rec["phone"] === "string" && rec["phone"].length > 0 ? rec["phone"] : null,
       isCanonical: rec["is_canonical"] === true,
     });
   }

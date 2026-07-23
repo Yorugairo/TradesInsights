@@ -14,11 +14,12 @@ import {
   matchOrgByAddress,
   PHONE_MATCH_MIN_NAME_SIMILARITY,
   registryCorroborationBonus,
+  resolveMatchedRegistryName,
   TRUST_WEIGHTS,
   type TrustComponents,
 } from "./registry-observations.js";
 import { addressMatchKey } from "./identifiers.js";
-import type { RegistryIdentityRow } from "./registry-link.js";
+import type { RegistryBrand, RegistryIdentityRow } from "./registry-link.js";
 
 function regRow(over: Partial<RegistryIdentityRow>): RegistryIdentityRow {
   return {
@@ -398,5 +399,50 @@ describe("root-domain index (binding_domain_match, Phase 4 enablement)", () => {
     expect(idx.get("shared-brand.com")).toBeNull();
     const fb = regRow({ entityId: "fb", rootDomain: "facebook.com/somebiz" });
     expect(buildRegistryDomainIndex([fb]).size).toBe(0);
+  });
+});
+
+describe("resolveMatchedRegistryName (display-fix, 2026-07-23 'Rescue Rooter' bug)", () => {
+  const brand = (over: Partial<RegistryBrand> = {}): RegistryBrand => ({
+    name: "Rescue Rooter", licence: "RESCUR783BO", phone: null, isCanonical: false, ...over,
+  });
+
+  it("returns the canonical name when the key matched the canonical itself", () => {
+    const hit = regRow({ canonicalName: "Blue Flame Htg Air & Electric" });
+    const key = crossNameKey("Blue Flame Htg Air & Electric");
+    expect(resolveMatchedRegistryName(hit, key, null)).toBe("Blue Flame Htg Air & Electric");
+  });
+
+  it("returns the MATCHED BRAND's name, not the canonical, when the key matched a brand", () => {
+    // This is the exact live bug: canonical is "Blue Flame…", the match came
+    // through the brand "Rescue Rooter" — the two share ZERO name tokens.
+    // Before this fix, name_similarity was always diffed against canonical.
+    const hit = regRow({ canonicalName: "Blue Flame Htg Air & Electric" });
+    const key = crossNameKey("Rescue Rooter");
+    expect(resolveMatchedRegistryName(hit, key, brand())).toBe("Rescue Rooter");
+  });
+
+  it("falls back to scanning hit.aliases when no brand attribution is available (rollout skew)", () => {
+    // A contract that has `aliases` but not yet `brands` (older deploy) — the
+    // gate must still find the right name via the alias array, not silently
+    // regress to comparing against canonical.
+    const hit = regRow({
+      canonicalName: "Blue Flame Htg Air & Electric",
+      aliases: ["Rescue Rooter", "Some Other Alias"],
+    });
+    const key = crossNameKey("Rescue Rooter");
+    expect(resolveMatchedRegistryName(hit, key, null)).toBe("Rescue Rooter");
+  });
+
+  it("falls back to canonical (old behavior) when nothing attributes the key — never throws", () => {
+    const hit = regRow({ canonicalName: "Blue Flame Htg Air & Electric" });
+    expect(resolveMatchedRegistryName(hit, "SOME UNRELATED KEY", null)).toBe(
+      "Blue Flame Htg Air & Electric",
+    );
+  });
+
+  it("handles a null canonical name without throwing", () => {
+    const hit = regRow({ canonicalName: null });
+    expect(resolveMatchedRegistryName(hit, "ANY KEY", null)).toBe("");
   });
 });
