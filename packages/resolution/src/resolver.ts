@@ -13,6 +13,7 @@ import {
 } from "@otn/db";
 import { NormalizedSourceRecordSchema, type NormalizedSourceRecord } from "@otn/domain";
 import {
+  crossNameKey,
   extractFeatures,
   laterStage,
   normalizeAddress,
@@ -24,6 +25,7 @@ import { evaluateFuzzy } from "./fuzzy.js";
 import {
   findBoundOrganizationByStrongKey,
   findOrganizationBySourceEntityId,
+  persistOrganizationAlias,
   persistOrganizationIdentifiers,
 } from "./identifiers.js";
 
@@ -52,6 +54,11 @@ interface RecordRow {
   normalized: NormalizedSourceRecord;
   rawFields: Record<string, unknown>;
   firstSeenAt: Date;
+  /** The SOURCE this record came from (`sources.id`, not `source_records.id`) —
+   * provenance for captured organization aliases. Optional because the alias FK
+   * is nullable and older call sites (review re-resolution, tests) don't carry
+   * it; absent means the alias is stored with null provenance, never a guess. */
+  sourceId?: string | null;
 }
 
 /** Deterministic record→event mapping (spec §9) for first observation. */
@@ -105,6 +112,34 @@ async function registerExternalIds(
   await db.insert(projectExternalIds).values(rows).onConflictDoNothing();
 }
 
+/**
+ * Record the name THIS record published for an org that was resolved by a
+ * non-name key (source entity id / strong key) — the collapse cases, where the
+ * stored `canonical_name` can legitimately differ from the incoming name.
+ *
+ * That difference is exactly what the binding matcher needs: before this, the
+ * loser of a collapse was discarded and only the canonical was ever matched
+ * against the registry, so an org whose canonical drifted from its L&I
+ * registration could never bind. Skips names that fold to the SAME cross-system
+ * key as the canonical (an alias that matches nothing new is noise).
+ */
+async function captureNameVariant(
+  db: Db,
+  organizationId: string,
+  rawName: string,
+  sourceId: string | null,
+): Promise<void> {
+  const incoming = crossNameKey(rawName);
+  if (!incoming) return;
+  const [existing] = await db
+    .select({ canonicalName: organizations.canonicalName })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  if (!existing || incoming === crossNameKey(existing.canonicalName)) return;
+  await persistOrganizationAlias(db, organizationId, rawName, sourceId);
+}
+
 async function upsertOrganizationsAndRoles(
   db: Db,
   projectId: string,
@@ -124,6 +159,11 @@ async function upsertOrganizationsAndRoles(
       orgId =
         (await findBoundOrganizationByStrongKey(db, org.ubi, org.contractorLicense)) ?? undefined;
     }
+    // Both tiers above reuse an org resolved by a key OTHER than the name, so
+    // the name this record carries may be a variant worth keeping. The two
+    // branches below can't produce one: a name match means the names already
+    // agree, and an insert makes this name the canonical.
+    const collapsedByNonNameKey = orgId !== undefined;
     if (!orgId) {
       const [existing] = await db
         .select({ id: organizations.id })
@@ -145,6 +185,9 @@ async function upsertOrganizationsAndRoles(
     // the registry link.
     if (org.phone || org.ubi || org.contractorLicense || org.address || org.sourceEntityId || org.website) {
       await persistOrganizationIdentifiers(db, orgId, row.id, org);
+    }
+    if (collapsedByNonNameKey) {
+      await captureNameVariant(db, orgId, org.name, row.sourceId ?? null);
     }
     const [existingRole] = await db
       .select({ projectId: projectRoles.projectId })
@@ -536,6 +579,7 @@ export async function resolveUnresolved(
       normalizedJson: sourceRecords.normalizedJson,
       rawFieldsJson: sourceRecords.rawFieldsJson,
       firstSeenAt: sourceRecords.firstSeenAt,
+      sourceId: sourceRecords.sourceId,
       sourceKey: sources.key,
     })
     .from(sourceRecords)
@@ -561,6 +605,7 @@ export async function resolveUnresolved(
         normalized: validated,
         rawFields: (r.rawFieldsJson ?? {}) as Record<string, unknown>,
         firstSeenAt: r.firstSeenAt,
+        sourceId: r.sourceId,
       });
       summary[outcome.outcome === "merged" ? "merged" : outcome.outcome === "created" ? "created" : outcome.outcome === "review" ? "review" : "skipped"]++;
     } catch (err) {
@@ -622,6 +667,7 @@ export async function applyRecordUpdates(
       normalizedJson: sourceRecords.normalizedJson,
       rawFieldsJson: sourceRecords.rawFieldsJson,
       lastSeenAt: sourceRecords.lastSeenAt,
+      sourceId: sourceRecords.sourceId,
       fingerprint: sourceRecords.normalizedFingerprint,
     })
     .from(recordResolutions)
@@ -648,6 +694,7 @@ export async function applyRecordUpdates(
         rawFields: (r.rawFieldsJson ?? {}) as Record<string, unknown>,
         // Observation time of THIS content version (when the update was fetched).
         firstSeenAt: r.lastSeenAt,
+        sourceId: r.sourceId,
       };
       const [project] = await db
         .select()

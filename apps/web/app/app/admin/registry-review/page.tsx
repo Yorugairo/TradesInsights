@@ -181,6 +181,7 @@ function extractEvidence(o: Observation): EvidenceView | null {
     sharedBucketSize: numOrNull(p["shared_address_bucket_size"]),
     orgDomains: strArr(p["domain_evidence"]),
     registryRootDomain: strOrNull(p["registry_root_domain"]),
+    matchedAlias: strOrNull(p["matched_alias"]),
     localities: strArr(p["org_localities"]),
     roleRecords: numOrNull(p["role_records"]),
   };

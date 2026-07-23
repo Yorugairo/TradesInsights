@@ -77,6 +77,7 @@ async function loadRecordRow(db: Db, sourceRecordId: string) {
     normalized: NormalizedSourceRecordSchema.parse(rec.normalizedJson),
     rawFields: (rec.rawFieldsJson ?? {}) as Record<string, unknown>,
     firstSeenAt: rec.firstSeenAt,
+    sourceId: rec.sourceId,
   };
 }
 

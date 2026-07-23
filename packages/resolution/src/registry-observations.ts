@@ -36,12 +36,13 @@ import {
   addressMatchKeyCandidates,
   backfeedAcceptedIdentity,
   loadOrganizationAddresses,
+  loadOrganizationAliases,
   loadOrganizationDomains,
   loadOrganizationPhones,
   normalizePhoneUS,
   normalizeRootDomain,
 } from "./identifiers.js";
-import { nameSimilarity, orgNameKey } from "./normalize.js";
+import { crossNameKey, nameSimilarity } from "./normalize.js";
 import { identitySnapshot, type RegistryIdentityRow } from "./registry-link.js";
 import {
   buildTradeMatcher,
@@ -196,17 +197,12 @@ export function registryCorroborationBonus(recordCount: number | null | undefine
 }
 
 /**
- * Cross-system name key: both the Insights org name and the registry
- * canonical name fold through this before comparison, so neither side's
- * normalization quirks can break equality (Insights orgNameKey strips legal
- * suffixes/noise/address tails; the registry folds & → AND and punctuation).
+ * Cross-system name key — DEFINED IN `normalize.ts`, re-exported here because
+ * this module has been its import site since it was introduced. It moved so the
+ * alias lane (`loadOrganizationAliases` in identifiers.ts) can fold through the
+ * same key without closing an import cycle.
  */
-export function crossNameKey(raw: string): string {
-  return orgNameKey(raw.replace(/&/g, " AND "))
-    .replace(/[^A-Z0-9 ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+export { crossNameKey } from "./normalize.js";
 
 /**
  * Registry address index: candidate match keys (primary + city/unit-noise
@@ -469,6 +465,10 @@ export async function generateRegistryObservations(
   const byAddress = buildRegistryAddressIndex(registryRows);
   const orgAddresses = await loadOrganizationAddresses(db);
   const orgDomains = await loadOrganizationDomains(db);
+  // Name variants each org was published under (organization_aliases, migration
+  // 0031) — already folded to cross-system keys, so they index straight into
+  // `byNameKey` exactly as a canonical name does.
+  const orgAliases = await loadOrganizationAliases(db);
 
   // Trade matcher (hoisted): the SHARED registry vocabulary drives both the
   // strict-bind trade gate in the binding loop and the trade_export section below.
@@ -620,6 +620,37 @@ export async function generateRegistryObservations(
         matchedDomain = best.domain;
       }
     }
+    // Alias match (migration 0031): a name this org was ALSO published under.
+    // An alias is a name, so it earns the name path's gates verbatim — ≥2
+    // distinctive tokens and a UNIQUE registry hit — and phone evidence
+    // corroborates or contradicts exactly as it does for the canonical. Two
+    // aliases pointing at DIFFERENT entities is the same ambiguity a shared name
+    // key is, and is dropped. Review-only: `evaluateStrictBind` admits just the
+    // canonical-name rules, so an alias match can never auto-bind (owner decides
+    // that after seeing real matches).
+    let matchedAlias: string | null = null;
+    if (!hit) {
+      const aliasKeys = orgAliases.get(org.id);
+      if (aliasKeys && aliasKeys.size > 0) {
+        const byEntityHit = new Map<string, { row: RegistryIdentityRow; alias: string }>();
+        for (const aliasKey of aliasKeys) {
+          if (aliasKey === key || aliasKey.split(" ").length < 2) continue;
+          const rows = byNameKey.get(aliasKey);
+          if (!rows || rows.length !== 1) continue;
+          const row = rows[0]!;
+          if (!byEntityHit.has(row.entityId)) byEntityHit.set(row.entityId, { row, alias: aliasKey });
+        }
+        const only = byEntityHit.size === 1 ? [...byEntityHit.values()][0] : undefined;
+        if (only) {
+          hit = only.row;
+          nameComponent = 1;
+          const phoneAgrees = only.row.phone !== null && phones.has(only.row.phone);
+          identifier = phones.size === 0 ? 0.5 : phoneAgrees ? 1 : 0;
+          ruleKey = "binding_alias_exact";
+          matchedAlias = only.alias;
+        }
+      }
+    }
     if (!hit || !ruleKey) continue;
 
     const locality = hit.cityToken && org.localities.some((l) => l.includes(hit.cityToken!)) ? 1 : 0.3;
@@ -671,6 +702,9 @@ export async function generateRegistryObservations(
         registry_google_phone: matchedGooglePhone,
         domain_evidence: domains.size > 0 ? [...domains] : [],
         registry_root_domain: matchedDomain,
+        // The org name-variant that matched (migration 0031); null for every
+        // other rule, so a reviewer always sees WHICH name earned an alias hit.
+        matched_alias: matchedAlias,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
         role_records: org.record_count,
@@ -1040,8 +1074,14 @@ export function classifyReviewTier(o: {
   }
 
   const c = o.trustComponents;
+  // An alias hit is an exact name hit on a name the org was also published
+  // under — same gates, same evidence quality, so it tiers the same way. (It
+  // still can't auto-bind: that gate is `evaluateStrictBind`, not this.)
   const nameExact =
-    (o.ruleKey === "binding_name_exact" || o.ruleKey === "binding_name_phone") && (c["name"] ?? 0) >= 1;
+    (o.ruleKey === "binding_name_exact" ||
+      o.ruleKey === "binding_name_phone" ||
+      o.ruleKey === "binding_alias_exact") &&
+    (c["name"] ?? 0) >= 1;
   const sameCity = (c["locality"] ?? 0) >= 1;
   const phoneAgrees =
     o.payload["phone_agrees"] === true ||

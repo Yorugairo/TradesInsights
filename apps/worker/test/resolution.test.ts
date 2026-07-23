@@ -20,7 +20,10 @@ import {
 } from "@otn/db";
 import type { NormalizedSourceRecord } from "@otn/domain";
 import {
+  crossNameKey,
   findBoundOrganizationByStrongKey,
+  loadOrganizationAliases,
+  persistOrganizationAlias,
   persistOrganizationIdentifiers,
   RESOLVER_VERSION,
   resolveRecord,
@@ -165,6 +168,112 @@ describe("WS-B.4 — findBoundOrganizationByStrongKey (registry_ref dedup key)",
       );
       await db.delete(organizations).where(inArray(organizations.id, [bound!.id, unbound!.id]));
       await db.execute(sql`DELETE FROM source_records WHERE id = ${sr.id}`);
+    }
+  });
+});
+
+describe("organization alias capture (migration 0031 — the name arm of the identity graph)", () => {
+  it("captures a genuine name variant when collapsing onto a bound org, and skips a same-key restatement", async () => {
+    const ubi = `9${RUN.replace(/[^0-9]/g, "0")}`;
+    const boundRef = `a11a5000-0000-0000-0000-${RUN.toLowerCase().padEnd(12, "0").slice(0, 12)}`;
+    // recordType 'inspection' keeps these fixtures out of the provenance test's
+    // record census below, which counts the four project-forming types.
+    const seed = await insertRecord(
+      record({ externalId: `ALSEED-${RUN}`, recordType: "inspection" }),
+      {},
+      new Date("2026-07-03T00:00:00Z"),
+    );
+    const [bound] = await db
+      .insert(organizations)
+      .values({ canonicalName: `SOUTHWEST PLUMBING ${RUN}`, registryRef: boundRef })
+      .returning({ id: organizations.id });
+    const orgId = bound!.id;
+    try {
+      await persistOrganizationIdentifiers(db, orgId, seed.id, { ubi });
+
+      // A later record names the SAME entity (same UBI) under a different name.
+      // The resolver collapses it onto the bound org — and that discarded name
+      // is exactly what the binding matcher needs as a key.
+      const variant = await insertRecord(
+        record({
+          externalId: `ALVAR-${RUN}`,
+          recordType: "inspection",
+          organizations: [
+            {
+              name: `SW Plumbing & Heating ${RUN}`,
+              role: "primary_contractor",
+              ubi,
+              evidenceText: `Contractor: SW Plumbing & Heating ${RUN} (UBI ${ubi})`,
+            },
+          ],
+        }),
+        {},
+        new Date("2026-07-04T00:00:00Z"),
+      );
+      await resolveTracked({ ...variant, sourceId });
+
+      const after = await db.execute(
+        sql`SELECT alias, source_id FROM organization_aliases WHERE organization_id = ${orgId}`,
+      );
+      expect(after.rows).toHaveLength(1);
+      expect((after.rows[0] as { alias: string }).alias).toBe(`SW Plumbing & Heating ${RUN}`);
+      // Provenance travels with the alias — the source that published the name.
+      expect((after.rows[0] as { source_id: string | null }).source_id).toBe(sourceId);
+
+      // A name that folds to the SAME cross-system key is not a new match key
+      // (legal suffixes are stripped), so it must not be stored as noise.
+      const restated = await insertRecord(
+        record({
+          externalId: `ALSAME-${RUN}`,
+          recordType: "inspection",
+          organizations: [
+            {
+              name: `Southwest Plumbing ${RUN} LLC`,
+              role: "primary_contractor",
+              ubi,
+              evidenceText: `Contractor: Southwest Plumbing ${RUN} LLC (UBI ${ubi})`,
+            },
+          ],
+        }),
+        {},
+        new Date("2026-07-05T00:00:00Z"),
+      );
+      await resolveTracked({ ...restated, sourceId });
+      const stillOne = await db.execute(
+        sql`SELECT count(*)::int AS n FROM organization_aliases WHERE organization_id = ${orgId}`,
+      );
+      expect((stillOne.rows[0] as { n: number }).n).toBe(1);
+
+      // Idempotent: re-persisting a known alias reports no new row.
+      expect(
+        await persistOrganizationAlias(db, orgId, `SW Plumbing & Heating ${RUN}`, sourceId),
+      ).toBe(false);
+
+      // Loaded aliases are folded to the cross-system match key the registry
+      // name index is built on, so they can be looked up directly.
+      const loaded = await loadOrganizationAliases(db);
+      expect(loaded.get(orgId)).toEqual(new Set([crossNameKey(`SW Plumbing & Heating ${RUN}`)]));
+    } finally {
+      await db.execute(sql`DELETE FROM organization_aliases WHERE organization_id = ${orgId}`);
+      await db.execute(sql`DELETE FROM organization_identifiers WHERE organization_id = ${orgId}`);
+      await db.execute(sql`DELETE FROM project_roles WHERE organization_id = ${orgId}`);
+      await db.delete(organizations).where(eq(organizations.id, orgId));
+    }
+  });
+
+  it("stores nothing for an empty or whitespace-only alias", async () => {
+    const [org] = await db
+      .insert(organizations)
+      .values({ canonicalName: `BLANK ALIAS ${RUN}` })
+      .returning({ id: organizations.id });
+    try {
+      expect(await persistOrganizationAlias(db, org!.id, "   ", null)).toBe(false);
+      const res = await db.execute(
+        sql`SELECT count(*)::int AS n FROM organization_aliases WHERE organization_id = ${org!.id}`,
+      );
+      expect((res.rows[0] as { n: number }).n).toBe(0);
+    } finally {
+      await db.delete(organizations).where(eq(organizations.id, org!.id));
     }
   });
 });

@@ -190,6 +190,24 @@ export function orgNameKey(raw: string): string {
   return base.length > 0 ? base : normalizeOrgName(raw).canonical;
 }
 
+/**
+ * Cross-system name key: both the Insights org name and the registry
+ * canonical name fold through this before comparison, so neither side's
+ * normalization quirks can break equality (Insights orgNameKey strips legal
+ * suffixes/noise/address tails; the registry folds & → AND and punctuation).
+ *
+ * Lives here rather than in registry-observations.ts because the alias lane
+ * (identifiers.ts `loadOrganizationAliases`) needs the SAME key and importing it
+ * from registry-observations would close an import cycle
+ * (registry-observations → identifiers → registry-observations).
+ */
+export function crossNameKey(raw: string): string {
+  return orgNameKey(raw.replace(/&/g, " AND "))
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // ── Name compatibility ───────────────────────────────────────────────────────
 
 /** Project names too generic to support a match on their own (spec §10). */

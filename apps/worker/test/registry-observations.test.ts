@@ -13,10 +13,13 @@ import type pg from "pg";
 import { accountProfiles, organizations, projects, rawArtifacts, sourceRecords, sourceRuns, type Db } from "@otn/db";
 import {
   AUTO_ACCEPT_MIN_DECISIONS,
+  classifyReviewTier,
+  crossNameKey,
   decideRegistryObservation,
   exportRegistryObservations,
   generateRegistryObservations,
   listRegistryObservations,
+  persistOrganizationAlias,
   persistOrganizationIdentifiers,
   type RegistryIdentityRow,
   type TradeTaxonomyRow,
@@ -680,5 +683,124 @@ describe("strict auto-bind tier (exact name + same city + shared trade)", () => 
     expect(obs!.status).toBe("rejected"); // untouched
     const [org] = (await sdb.execute(sql`SELECT registry_ref FROM organizations WHERE id = ${sOrgId}`)).rows as { registry_ref: string | null }[];
     expect(org!.registry_ref).toBeNull(); // still unbound
+  });
+});
+
+describe("binding_alias_exact — matching on a name the org was ALSO published under", () => {
+  const ARUN = randomUUID().slice(0, 8).toUpperCase();
+  let adb: Db;
+  let apool: pg.Pool;
+  let aAccountId: string;
+  let aOrgId: string;
+  let aProjectId: string;
+  let aRecId: string;
+  let aArtId: string;
+  let aRunId: string;
+
+  const A_ENTITY = randomUUID();
+  // The org's canonical name matches NOTHING here; only its alias does.
+  const A_ROWS: RegistryIdentityRow[] = [
+    {
+      entityId: A_ENTITY,
+      ubi: "602777333",
+      contractorNumbers: [`ALIAS${ARUN.slice(0, 6)}`],
+      canonicalName: `Cascade Ridge Roofing ${ARUN} LLC`,
+      canonicalNameNormalized: `CASCADE RIDGE ROOFING ${ARUN}`,
+      phone: null,
+      cityToken: "tacoma",
+      stateCode: "WA",
+      registeredAddress: null,
+      registeredPostalCode: null,
+    },
+  ];
+  // Two entities sharing one name key — the ambiguity guard.
+  const A_AMBIGUOUS: RegistryIdentityRow[] = [
+    ...A_ROWS,
+    { ...A_ROWS[0]!, entityId: randomUUID(), ubi: "602777334" },
+  ];
+
+  beforeAll(async () => {
+    ({ db: adb, pool: apool } = await testDb());
+    const [a] = await adb.insert(accountProfiles).values({
+      key: `test_alias_${ARUN.toLowerCase()}`, name: "alias", active: true,
+      capabilitiesJson: [], territoryJson: {}, deliveryConfigJson: {},
+    }).returning({ id: accountProfiles.id });
+    aAccountId = a!.id;
+
+    const [org] = await adb.insert(organizations).values({
+      canonicalName: `RIDGELINE EXTERIORS ${ARUN}`, status: "active",
+    }).returning({ id: organizations.id });
+    aOrgId = org!.id;
+
+    const [src] = (await adb.execute(sql`SELECT id FROM sources WHERE key = 'fake_source' LIMIT 1`)).rows as { id: string }[];
+    const sourceId = src?.id ?? (await resetSource(adb, "fake_source"));
+    const [run] = await adb.insert(sourceRuns).values({ sourceId, status: "succeeded" }).returning({ id: sourceRuns.id });
+    aRunId = run!.id;
+    const [art] = await adb.insert(rawArtifacts).values({
+      sourceId, sourceRunId: run!.id, canonicalUrl: `https://example.invalid/alias/${ARUN}`,
+      retrievedAt: new Date(), contentType: "text/html", httpStatus: 200,
+      storageKey: `raw/fake_source/alias-${ARUN}`, sha256: ARUN.padEnd(64, "6").toLowerCase(), byteSize: 6,
+      headersJson: {}, parserVersion: "test",
+    }).returning({ id: rawArtifacts.id });
+    aArtId = art!.id;
+    const [rec] = await adb.insert(sourceRecords).values({
+      sourceId, rawArtifactId: art!.id, externalId: `ALIASB-${ARUN}`, recordType: "permit",
+      firstSeenAt: new Date(), lastSeenAt: new Date(), rawFieldsJson: {},
+      normalizedJson: { title: `ALIASB-${ARUN}`, city: "Tacoma", permitType: "Roofing", sourceUrl: "https://example.invalid/p" },
+      normalizedFingerprint: `aliasb-${ARUN}`,
+    }).returning({ id: sourceRecords.id });
+    aRecId = rec!.id;
+    const [p] = await adb.insert(projects).values({
+      canonicalName: `ALIASB-${ARUN}`, permittingJurisdiction: "Tacoma", county: "Pierce",
+      currentStage: "permit_issued", firstSeenAt: new Date(), lastSeenAt: new Date(),
+    }).returning({ id: projects.id });
+    aProjectId = p!.id;
+    await adb.execute(sql`
+      INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
+      VALUES (${aProjectId}, ${aOrgId}, 'primary_contractor', ${aRecId}, true, 1, now(), now())`);
+  });
+
+  afterAll(async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    await adb.execute(sql`DELETE FROM organization_aliases WHERE organization_id = ${aOrgId}`);
+    await adb.execute(sql`DELETE FROM project_roles WHERE organization_id = ${aOrgId}`);
+    await deleteTestProjects(adb, [aProjectId]);
+    await adb.execute(sql`DELETE FROM source_records WHERE id = ${aRecId}`);
+    await adb.execute(sql`DELETE FROM raw_artifacts WHERE id = ${aArtId}`);
+    await adb.execute(sql`DELETE FROM source_runs WHERE id = ${aRunId}`);
+    await adb.execute(sql`DELETE FROM organizations WHERE id = ${aOrgId}`);
+    await adb.execute(sql`DELETE FROM account_profiles WHERE id = ${aAccountId}`);
+    await apool.end();
+  });
+
+  it("produces NO candidate before the alias exists (the canonical matches nothing)", async () => {
+    await generateRegistryObservations(adb, A_ROWS);
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
+  });
+
+  it("matches once the alias is captured — review-only, org stays unbound", async () => {
+    await persistOrganizationAlias(adb, aOrgId, `Cascade Ridge Roofing ${ARUN} LLC`, null);
+    await generateRegistryObservations(adb, A_ROWS);
+
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    const bind = pending.find((o) => o.organizationId === aOrgId);
+    expect(bind).toBeDefined();
+    expect(bind!.ruleKey).toBe("binding_alias_exact");
+    expect(bind!.trustComponents["name"]).toBe(1);
+    expect(bind!.payload["matched_alias"]).toBe(crossNameKey(`Cascade Ridge Roofing ${ARUN} LLC`));
+
+    // Tiers like an exact name + same city, but is NEVER auto-bound.
+    expect(classifyReviewTier(bind!).tier).toBe("tier1");
+    const [org] = (await adb.execute(sql`SELECT registry_ref FROM organizations WHERE id = ${aOrgId}`)).rows as { registry_ref: string | null }[];
+    expect(org!.registry_ref).toBeNull();
+  });
+
+  it("skips an alias that matches MULTIPLE registry entities (same guard as a canonical name)", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    const summary = await generateRegistryObservations(adb, A_AMBIGUOUS);
+    expect(summary.strictAutoBound).toBe(0);
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
   });
 });

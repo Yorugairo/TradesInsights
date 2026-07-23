@@ -297,7 +297,12 @@ export const organizationAliases = pgTable(
     alias: text("alias").notNull(),
     sourceId: uuid("source_id").references(() => sources.id),
   },
-  (t) => [index("organization_aliases_alias_ix").on(t.alias)],
+  (t) => [
+    index("organization_aliases_alias_ix").on(t.alias),
+    // Idempotent alias capture: the resolver re-sees the same name on every
+    // republished record, so writes dedupe here via ON CONFLICT DO NOTHING.
+    uniqueIndex("organization_aliases_org_alias_ux").on(t.organizationId, t.alias),
+  ],
 );
 
 export const projectRoles = pgTable(

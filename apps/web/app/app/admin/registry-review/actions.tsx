@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { REVIEW_TIER_LABELS, type ReviewTier } from "@otn/resolution";
+import type { ReviewTier } from "@otn/resolution";
 import { cell } from "../../../../lib/ui.js";
 
 /**
@@ -26,6 +26,9 @@ export interface EvidenceView {
   sharedBucketSize: number | null;
   orgDomains: string[];
   registryRootDomain: string | null;
+  /** The org name-variant that produced a binding_alias_exact hit (null else) —
+   * the reviewer has to see WHICH name matched, since it isn't the org's own. */
+  matchedAlias: string | null;
   localities: string[];
   roleRecords: number | null;
 }
@@ -44,6 +47,20 @@ export interface ReviewRow {
   evidence: EvidenceView | null;
   components: string;
 }
+
+/**
+ * Tier button labels, restated here rather than imported from `@otn/resolution`.
+ * This is a "use client" component, so a VALUE import from that barrel pulls the
+ * whole server module graph — including `pg` — into the browser bundle and the
+ * build fails on node-only requires. Types are erased at compile time and stay
+ * safe to import; `ReviewRow.tierLabel` carries the server's own label for the
+ * per-row badge, so these two strings are the only duplication.
+ */
+const TIER_BUTTON_LABELS: Record<ReviewTier, string> = {
+  tier1: "High confidence",
+  tier2: "Medium",
+  tier3: "Low · inspect",
+};
 
 /** Tier badge palette (green → amber → gray, highest → lowest). */
 const TIER_STYLE: Record<ReviewTier, { bg: string; fg: string }> = {
@@ -94,6 +111,7 @@ function Evidence({ e }: { e: EvidenceView }) {
     const org = e.orgDomains[0] ? ` (org ${e.orgDomains[0]})` : "";
     lines.push(`domain ${e.registryRootDomain}${org}`);
   }
+  if (e.matchedAlias) lines.push(`matched via alias "${e.matchedAlias}"`);
   if (e.localities.length) lines.push(`in ${e.localities.slice(0, 3).join(", ")}`);
   if (e.roleRecords) lines.push(`${e.roleRecords} role records`);
   return (
@@ -241,7 +259,7 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
           .filter((t) => (tierCounts.get(t) ?? 0) > 0)
           .map((t) => (
             <button key={t} disabled={busy} onClick={() => selectTier(t)} data-testid={`select-${t}`} title={`Select all ${tierCounts.get(t)} ${t} candidates`}>
-              {REVIEW_TIER_LABELS[t]} ({tierCounts.get(t)})
+              {TIER_BUTTON_LABELS[t]} ({tierCounts.get(t)})
             </button>
           ))}
         {progress && <small style={{ color: "#555" }}>{progress}</small>}

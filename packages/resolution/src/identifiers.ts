@@ -9,6 +9,7 @@
  */
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
+import { crossNameKey } from "./normalize.js";
 
 /** Normalize a US phone to bare 10 digits (strip punctuation and a leading 1).
  * A TRAILING extension suffix ("x102", "ext. 5", "#12") is stripped first —
@@ -321,6 +322,60 @@ export async function persistOrganizationIdentifiers(
       WHERE id = ${organizationId} AND contractor_registration IS NULL`);
   }
   return { upserted };
+}
+
+/**
+ * Record a name variant this organization was published under (migration 0031).
+ *
+ * The resolver collapses variants of one company onto a single organization and
+ * keeps only the first-seen name as `canonical_name`; every other name it saw
+ * was previously discarded, which is why the binding matcher could only ever try
+ * the canonical. Storing the variant makes it a match key.
+ *
+ * Stores the RAW string (matching how `organization_identifiers.value_raw`
+ * keeps the source's own text) — normalization happens at load time in
+ * `loadOrganizationAliases`, so a change to the match key never requires
+ * rewriting stored evidence. Idempotent: the same variant arrives again on
+ * every republished record.
+ *
+ * Returns true when a NEW alias row was created (false when already known),
+ * so callers can report honest counts.
+ */
+export async function persistOrganizationAlias(
+  db: Db,
+  organizationId: string,
+  alias: string,
+  sourceId: string | null,
+): Promise<boolean> {
+  const trimmed = alias.trim();
+  if (!trimmed) return false;
+  const res = await db.execute(sql`
+    INSERT INTO organization_aliases (organization_id, alias, source_id)
+    VALUES (${organizationId}, ${trimmed}, ${sourceId})
+    ON CONFLICT (organization_id, alias) DO NOTHING
+    RETURNING organization_id`);
+  return res.rows.length > 0;
+}
+
+/**
+ * Alias match keys per organization (input to the binding_alias_exact rule).
+ * Reads the raw stored alias and folds it through `crossNameKey` — the SAME key
+ * the registry name index is built on — so an alias only ever matches what a
+ * canonical name would have. Keys that reduce to empty are skipped, never
+ * guessed; several aliases that fold to one key collapse to a single entry.
+ */
+export async function loadOrganizationAliases(db: Db): Promise<Map<string, Set<string>>> {
+  const res = await db.execute(sql`
+    SELECT organization_id, alias FROM organization_aliases`);
+  const map = new Map<string, Set<string>>();
+  for (const r of res.rows as { organization_id: string; alias: string }[]) {
+    const key = crossNameKey(r.alias);
+    if (!key) continue;
+    const set = map.get(r.organization_id) ?? new Set<string>();
+    set.add(key);
+    map.set(r.organization_id, set);
+  }
+  return map;
 }
 
 /**

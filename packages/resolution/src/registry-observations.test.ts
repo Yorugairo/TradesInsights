@@ -137,6 +137,13 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
     expect(evaluateStrictBind({ ...base, locality: 0.3 }).strict).toBe(false);
   });
 
+  it("refuses an alias match even when every other signal is perfect (owner-deferred)", () => {
+    // binding_alias_exact matches on a name the org was ALSO published under.
+    // It tiers like an exact name for review, but auto-binding it stays the
+    // owner's call until real matches have been seen.
+    expect(evaluateStrictBind({ ...base, ruleKey: "binding_alias_exact" }).strict).toBe(false);
+  });
+
   it("refuses a non-exact-name rule — phone/address/domain matches stay human-reviewed", () => {
     expect(evaluateStrictBind({ ...base, ruleKey: "binding_phone_match", nameComponent: 0.6 }).strict).toBe(false);
     expect(evaluateStrictBind({ ...base, ruleKey: "binding_address_match" }).strict).toBe(false);
@@ -222,6 +229,20 @@ describe("classifyReviewTier (confidence grouping for batch review)", () => {
       payload: { name_similarity: 0.7 },
     });
     expect(r.tier).toBe("tier3");
+  });
+
+  it("tier1 — alias-exact match + same city (an alias is an exact name hit)", () => {
+    const r = bind({ ruleKey: "binding_alias_exact", trustComponents: { name: 1, locality: 1 } });
+    expect(r.tier).toBe("tier1");
+    expect(r.reason).toContain("same city");
+  });
+
+  it("tier2 — alias-exact match with no second signal", () => {
+    const r = bind({
+      ruleKey: "binding_alias_exact",
+      trustComponents: { name: 1, locality: 0.3, identifier: 0.5 },
+    });
+    expect(r.tier).toBe("tier2");
   });
 
   it("non-binding enrichment tiers by trust band (already-bound org)", () => {
