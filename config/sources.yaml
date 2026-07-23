@@ -203,6 +203,86 @@ sources:
       Bellevue is King's #2 job market after Seattle; routes to Solis as
       King-suburb commercial. Public open-data REST, no auth/robots restriction.
 
+  - key: everett_permits_socrata
+    name: City of Everett Trakit Permits (Socrata)
+    authority: City of Everett
+    priority: P1
+    landing_url: https://data.everettwa.gov/d/3w3u-656c
+    access_url: https://data.everettwa.gov/resource/3w3u-656c.json?$select=count(*)
+    format: socrata_json
+    access_class: socrata
+    cadence: daily
+    county: Snohomish
+    permitting_jurisdiction: City of Everett
+    enabled: true
+    terms_reviewed_at: "2026-07-23"
+    robots_reviewed_at: "2026-07-23"
+    required_fields: [addressRaw, applicationDate]
+    notes: >-
+      Wave3 Puget Sound densification, verified live 2026-07-23. Everett's Trakit
+      permits (Socrata dataset 3w3u-656c) — the FIRST genuine Snohomish-county
+      source (Everett is the county seat). Rich: applied/approved/issued/expired
+      dates, CONTRACTOR of record on ~94% of rows (primary trades signal; owner/
+      applicant are individuals and are NOT emitted — person-gate), siteaddress,
+      siteapn parcel, jobvalue, and a GeoJSON geocoded_column point (~97%). No
+      status column — stage derives from date presence via the generic
+      SocrataPermitsAdapter (EVERETT_CONFIG), trailing 120-day applieddate window
+      with 30-day overlap. Public open-data SODA API, no auth/robots restriction.
+      Note: a few historical rows carry a source-typo issue date (e.g. year 2914)
+      — caught by the D1 date-window invariant, not silently ingested.
+
+  - key: spokane_permits_arcgis
+    name: City of Spokane Permits (ArcGIS MapServer)
+    authority: City of Spokane
+    priority: P1
+    landing_url: https://my.spokanecity.org/opendata/
+    access_url: https://services.spokanegis.org/arcgis/rest/services/Permit/Permit_WM_Dynamic2/MapServer/0/query?where=1%3D1&returnCountOnly=true&f=json
+    format: arcgis_json
+    access_class: arcgis
+    cadence: daily
+    county: Spokane
+    permitting_jurisdiction: City of Spokane
+    enabled: true
+    terms_reviewed_at: "2026-07-23"
+    robots_reviewed_at: "2026-07-23"
+    required_fields: [addressRaw, applicationDate]
+    notes: >-
+      Wave3 densification, verified live 2026-07-23. Spokane's permit MapServer
+      (Permit/Permit_WM_Dynamic2), layer 0 "Permit" — layers 1-3 are boundary/
+      council overlays, so this is effectively a single-layer feed. OpenDate epoch,
+      WGS84 point on 100% of rows, clean Status vocabulary, parcel, FullAddress,
+      DetailShortNotes, and an Accela cross-system id (externalRef). NO contractor/
+      valuation/units — a demand + stage + geography source, not a trades-matching
+      one. Spokane county (eastern WA) is far from every current account, so Solis's
+      distance band de-rates it hard; it is clean regional corpus data for future
+      eastern accounts. Generic ArcgisPermitsAdapter (SPOKANE_CONFIG). Public REST.
+
+  - key: auburn_permits_socrata
+    name: City of Auburn Permits (Socrata)
+    authority: City of Auburn
+    priority: P1
+    landing_url: https://data.auburnwa.gov/d/fted-8bve
+    access_url: https://data.auburnwa.gov/resource/fted-8bve.json?$select=count(*)
+    format: socrata_json
+    access_class: socrata
+    cadence: daily
+    county: King
+    permitting_jurisdiction: City of Auburn
+    enabled: false
+    terms_reviewed_at: "2026-07-23"
+    robots_reviewed_at: "2026-07-23"
+    required_fields: [addressRaw, applicationDate]
+    notes: >-
+      Wave3 densification — schema + parser VERIFIED live 2026-07-23 (rich types
+      incl. TENANTIMPROVEMENT/ALTERATIONS/BUILDING, contractor on ~81% of rows,
+      applied/issued/finaled dates, status, address, parcel) and proven against a
+      real golden fixture. DISABLED because the dataset ETL is FROZEN: max applied
+      date 2025-02-25 and rowsUpdatedAt 2025-02-26 across ALL THREE Auburn permit
+      datasets (fted-8bve, fvjv-6bef, nfcm-it2j). A live run would immediately trip
+      the source-health stale rule and deliver 17-month-old data. Registered +
+      testable via the generic SocrataPermitsAdapter (AUBURN_CONFIG); a one-flag
+      flip to enabled:true if Auburn resumes publishing. King county.
+
   - key: pierce_permits_arcgis
     name: Pierce County Permits & Applications (PALS extract, ArcGIS)
     authority: Pierce County

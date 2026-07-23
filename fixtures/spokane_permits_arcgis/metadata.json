@@ -1,0 +1,56 @@
+{
+  "source_key": "spokane_permits_arcgis",
+  "captured_at": "2026-07-23",
+  "layer_url": "https://services.spokanegis.org/arcgis/rest/services/Permit/Permit_WM_Dynamic2/MapServer/0",
+  "landing_url": "https://my.spokanecity.org/opendata/",
+  "capture_query": "where=OpenDate >= TIMESTAMP '2026-07-18 00:00:00' | outFields=* | returnGeometry=true | outSR=4326 | orderByFields=SpokanePermitID ASC",
+  "geometry_type": "esriGeometryPoint",
+  "max_record_count": 2000,
+  "date_encoding": "epoch_ms (esriFieldTypeDate: OpenDate, LastUpdate)",
+  "layer_selection": "MapServer layer 0 'Permit' is the ONLY permit layer; layers 1-3 are PDA Boundaries / City Council Districts / Neighborhood Councils (boundary overlays, no tables). Effectively a single-layer feed — unlike Renton's ~50-sublayer thematic MapServer, which stays backlogged.",
+  "manual_comparison": {
+    "feature_count": 324,
+    "exceeded_transfer_limit": false,
+    "with_geometry": 324,
+    "with_parcel": 324,
+    "with_accela_ref": 324,
+    "with_contractor": 0,
+    "with_valuation": 0,
+    "stage_distribution": { "permit_issued": 265, "complete": 15, "permit_applied": 39, "approved": 5 },
+    "distinct_statuses_in_fixture": [
+      "Application Approved",
+      "Closed",
+      "Final",
+      "Finaled",
+      "In Progress",
+      "Issued",
+      "Pending",
+      "Plan Review",
+      "Plan Review Approved",
+      "Planning Consolidation",
+      "Revisions Required"
+    ],
+    "note": "100% point-geometry and parcel coverage. The layer publishes NO contractor/applicant, NO valuation and NO units, and NO issued-date column — so organizations[] is empty, valuationUsd/units are null (never 0) and issueDate is null even for status 'Issued'. The stage carries the issuance fact; a date is never fabricated. 'In Progress' is the Accela application-workflow state (the feed carries a distinct 'Issued'), so it maps to permit_applied — the safer earlier reading."
+  },
+  "field_map": {
+    "externalId": "SpokanePermitID",
+    "permitType": "PermitType",
+    "applicationType": "PermitTypeAlias",
+    "status": "Status",
+    "description": "DetailShortNotes",
+    "address": "FullAddress",
+    "applied": "OpenDate",
+    "parcel": "ParcelNumber",
+    "externalRef": "AccelaPermitID1 (evidence + rawFields only, never a party key)"
+  },
+  "columns_present_but_unmapped": [
+    "AccelaPermitID2", "AccelaPermitID3", "PermitModule", "PermitGroup", "PermitCategory",
+    "MapStatus", "PrimaryAddressFlag", "FullAddress2", "PermitManager", "PlannerAssigned",
+    "PlannerEmail", "SearchText", "Neighborhood", "CityCouncil", "PDA", "LastUpdate"
+  ],
+  "county": "Spokane",
+  "permitting_jurisdiction": "City of Spokane",
+  "person_vs_business": "No party columns are emitted. PermitManager / PlannerAssigned / PlannerEmail identify CITY STAFF (public employees), not project parties — they are deliberately left unmapped so staff names and emails never enter organizations[] or evidence.",
+  "distance_note": "Spokane is eastern WA (~300 mi from Solis's Olympia base) — Solis's geography distance band scores it 0.15 (SOLIS_GEOGRAPHY_BANDS, scoring v1.10.0). Onboarded as clean regional corpus data and for future eastern accounts, not as a Solis market.",
+  "robots_terms": "Public ArcGIS REST MapServer under my.spokanecity.org open data. No auth, no robots restriction on the REST endpoint. Rate: bounded windowed pulls, SOURCE_USER_AGENT."
+}

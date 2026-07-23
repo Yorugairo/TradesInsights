@@ -6,7 +6,9 @@ import type { RawArtifact } from "@otn/source-sdk";
 import {
   ArcgisPermitsAdapter,
   BELLEVUE_CONFIG,
+  SPOKANE_CONFIG,
   bellevueStage,
+  spokaneStage,
   type ArcgisPermitsConfig,
 } from "./arcgis-permits.js";
 import { FIXTURES_DIR, testContext } from "./test-utils.js";
@@ -362,6 +364,72 @@ describe("bellevue_permits_arcgis (golden fixture — live window of 2026-07-22)
     const adapter = new ArcgisPermitsAdapter(BELLEVUE_CONFIG);
     const body = await readFile(join(FIXTURES_DIR, "bellevue_permits_arcgis/window-page-1.json"));
     const parsed = await adapter.parse(rawArtifact(body), testContext(adapter.key));
+    expect(adapter.checkInvariants(rawArtifact("{}"), parsed)).toEqual([]);
+  });
+});
+
+describe("spokane_permits_arcgis (golden fixture — live window of 2026-07-23)", () => {
+  async function parseSpokane() {
+    const adapter = new ArcgisPermitsAdapter(SPOKANE_CONFIG);
+    const body = await readFile(join(FIXTURES_DIR, "spokane_permits_arcgis/window-page-1.json"));
+    return { adapter, parsed: await adapter.parse(rawArtifact(body), testContext(adapter.key)) };
+  }
+
+  it("parses every real Spokane feature into a valid Spokane-county record", async () => {
+    const { parsed } = await parseSpokane();
+    expect(parsed.length).toBe(324); // manual count comparison, fixture metadata
+    for (const p of parsed) {
+      const v = NormalizedSourceRecordSchema.safeParse(p.record);
+      expect(v.success, JSON.stringify(v.success ? null : v.error.issues)).toBe(true);
+      expect(p.record.county).toBe("Spokane");
+      expect(p.record.permittingJurisdiction).toBe("City of Spokane");
+    }
+    // 100% geometry coverage, inside eastern-WA bounds (not Puget Sound).
+    const withGeom = parsed.filter((p) => p.record.geometry?.type === "Point");
+    expect(withGeom.length).toBe(324);
+    const lons = withGeom.map((p) => (p.record.geometry!.coordinates as [number, number])[0]);
+    expect(Math.min(...lons)).toBeGreaterThan(-117.6);
+    expect(Math.max(...lons)).toBeLessThan(-117.2);
+  });
+
+  it("maps the live Spokane status vocabulary to §9 stages", async () => {
+    const { parsed } = await parseSpokane();
+    const stages = parsed.reduce<Record<string, number>>((acc, p) => {
+      acc[p.record.normalizedStage] = (acc[p.record.normalizedStage] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(stages).toEqual({ permit_issued: 265, complete: 15, permit_applied: 39, approved: 5 });
+  });
+
+  it("carries no party and no issue date — Spokane publishes neither, so both stay empty", async () => {
+    const { parsed } = await parseSpokane();
+    // No contractor/applicant column exists: an org is never invented.
+    expect(parsed.every((p) => p.record.organizations.length === 0)).toBe(true);
+    // Spokane publishes no issued-date column, so issueDate is honestly null even
+    // for status "Issued" — the stage carries that fact, a fabricated date does not.
+    expect(parsed.every((p) => p.record.issueDate === null)).toBe(true);
+    // Valuation/units are absent from the layer ⇒ null, never 0.
+    expect(parsed.every((p) => p.record.valuationUsd === null && p.record.units === null)).toBe(true);
+    // The Accela cross-system id rides in evidence only, never as a party key.
+    expect(parsed.every((p) => p.record.evidence.some((e) => e.factPath === "externalRef"))).toBe(true);
+  });
+
+  it("stageFor covers the full live vocabulary; unknown degrades, never guessed", () => {
+    expect(spokaneStage("Issued")).toBe("permit_issued");
+    expect(spokaneStage("Finaled")).toBe("complete");
+    expect(spokaneStage("Closed")).toBe("complete");
+    // "…Approved" is a favorable pre-issuance decision, not a bare review step.
+    expect(spokaneStage("Plan Review Approved")).toBe("approved");
+    expect(spokaneStage("Application Approved")).toBe("approved");
+    expect(spokaneStage("Plan Review")).toBe("permit_applied");
+    expect(spokaneStage("In Progress")).toBe("permit_applied");
+    expect(spokaneStage("Revisions Required")).toBe("permit_applied");
+    expect(spokaneStage("Some Brand New Status")).toBe("unknown");
+    expect(spokaneStage(null)).toBe("unknown");
+  });
+
+  it("checkInvariants reconciles clean on the golden Spokane fixture", async () => {
+    const { adapter, parsed } = await parseSpokane();
     expect(adapter.checkInvariants(rawArtifact("{}"), parsed)).toEqual([]);
   });
 });

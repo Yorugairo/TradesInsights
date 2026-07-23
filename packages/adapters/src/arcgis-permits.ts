@@ -466,3 +466,58 @@ export const BELLEVUE_CONFIG: ArcgisPermitsConfig = {
   },
   stageFor: bellevueStage,
 };
+
+/** City of Spokane permit Status → §9 stage. Vocabulary enumerated live
+ * 2026-07-23 (fixtures/spokane_permits_arcgis/metadata.json). "In Progress" is
+ * the Accela application-workflow-in-progress state (pre-issuance — the feed
+ * carries a distinct "Issued"), so it maps to permit_applied, the safer earlier
+ * reading. Unmatched ⇒ "unknown". */
+export function spokaneStage(status: string | null): NormalizedSourceRecord["normalizedStage"] {
+  const s = (status ?? "").trim().toLowerCase();
+  if (!s) return "unknown";
+  if (/(cancel|void|withdrawn|denied|expired)/.test(s)) return "withdrawn";
+  if (/^issued$/.test(s)) return "permit_issued";
+  if (/(final|finaled|closed|complete|c of o)/.test(s)) return "complete";
+  // "Application Approved" / "Plan Review Approved" — a favorable pre-issuance
+  // decision. Checked BEFORE the pipeline branch so "…Approved" is not read as a
+  // bare review step.
+  if (/approved/.test(s)) return "approved";
+  if (/(plan review|pending|in progress|revisions required|planning consolidation|screening|intake|submitted|application)/.test(s)) {
+    return "permit_applied";
+  }
+  return "unknown";
+}
+
+/**
+ * City of Spokane permits (ArcGIS MapServer `Permit/Permit_WM_Dynamic2`, layer 0
+ * "Permit"; layers 1–3 are boundary/council overlays). Verified live 2026-07-23:
+ * OpenDate epoch, WGS84 point on 100% of rows, a clean Status vocabulary. NO
+ * contractor/valuation/units — a demand + stage + geography source, not a
+ * trades-matching one. Spokane county (eastern WA): far from every current
+ * account, so Solis's distance band de-rates it hard — but it is clean regional
+ * corpus data for future eastern accounts and cross-market demand. */
+export const SPOKANE_CONFIG: ArcgisPermitsConfig = {
+  key: "spokane_permits_arcgis",
+  layerUrl:
+    "https://services.spokanegis.org/arcgis/rest/services/Permit/Permit_WM_Dynamic2/MapServer/0",
+  landingUrl: "https://my.spokanecity.org/opendata/",
+  pageSize: 2000,
+  county: "Spokane",
+  jurisdiction: "City of Spokane",
+  city: "Spokane",
+  dateKind: "epoch",
+  windowField: "OpenDate",
+  fields: {
+    externalId: "SpokanePermitID",
+    permitType: "PermitType",
+    applicationType: "PermitTypeAlias",
+    status: "Status",
+    description: "DetailShortNotes",
+    address: "FullAddress",
+    applied: "OpenDate",
+    parcel: "ParcelNumber",
+    externalRef: "AccelaPermitID1",
+  },
+  externalRefLabel: "Accela permit id",
+  stageFor: spokaneStage,
+};

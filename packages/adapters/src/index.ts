@@ -15,7 +15,8 @@ import {
   SEATTLE_LAND_USE_CONFIG,
   SeattleSocrataAdapter,
 } from "./seattle-socrata.js";
-import { ArcgisPermitsAdapter, BELLEVUE_CONFIG } from "./arcgis-permits.js";
+import { ArcgisPermitsAdapter, BELLEVUE_CONFIG, SPOKANE_CONFIG } from "./arcgis-permits.js";
+import { SocrataPermitsAdapter, EVERETT_CONFIG, AUBURN_CONFIG } from "./socrata-permits.js";
 import { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 import { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 import { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
@@ -76,6 +77,13 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   tumwater_development_review: () => new TumwaterDevelopmentReviewAdapter(),
   // Wave3 — generic config-driven ArcGIS cities (arcgis-permits.ts).
   bellevue_permits_arcgis: () => new ArcgisPermitsAdapter(BELLEVUE_CONFIG),
+  spokane_permits_arcgis: () => new ArcgisPermitsAdapter(SPOKANE_CONFIG),
+  // Wave3 — generic config-driven Socrata cities (socrata-permits.ts). Everett
+  // is live (Snohomish); Auburn is enabled:false in config/sources.yaml — its
+  // schema + parser are verified but the dataset ETL is frozen at 2025-02, so a
+  // live run would immediately go stale-RED (one-flag flip if it resumes).
+  everett_permits_socrata: () => new SocrataPermitsAdapter(EVERETT_CONFIG),
+  auburn_permits_socrata: () => new SocrataPermitsAdapter(AUBURN_CONFIG),
   pierce_permits_arcgis: () => new PiercePermitsArcgisAdapter(),
   pierce_pals_contractor: () => new PiercePalsContractorAdapter(),
   puyallup_permits_arcgis: () => new PuyallupPermitsArcgisAdapter(),
@@ -91,7 +99,8 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
   tacoma_solicitations: () => new TacomaSolicitationsAdapter(),
 };
-export { ArcgisPermitsAdapter, BELLEVUE_CONFIG } from "./arcgis-permits.js";
+export { ArcgisPermitsAdapter, BELLEVUE_CONFIG, SPOKANE_CONFIG } from "./arcgis-permits.js";
+export { SocrataPermitsAdapter, EVERETT_CONFIG, AUBURN_CONFIG } from "./socrata-permits.js";
 export { PiercePermitsArcgisAdapter } from "./pierce-permits-arcgis.js";
 export { PiercePalsContractorAdapter } from "./pierce-pals-contractor.js";
 export { PuyallupPermitsArcgisAdapter } from "./puyallup-permits-arcgis.js";
