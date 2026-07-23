@@ -137,6 +137,18 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
     expect(evaluateStrictBind({ ...base, locality: 0.3 }).strict).toBe(false);
   });
 
+  it("refuses a match reached through a registry DBA alias, whatever the rule key", () => {
+    // A registry alias enters the same name index as a canonical name, so the
+    // hit arrives as binding_name_exact. Trading under a name is weaker identity
+    // evidence than being registered under it (and unrelated firms share DBAs),
+    // so it must stay in review. Guarded structurally — NOT left to the
+    // canonical_name_normalized equality, which is skipped when that is null.
+    expect(evaluateStrictBind({ ...base, viaRegistryAlias: true }).strict).toBe(false);
+    expect(
+      evaluateStrictBind({ ...base, viaRegistryAlias: true, registryNormalizedKey: null }).strict,
+    ).toBe(false);
+  });
+
   it("refuses an alias match even when every other signal is perfect (owner-deferred)", () => {
     // binding_alias_exact matches on a name the org was ALSO published under.
     // It tiers like an exact name for review, but auto-binding it stays the

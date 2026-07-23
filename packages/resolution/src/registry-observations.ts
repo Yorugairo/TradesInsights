@@ -102,6 +102,12 @@ export interface StrictBindGateInput {
   orgTradeCodes: Set<string>;
   /** The registry entity's L&I trade codes (lowercased). */
   registryTradeCodes: Set<string>;
+  /** True when the name hit came from one of the entity's registry ALIASES (a
+   * DBA) rather than its canonical name. Such a match is review-only: trading
+   * as a name is weaker evidence of identity than being registered under it,
+   * and several unrelated firms can share a DBA. Defaults to false so existing
+   * callers/tests are unaffected. */
+  viaRegistryAlias?: boolean;
 }
 
 export interface StrictBindGateResult {
@@ -119,6 +125,7 @@ export function evaluateStrictBind(input: StrictBindGateInput): StrictBindGateRe
   const nameRule = input.ruleKey === "binding_name_exact" || input.ruleKey === "binding_name_phone";
   const nameIdentical =
     nameRule &&
+    !input.viaRegistryAlias &&
     input.nameComponent === 1 &&
     (input.registryNormalizedKey === null || input.registryNormalizedKey === input.orgNameKey);
   const strict = nameIdentical && input.locality === 1 && sharedTradeCodes.length > 0;
@@ -698,6 +705,14 @@ export async function generateRegistryObservations(
       nameComponent,
       orgNameKey: key,
       registryNormalizedKey: hit.canonicalNameNormalized ? crossNameKey(hit.canonicalNameNormalized) : null,
+      // The org's key matched this entity, but NOT via its canonical name ⇒ it
+      // came in through a registry DBA alias. Checked structurally rather than
+      // relying on the canonical_name_normalized equality above, which is
+      // skipped when the contract leaves that column null.
+      viaRegistryAlias:
+        hit.canonicalName !== null && hit.canonicalName !== undefined
+          ? crossNameKey(hit.canonicalName) !== key
+          : false,
       locality,
       orgTradeCodes: orgPermitTrades.get(org.id) ?? new Set<string>(),
       registryTradeCodes,
