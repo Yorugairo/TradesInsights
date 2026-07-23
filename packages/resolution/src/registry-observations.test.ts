@@ -7,6 +7,7 @@ import {
   buildRegistryGooglePhoneIndex,
   computeTrust,
   crossNameKey,
+  evaluateStrictBind,
   GOOGLE_PHONE_IDENTIFIER_COMPONENT,
   laplaceAcceptRate,
   matchOrgByAddress,
@@ -101,6 +102,70 @@ describe("crossNameKey (cross-system name equality)", () => {
     expect(crossNameKey("ACME BUILDERS 500 UNION STREET SUITE 410 SEATTLE WA")).toBe(
       crossNameKey("Acme Builders LLC"),
     );
+  });
+});
+
+describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governance-critical)", () => {
+  const base = {
+    ruleKey: "binding_name_exact",
+    nameComponent: 1,
+    orgNameKey: "SOUND ELECTRONICS",
+    registryNormalizedKey: "SOUND ELECTRONICS",
+    locality: 1,
+    orgTradeCodes: new Set(["electrical"]),
+    registryTradeCodes: new Set(["electrical"]),
+  };
+
+  it("qualifies on exact name + same city + shared authoritative trade", () => {
+    const r = evaluateStrictBind(base);
+    expect(r.strict).toBe(true);
+    expect(r.sharedTradeCodes).toEqual(["electrical"]);
+  });
+
+  it("refuses without a shared trade (registry codes GC, permits say roofing → stays in review)", () => {
+    const r = evaluateStrictBind({
+      ...base,
+      orgTradeCodes: new Set(["roofing"]),
+      registryTradeCodes: new Set(["general_contractor"]),
+    });
+    expect(r.strict).toBe(false);
+    expect(r.sharedTradeCodes).toEqual([]);
+  });
+
+  it("refuses when the city differs (locality below 1)", () => {
+    expect(evaluateStrictBind({ ...base, locality: 0.3 }).strict).toBe(false);
+  });
+
+  it("refuses a non-exact-name rule — phone/address/domain matches stay human-reviewed", () => {
+    expect(evaluateStrictBind({ ...base, ruleKey: "binding_phone_match", nameComponent: 0.6 }).strict).toBe(false);
+    expect(evaluateStrictBind({ ...base, ruleKey: "binding_address_match" }).strict).toBe(false);
+    expect(evaluateStrictBind({ ...base, ruleKey: "binding_domain_match" }).strict).toBe(false);
+  });
+
+  it("accepts the exact-name-with-agreeing-phone rule too", () => {
+    expect(evaluateStrictBind({ ...base, ruleKey: "binding_name_phone" }).strict).toBe(true);
+  });
+
+  it("refuses when the name component is not a full 1.0", () => {
+    expect(evaluateStrictBind({ ...base, nameComponent: 0.9 }).strict).toBe(false);
+  });
+
+  it("refuses when the registry's OWN normalized name disagrees with the org key", () => {
+    expect(evaluateStrictBind({ ...base, registryNormalizedKey: "SOUND ELECTRONIC" }).strict).toBe(false);
+  });
+
+  it("skips the normalized-name check when the contract did not surface it (older rows)", () => {
+    expect(evaluateStrictBind({ ...base, registryNormalizedKey: null }).strict).toBe(true);
+  });
+
+  it("shares only the intersection of trade codes", () => {
+    const r = evaluateStrictBind({
+      ...base,
+      orgTradeCodes: new Set(["electrical", "mechanical"]),
+      registryTradeCodes: new Set(["mechanical", "plumbing"]),
+    });
+    expect(r.strict).toBe(true);
+    expect(r.sharedTradeCodes).toEqual(["mechanical"]);
   });
 });
 

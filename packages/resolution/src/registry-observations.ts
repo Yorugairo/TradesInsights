@@ -62,6 +62,72 @@ export const AUTO_ACCEPT_MIN_DECISIONS = 10;
 /** …with an accept rate at or above this. */
 export const AUTO_ACCEPT_MIN_RATE = 0.95;
 
+/**
+ * Strict binding auto-accept (owner-approved 2026-07-23) — the ONE tier that
+ * binds an Insights org to a registry entity WITHOUT human review, relaxing this
+ * module's default "identity binding is ALWAYS human". A candidate qualifies only
+ * when ALL THREE hold (see `evaluateStrictBind`):
+ *   1. exact name — a UNIQUE cross-key name match (rule binding_name_exact /
+ *      binding_name_phone, name component 1) that also equals the registry's OWN
+ *      normalized name (canonical_name_normalized) when the contract surfaces it;
+ *   2. same city — locality corroboration === 1;
+ *   3. shared trade — the org's AUTHORITATIVE permit-derived trade(s) (permitType
+ *      matches only) intersect the registry entity's L&I trade_codes.
+ * Anything softer stays in the human review queue. Provenance is explicit so an
+ * auto-bind is always distinguishable from a human decision downstream.
+ */
+export const STRICT_BIND_METHOD = "name_strict_auto";
+export const STRICT_BIND_DECIDED_BY = "auto:strict-bind";
+
+export interface StrictBindGateInput {
+  ruleKey: string;
+  /** The name trust component (1.0 for a unique exact cross-key name match). */
+  nameComponent: number;
+  /** crossNameKey(org.canonical_name). */
+  orgNameKey: string;
+  /** crossNameKey(registry canonical_name_normalized), or null when the contract
+   * did not surface a normalized name — then this extra equality is skipped. */
+  registryNormalizedKey: string | null;
+  /** Locality trust component (1 = registry city seen in the org's localities). */
+  locality: number;
+  /** The org's AUTHORITATIVE permit-derived trade codes (permitType only, lowercased). */
+  orgTradeCodes: Set<string>;
+  /** The registry entity's L&I trade codes (lowercased). */
+  registryTradeCodes: Set<string>;
+}
+
+export interface StrictBindGateResult {
+  strict: boolean;
+  sharedTradeCodes: string[];
+}
+
+/**
+ * The strict binding auto-accept gate — PURE so the governance-critical decision
+ * is unit-tested without a database. Returns whether the candidate may auto-bind
+ * and which trade codes it shares with the registry (for the audit payload).
+ */
+export function evaluateStrictBind(input: StrictBindGateInput): StrictBindGateResult {
+  const sharedTradeCodes = [...input.orgTradeCodes].filter((c) => input.registryTradeCodes.has(c));
+  const nameRule = input.ruleKey === "binding_name_exact" || input.ruleKey === "binding_name_phone";
+  const nameIdentical =
+    nameRule &&
+    input.nameComponent === 1 &&
+    (input.registryNormalizedKey === null || input.registryNormalizedKey === input.orgNameKey);
+  const strict = nameIdentical && input.locality === 1 && sharedTradeCodes.length > 0;
+  return { strict, sharedTradeCodes };
+}
+
+/** One strict-tier binding the pass auto-applied (or, in dryRun, WOULD apply). */
+export interface StrictBindCandidate {
+  organizationId: string;
+  organizationName: string;
+  registryEntityId: string;
+  registryName: string | null;
+  city: string | null;
+  sharedTradeCodes: string[];
+  trust: number;
+}
+
 export interface TrustComponents {
   /** Name agreement ∈ [0,1]: 1.0 for cross-system exact key equality. */
   name: number;
@@ -307,6 +373,11 @@ export interface GenerateSummary {
   aliasExports: number;
   tradeExports: number;
   autoAccepted: number;
+  /** Binding candidates auto-bound this pass via the strict tier (0 in dryRun). */
+  strictAutoBound: number;
+  /** Every strict-qualifying candidate this pass — the read-only preview list.
+   * Populated in dryRun (nothing written) and in a live run (what got bound). */
+  strictCandidates: StrictBindCandidate[];
   /** 4B.5 telemetry: candidates computed but below MIN_QUEUE_TRUST (per rule),
    * and NEW rows actually queued per rule this pass. Feeds match:audit so
    * floor/weight tuning at the §12.3 calibration session is evidence-driven. */
@@ -322,6 +393,10 @@ interface PendingInsert {
   payload: Record<string, unknown>;
   components: TrustComponents;
   dedupeKey: string;
+  /** Set only for a binding_name_match that cleared the strict auto-bind gate. */
+  strictAutoBind?: boolean;
+  /** Trade codes the candidate shares with the registry (strict-preview audit). */
+  strictSharedTrades?: string[];
 }
 
 /**
@@ -340,11 +415,13 @@ export async function generateRegistryObservations(
      * descriptions too; when null/absent, it falls back to the built-in
      * permitType-only vocabulary (pre-taxonomy behavior). */
     tradeTaxonomy?: TradeTaxonomyRow[] | null;
+    /** Compute everything but write NOTHING — the read-only strict-bind preview. */
+    dryRun?: boolean;
   } = {},
 ): Promise<GenerateSummary> {
   const summary: GenerateSummary = {
     skipped: false, bindingCandidates: 0, phoneAdoptions: 0, aliasExports: 0, tradeExports: 0, autoAccepted: 0,
-    belowFloor: 0, byRule: {},
+    strictAutoBound: 0, strictCandidates: [], belowFloor: 0, byRule: {},
   };
   if (registryRows === null) {
     summary.skipped = true;
@@ -392,6 +469,52 @@ export async function generateRegistryObservations(
   const byAddress = buildRegistryAddressIndex(registryRows);
   const orgAddresses = await loadOrganizationAddresses(db);
   const orgDomains = await loadOrganizationDomains(db);
+
+  // Trade matcher (hoisted): the SHARED registry vocabulary drives both the
+  // strict-bind trade gate in the binding loop and the trade_export section below.
+  const taxonomyRows =
+    opts.tradeTaxonomy && opts.tradeTaxonomy.length > 0 ? opts.tradeTaxonomy : null;
+  const tradeMatcher: TradeMatcher = taxonomyRows
+    ? buildTradeMatcher(taxonomyRows)
+    : FALLBACK_TRADE_MATCHER;
+  const scanDescription = taxonomyRows !== null;
+
+  // Permit-derived trade codes per UNBOUND org — the strict-bind trade gate. In
+  // the live corpus the contractor files as `applicant` on a generic
+  // BUILDING/UTILITY permit and the trade lives in the title/description, so we
+  // scan the SHARED-vocabulary matcher over permitType + title + description
+  // (when the registry taxonomy is present) across BOTH applicant and
+  // primary_contractor roles — matching how trade_export scans, and only ever
+  // corroborating (never sole): the strict tier still requires exact name + same
+  // city. SKIP-SAFE: no taxonomy ⇒ scan permitType only (pre-taxonomy behavior).
+  const orgPermitTrades = new Map<string, Set<string>>();
+  {
+    const res = await db.execute(sql`
+      SELECT pr.organization_id AS org_id,
+             upper(coalesce(sr.normalized_json->>'permitType', '')) AS permit_type,
+             upper(concat_ws(' ',
+               sr.normalized_json->>'permitType',
+               sr.normalized_json->>'title',
+               left(sr.normalized_json->>'description', 800))) AS scan_text
+      FROM organizations o
+      JOIN project_roles pr ON pr.organization_id = o.id
+        AND pr.role IN ('applicant', 'primary_contractor')
+      JOIN source_records sr ON sr.id = pr.source_record_id
+      WHERE o.registry_ref IS NULL
+        AND (sr.normalized_json->>'permitType' IS NOT NULL
+          OR sr.normalized_json->>'title' IS NOT NULL
+          OR sr.normalized_json->>'description' IS NOT NULL)`);
+    for (const r of res.rows as Record<string, unknown>[]) {
+      const orgId = r["org_id"] as string;
+      const permitType = (r["permit_type"] as string | null) ?? "";
+      const text = scanDescription ? ((r["scan_text"] as string | null) ?? "") : permitType;
+      for (const code of tradeMatcher.match(text)) {
+        const set = orgPermitTrades.get(orgId) ?? new Set<string>();
+        set.add(code.toLowerCase());
+        orgPermitTrades.set(orgId, set);
+      }
+    }
+  }
 
   // ── binding_name_match: unbound orgs vs registry (name key, phone-aware) ──
   const unbound = (await loadOrgFacts(db)).filter((o) => o.registry_ref === null);
@@ -513,6 +636,17 @@ export async function generateRegistryObservations(
       ),
       ruleHistory: rate(ruleKey),
     };
+    // Strict auto-bind gate — exact name + same city + shared authoritative trade.
+    const registryTradeCodes = new Set((hit.tradeCodes ?? []).map((c) => c.toLowerCase()));
+    const gate = evaluateStrictBind({
+      ruleKey,
+      nameComponent,
+      orgNameKey: key,
+      registryNormalizedKey: hit.canonicalNameNormalized ? crossNameKey(hit.canonicalNameNormalized) : null,
+      locality,
+      orgTradeCodes: orgPermitTrades.get(org.id) ?? new Set<string>(),
+      registryTradeCodes,
+    });
     inserts.push({
       observationType: "binding_name_match",
       organizationId: org.id,
@@ -545,6 +679,8 @@ export async function generateRegistryObservations(
       components,
       // One suggestion per org+entity pair regardless of which rule found it.
       dedupeKey: `bind:${org.id}:${hit.entityId}`,
+      strictAutoBind: gate.strict,
+      strictSharedTrades: gate.sharedTradeCodes,
     });
   }
 
@@ -641,12 +777,8 @@ export async function generateRegistryObservations(
   // "drywall" is not proof the GC self-performs drywall — the finish sub does).
   // SKIP-SAFE: with no registry taxonomy we use the built-in fallback vocabulary
   // over permitType ONLY, byte-identical to the pre-taxonomy behavior.
-  const taxonomyRows =
-    opts.tradeTaxonomy && opts.tradeTaxonomy.length > 0 ? opts.tradeTaxonomy : null;
-  const tradeMatcher: TradeMatcher = taxonomyRows
-    ? buildTradeMatcher(taxonomyRows)
-    : FALLBACK_TRADE_MATCHER;
-  const scanDescription = taxonomyRows !== null;
+  // (tradeMatcher / taxonomyRows / scanDescription are built once, hoisted above
+  // the binding loop.)
 
   const tradeRes = await db.execute(sql`
     SELECT o.id AS organization_id, o.registry_ref,
@@ -765,10 +897,57 @@ export async function generateRegistryObservations(
       continue;
     }
     const h = history.get(ins.ruleKey);
-    const autoAccept =
+    // Non-binding types earn auto-accept from a proven reviewed accept history.
+    const historyAutoAccept =
       ins.observationType !== "binding_name_match" &&
       (h?.decisions ?? 0) >= AUTO_ACCEPT_MIN_DECISIONS &&
       (h ? h.accepts / h.decisions : 0) >= AUTO_ACCEPT_MIN_RATE;
+    // Binding auto-accept is ONLY the strict tier (exact name + same city +
+    // shared trade); everything else stays human-reviewed.
+    const strictBind = ins.observationType === "binding_name_match" && ins.strictAutoBind === true;
+
+    // Every strict-qualifying candidate is recorded (the read-only preview list),
+    // whether or not this pass writes.
+    if (strictBind) {
+      summary.strictCandidates.push({
+        organizationId: ins.organizationId,
+        organizationName: String(ins.payload["org_name"] ?? ""),
+        registryEntityId: ins.registryEntityId,
+        registryName: (ins.payload["registry_name"] as string | null) ?? null,
+        city: (ins.payload["registry_city"] as string | null) ?? null,
+        sharedTradeCodes: ins.strictSharedTrades ?? [],
+        trust,
+      });
+    }
+
+    if (opts.dryRun) continue; // preview: compute everything, write nothing
+
+    if (strictBind) {
+      // Bind whether the candidate row is NEW or an already-pending row from a
+      // pre-strict pass. ON CONFLICT promotes pending→accepted; a human-REJECTED
+      // row is never resurrected (WHERE status='pending'); an already-accepted
+      // row is a no-op. RETURNING a row ⇒ this call moved it to accepted, so the
+      // org must be bound now.
+      const snapshot = (ins.payload["snapshot"] as Record<string, unknown> | null) ?? null;
+      const up = await db.execute(sql`
+        INSERT INTO registry_observations
+          (observation_type, organization_id, registry_entity_id, rule_key, payload_json,
+           trust_score, trust_components_json, dedupe_key, status, decided_by, decided_at, applied_at)
+        VALUES
+          (${ins.observationType}, ${ins.organizationId}, ${ins.registryEntityId}, ${ins.ruleKey},
+           ${JSON.stringify(ins.payload)}::jsonb, ${trust}, ${JSON.stringify(ins.components)}::jsonb,
+           ${ins.dedupeKey}, 'accepted', ${STRICT_BIND_DECIDED_BY}, now(), now())
+        ON CONFLICT (dedupe_key) DO UPDATE
+          SET status = 'accepted', decided_by = ${STRICT_BIND_DECIDED_BY}, decided_at = now(),
+              applied_at = now(), updated_at = now()
+          WHERE registry_observations.status = 'pending'
+        RETURNING id`);
+      if (up.rows.length === 0) continue; // rejected or already-accepted → no bind
+      await applyBindingAccept(db, ins.organizationId, ins.registryEntityId, snapshot, STRICT_BIND_METHOD);
+      summary.byRule[ins.ruleKey] = (summary.byRule[ins.ruleKey] ?? 0) + 1;
+      summary.strictAutoBound += 1;
+      continue;
+    }
 
     const res = await db.execute(sql`
       INSERT INTO registry_observations
@@ -778,14 +957,14 @@ export async function generateRegistryObservations(
         (${ins.observationType}, ${ins.organizationId}, ${ins.registryEntityId}, ${ins.ruleKey},
          ${JSON.stringify(ins.payload)}::jsonb, ${trust}, ${JSON.stringify(ins.components)}::jsonb,
          ${ins.dedupeKey},
-         ${autoAccept ? "accepted" : "pending"},
-         ${autoAccept ? "auto:rule-history" : null},
-         ${autoAccept ? new Date().toISOString() : null})
+         ${historyAutoAccept ? "accepted" : "pending"},
+         ${historyAutoAccept ? "auto:rule-history" : null},
+         ${historyAutoAccept ? new Date().toISOString() : null})
       ON CONFLICT (dedupe_key) DO NOTHING
       RETURNING id`);
     if (res.rows.length === 0) continue;
     summary.byRule[ins.ruleKey] = (summary.byRule[ins.ruleKey] ?? 0) + 1;
-    if (autoAccept) summary.autoAccepted += 1;
+    if (historyAutoAccept) summary.autoAccepted += 1;
     if (ins.observationType === "binding_name_match") summary.bindingCandidates += 1;
     else if (ins.observationType === "phone_adoption") summary.phoneAdoptions += 1;
     else if (ins.observationType === "alias_export") summary.aliasExports += 1;
@@ -799,6 +978,8 @@ export async function generateRegistryObservations(
       aliasExports: summary.aliasExports,
       tradeExports: summary.tradeExports,
       autoAccepted: summary.autoAccepted,
+      strictAutoBound: summary.strictAutoBound,
+      dryRun: opts.dryRun === true,
       belowFloor: summary.belowFloor,
       byRule: summary.byRule,
     },
@@ -861,6 +1042,32 @@ export interface DecisionOutcome {
 }
 
 /**
+ * Apply the local side effect of accepting a binding observation: stamp the org
+ * with registry_ref (+ provenance + cached identity snapshot) and backfeed the
+ * entity's strong keys (UBI / contractor numbers) so the nightly strong-key
+ * resolver fires for this contractor's future records. Guarded so it NEVER
+ * overwrites an already-bound org (observations are only generated for unbound
+ * orgs; failing closed here keeps a strict auto-bind and a human accept from ever
+ * clobbering an existing binding). Shared by the human accept path
+ * (decideRegistryObservation) and the strict auto-bind path (generate loop).
+ */
+async function applyBindingAccept(
+  db: Db,
+  organizationId: string,
+  registryEntityId: string,
+  snapshot: Record<string, unknown> | null,
+  method: string,
+): Promise<void> {
+  await db.execute(sql`
+    UPDATE organizations
+    SET registry_ref = ${registryEntityId}, registry_ref_method = ${method},
+        registry_linked_at = now(),
+        registry_identity_json = ${snapshot ? JSON.stringify(snapshot) : null}::jsonb
+    WHERE id = ${organizationId} AND registry_ref IS NULL`);
+  await backfeedAcceptedIdentity(db, organizationId, snapshot);
+}
+
+/**
  * Decide one observation. Accepting applies the local side effect immediately
  * (bind / global contact); export types wait for the export step. Every
  * decision updates the rule's accept history for the next generation pass.
@@ -891,22 +1098,13 @@ export async function decideRegistryObservation(
 
   let applied: DecisionOutcome["applied"] = "queued_for_export";
   if (row.observation_type === "binding_name_match") {
-    const snapshot = row.payload_json["snapshot"] ?? null;
-    await db.execute(sql`
-      UPDATE organizations
-      SET registry_ref = ${row.registry_entity_id}, registry_ref_method = 'name_review_confirmed',
-          registry_linked_at = now(),
-          registry_identity_json = ${snapshot ? JSON.stringify(snapshot) : null}::jsonb
-      WHERE id = ${row.organization_id}`);
-    // 4B.4 — the learning fix: stamp the accepted entity's strong keys
-    // (UBI / contractor numbers) onto the org, NULL-only with
-    // provenance 'registry_accept', so the nightly strong-key link and the
-    // WS-B.4 resolver tier fire for this contractor's subsequent records.
-    await backfeedAcceptedIdentity(
-      db,
-      row.organization_id,
-      (snapshot as Record<string, unknown> | null) ?? null,
-    );
+    // 4B.4 — applyBindingAccept stamps registry_ref (+ snapshot) and backfeeds the
+    // entity's strong keys (UBI / contractor numbers), NULL-only with provenance
+    // 'registry_accept', so the nightly strong-key link fires for this
+    // contractor's subsequent records. Provenance 'name_review_confirmed' marks a
+    // HUMAN accept (the strict auto-bind path uses 'name_strict_auto').
+    const snapshot = (row.payload_json["snapshot"] as Record<string, unknown> | null) ?? null;
+    await applyBindingAccept(db, row.organization_id, row.registry_entity_id, snapshot, "name_review_confirmed");
     applied = "bound_organization";
   } else if (row.observation_type === "phone_adoption") {
     const phone = String(row.payload_json["phone"] ?? "");

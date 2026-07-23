@@ -19,6 +19,7 @@ import {
   listRegistryObservations,
   persistOrganizationIdentifiers,
   type RegistryIdentityRow,
+  type TradeTaxonomyRow,
 } from "@otn/resolution";
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
@@ -496,5 +497,188 @@ describe("google_phone adoption (L&I phone absent — secondary channel)", () =>
     expect(adoptions).toHaveLength(1);
     expect(adoptions[0]!.rule_key).toBe("phone_from_lni");
     expect(adoptions[0]!.payload_json["phone"]).toBe("3601112222");
+  });
+});
+
+/**
+ * Strict auto-bind tier (owner-approved 2026-07-23) — the ONE binding tier that
+ * skips human review: exact canonical name + same city + shared AUTHORITATIVE
+ * trade. Verifies the wiring the pure `evaluateStrictBind` test can't: dryRun
+ * writes nothing, apply binds with 'name_strict_auto' provenance and backfeeds
+ * strong keys, reruns are idempotent, a pre-existing PENDING candidate is
+ * promoted, and a human-REJECTED candidate is never resurrected.
+ */
+describe("strict auto-bind tier (exact name + same city + shared trade)", () => {
+  const SRUN = randomUUID().slice(0, 8).toUpperCase();
+  let sdb: Db;
+  let spool: pg.Pool;
+  let sAccountId: string;
+  let sOrgId: string;
+  let sProjectId: string;
+  let sRecId: string;
+  let sArtId: string;
+  let sRunId: string;
+  const S_ENTITY = randomUUID();
+  const S_ROWS: RegistryIdentityRow[] = [
+    {
+      entityId: S_ENTITY,
+      ubi: "601555444",
+      contractorNumbers: [`STRICT${SRUN.slice(0, 4)}`],
+      canonicalName: `Strict Bind Electric ${SRUN} LLC`,
+      canonicalNameNormalized: `STRICT BIND ELECTRIC ${SRUN}`,
+      phone: null,
+      cityToken: "tacoma",
+      stateCode: "WA",
+      registeredAddress: null,
+      registeredPostalCode: null,
+      tradeCodes: ["electrical"],
+    },
+  ];
+  // Shared trade vocabulary — makes generate scan permit title/description (not
+  // just permitType), the owner-chosen strict-bind trade signal.
+  const TAX: TradeTaxonomyRow[] = [
+    { tradeCode: "electrical", label: "Electrical", keywords: ["electrical"], parentCode: null, active: true },
+  ];
+  const DEDUPE = () => `bind:${sOrgId}:${S_ENTITY}`;
+
+  beforeAll(async () => {
+    ({ db: sdb, pool: spool } = await testDb());
+    const [a] = await sdb.insert(accountProfiles).values({
+      key: `test_strict_${SRUN.toLowerCase()}`, name: "strict", active: true,
+      capabilitiesJson: [], territoryJson: {}, deliveryConfigJson: {},
+    }).returning({ id: accountProfiles.id });
+    sAccountId = a!.id;
+
+    const [org] = await sdb.insert(organizations).values({
+      canonicalName: `STRICT BIND ELECTRIC ${SRUN} LLC`, status: "active",
+    }).returning({ id: organizations.id });
+    sOrgId = org!.id;
+
+    const [src] = (await sdb.execute(sql`SELECT id FROM sources WHERE key = 'fake_source' LIMIT 1`)).rows as { id: string }[];
+    const sourceId = src?.id ?? (await resetSource(sdb, "fake_source"));
+    const [run] = await sdb.insert(sourceRuns).values({ sourceId, status: "succeeded" }).returning({ id: sourceRuns.id });
+    sRunId = run!.id;
+    const [art] = await sdb.insert(rawArtifacts).values({
+      sourceId, sourceRunId: run!.id, canonicalUrl: `https://example.invalid/strict/${SRUN}`,
+      retrievedAt: new Date(), contentType: "text/html", httpStatus: 200,
+      storageKey: `raw/fake_source/strict-${SRUN}`, sha256: SRUN.padEnd(64, "7").toLowerCase(), byteSize: 7,
+      headersJson: {}, parserVersion: "test",
+    }).returning({ id: rawArtifacts.id });
+    sArtId = art!.id;
+    const [rec] = await sdb.insert(sourceRecords).values({
+      sourceId, rawArtifactId: art!.id, externalId: `STRICT-${SRUN}`, recordType: "permit",
+      firstSeenAt: new Date(), lastSeenAt: new Date(), rawFieldsJson: {},
+      // Real-world shape: the contractor files as APPLICANT on a generic
+      // BUILDING permit; the trade ("electrical") lives in the description.
+      normalizedJson: { title: `STRICT-${SRUN} panel`, city: "Tacoma", permitType: "Building", description: "Install new electrical panel and wiring throughout", sourceUrl: "https://example.invalid/p" },
+      normalizedFingerprint: `strict-${SRUN}`,
+    }).returning({ id: sourceRecords.id });
+    sRecId = rec!.id;
+    const [p] = await sdb.insert(projects).values({
+      canonicalName: `STRICT-${SRUN}`, permittingJurisdiction: "Tacoma", county: "Pierce",
+      currentStage: "permit_issued", firstSeenAt: new Date(), lastSeenAt: new Date(),
+    }).returning({ id: projects.id });
+    sProjectId = p!.id;
+    await sdb.execute(sql`
+      INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
+      VALUES (${sProjectId}, ${sOrgId}, 'applicant', ${sRecId}, true, 1, now(), now())`);
+  });
+
+  afterAll(async () => {
+    await sdb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${sOrgId}`);
+    await sdb.execute(sql`DELETE FROM organization_identifiers WHERE organization_id = ${sOrgId}`);
+    await sdb.execute(sql`DELETE FROM project_roles WHERE organization_id = ${sOrgId}`);
+    await deleteTestProjects(sdb, [sProjectId]);
+    await sdb.execute(sql`DELETE FROM source_records WHERE id = ${sRecId}`);
+    await sdb.execute(sql`DELETE FROM raw_artifacts WHERE id = ${sArtId}`);
+    await sdb.execute(sql`DELETE FROM source_runs WHERE id = ${sRunId}`);
+    await sdb.execute(sql`DELETE FROM organizations WHERE id = ${sOrgId}`);
+    await sdb.execute(sql`DELETE FROM account_profiles WHERE id = ${sAccountId}`);
+    await spool.end();
+  });
+
+  it("preview (dryRun) lists the strict candidate but writes NOTHING", async () => {
+    const summary = await generateRegistryObservations(sdb, S_ROWS, { tradeTaxonomy: TAX, dryRun: true });
+    const mine = summary.strictCandidates.find((c) => c.organizationId === sOrgId);
+    expect(mine).toBeDefined();
+    expect(mine!.sharedTradeCodes).toEqual(["electrical"]);
+    expect(mine!.registryName).toBe(`Strict Bind Electric ${SRUN} LLC`);
+    expect(summary.strictAutoBound).toBe(0); // dry run binds nothing
+
+    const [org] = (await sdb.execute(sql`SELECT registry_ref FROM organizations WHERE id = ${sOrgId}`)).rows as { registry_ref: string | null }[];
+    expect(org!.registry_ref).toBeNull();
+    const [obs] = (await sdb.execute(sql`SELECT count(*)::int AS n FROM registry_observations WHERE dedupe_key = ${DEDUPE()}`)).rows as { n: number }[];
+    expect(obs!.n).toBe(0);
+  });
+
+  it("apply auto-binds with strict provenance and backfeeds the strong keys", async () => {
+    const summary = await generateRegistryObservations(sdb, S_ROWS, { tradeTaxonomy: TAX });
+    expect(summary.strictAutoBound).toBe(1);
+
+    const [org] = (await sdb.execute(sql`
+      SELECT registry_ref, registry_ref_method, ubi, contractor_registration
+      FROM organizations WHERE id = ${sOrgId}`)).rows as {
+      registry_ref: string | null; registry_ref_method: string | null; ubi: string | null; contractor_registration: string | null;
+    }[];
+    expect(org!.registry_ref).toBe(S_ENTITY);
+    expect(org!.registry_ref_method).toBe("name_strict_auto");
+    expect(org!.ubi).toBe("601555444"); // backfed strong key
+    expect(org!.contractor_registration).toBe(`STRICT${SRUN.slice(0, 4)}`.toUpperCase());
+
+    const [obs] = (await sdb.execute(sql`
+      SELECT status, decided_by, applied_at IS NOT NULL AS applied
+      FROM registry_observations WHERE dedupe_key = ${DEDUPE()}`)).rows as {
+      status: string; decided_by: string; applied: boolean;
+    }[];
+    expect(obs).toMatchObject({ status: "accepted", decided_by: "auto:strict-bind", applied: true });
+  });
+
+  it("is idempotent — a rerun binds nothing new (the org is already bound)", async () => {
+    const summary = await generateRegistryObservations(sdb, S_ROWS, { tradeTaxonomy: TAX });
+    expect(summary.strictAutoBound).toBe(0);
+    const [org] = (await sdb.execute(sql`SELECT registry_ref FROM organizations WHERE id = ${sOrgId}`)).rows as { registry_ref: string | null }[];
+    expect(org!.registry_ref).toBe(S_ENTITY);
+  });
+
+  it("promotes a PRE-EXISTING pending candidate (from a pre-strict pass) to a bind", async () => {
+    await sdb.execute(sql`
+      UPDATE organizations SET registry_ref = NULL, registry_ref_method = NULL,
+        registry_linked_at = NULL, registry_identity_json = NULL, ubi = NULL, contractor_registration = NULL
+      WHERE id = ${sOrgId}`);
+    await sdb.execute(sql`DELETE FROM registry_observations WHERE dedupe_key = ${DEDUPE()}`);
+    await sdb.execute(sql`
+      INSERT INTO registry_observations
+        (observation_type, organization_id, registry_entity_id, rule_key, payload_json,
+         trust_score, trust_components_json, dedupe_key, status)
+      VALUES ('binding_name_match', ${sOrgId}, ${S_ENTITY}, 'binding_name_exact', '{}', 0.78, '{}',
+        ${DEDUPE()}, 'pending')`);
+
+    const summary = await generateRegistryObservations(sdb, S_ROWS, { tradeTaxonomy: TAX });
+    expect(summary.strictAutoBound).toBe(1);
+    const [obs] = (await sdb.execute(sql`
+      SELECT status, decided_by FROM registry_observations WHERE dedupe_key = ${DEDUPE()}`)).rows as {
+      status: string; decided_by: string;
+    }[];
+    expect(obs).toMatchObject({ status: "accepted", decided_by: "auto:strict-bind" });
+    const [org] = (await sdb.execute(sql`SELECT registry_ref FROM organizations WHERE id = ${sOrgId}`)).rows as { registry_ref: string | null }[];
+    expect(org!.registry_ref).toBe(S_ENTITY);
+  });
+
+  it("NEVER resurrects a human-REJECTED candidate", async () => {
+    await sdb.execute(sql`
+      UPDATE organizations SET registry_ref = NULL, registry_ref_method = NULL,
+        registry_linked_at = NULL, registry_identity_json = NULL, ubi = NULL, contractor_registration = NULL
+      WHERE id = ${sOrgId}`);
+    await sdb.execute(sql`
+      UPDATE registry_observations SET status = 'rejected', decided_by = 'test:operator', decided_at = now()
+      WHERE dedupe_key = ${DEDUPE()}`);
+
+    const summary = await generateRegistryObservations(sdb, S_ROWS, { tradeTaxonomy: TAX });
+    expect(summary.strictAutoBound).toBe(0);
+    const [obs] = (await sdb.execute(sql`
+      SELECT status FROM registry_observations WHERE dedupe_key = ${DEDUPE()}`)).rows as { status: string }[];
+    expect(obs!.status).toBe("rejected"); // untouched
+    const [org] = (await sdb.execute(sql`SELECT registry_ref FROM organizations WHERE id = ${sOrgId}`)).rows as { registry_ref: string | null }[];
+    expect(org!.registry_ref).toBeNull(); // still unbound
   });
 });

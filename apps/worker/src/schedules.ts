@@ -209,6 +209,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
               aliasExports: registryObs.aliasExports,
               tradeExports: registryObs.tradeExports,
               autoAccepted: registryObs.autoAccepted,
+              strictAutoBound: registryObs.strictAutoBound,
             },
         registryExport: registryExport.skipped
           ? { skipped: true }

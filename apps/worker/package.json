@@ -24,6 +24,8 @@
     "digest:run": "tsx src/cli/digest-run.ts",
     "feedback:report": "tsx src/cli/feedback-report.ts",
     "match:audit": "tsx src/cli/match-audit.ts",
+    "strict-bind:preview": "tsx src/cli/strict-bind.ts",
+    "strict-bind:apply": "tsx src/cli/strict-bind.ts --apply",
     "eval:build": "tsx src/cli/eval-build.ts",
     "eval:run": "tsx src/cli/eval-run.ts",
     "delivery:metrics": "tsx src/cli/delivery-metrics.ts",
