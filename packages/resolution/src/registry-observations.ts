@@ -988,6 +988,83 @@ export async function generateRegistryObservations(
   return summary;
 }
 
+export type ReviewTier = "tier1" | "tier2" | "tier3";
+
+export interface ReviewTierInfo {
+  tier: ReviewTier;
+  /** Short badge label. */
+  label: string;
+  /** One-line reason a reviewer can trust the grouping. */
+  reason: string;
+}
+
+/** Human labels for the confidence tiers (highest → lowest). */
+export const REVIEW_TIER_LABELS: Record<ReviewTier, string> = {
+  tier1: "High confidence",
+  tier2: "Medium",
+  tier3: "Low · inspect",
+};
+
+/**
+ * Deterministic confidence tier for a pending observation — the grouping the
+ * operator batch-approves by. Binding candidates are tiered by how many
+ * INDEPENDENT strong signals corroborate the match:
+ *   tier1 — exact name AND a second strong signal (same city / agreeing L&I
+ *           phone / unique root domain): one step from the auto-bound strict tier;
+ *   tier2 — exactly one strong signal (exact name alone, or a unique
+ *           phone/address/domain identifier with a plausible name);
+ *   tier3 — weak or secondary-channel only (google phone, shared-address
+ *           dominance, low-similarity name).
+ * Non-binding types (phone/alias/trade — always for an already-bound org, so
+ * lower identity risk) tier by trust band. Pure — unit-tested, reused by the
+ * review page.
+ */
+export function classifyReviewTier(o: {
+  observationType: string;
+  ruleKey: string;
+  trustScore: number;
+  trustComponents: Record<string, number>;
+  payload: Record<string, unknown>;
+}): ReviewTierInfo {
+  const info = (tier: ReviewTier, reason: string): ReviewTierInfo => ({
+    tier,
+    label: REVIEW_TIER_LABELS[tier],
+    reason,
+  });
+
+  if (o.observationType !== "binding_name_match") {
+    // Enrichment of an already-bound org — identity is settled; band by trust.
+    if (o.trustScore >= 0.8) return info("tier1", "high trust · org already bound");
+    if (o.trustScore >= 0.65) return info("tier2", "medium trust · org already bound");
+    return info("tier3", "low trust");
+  }
+
+  const c = o.trustComponents;
+  const nameExact =
+    (o.ruleKey === "binding_name_exact" || o.ruleKey === "binding_name_phone") && (c["name"] ?? 0) >= 1;
+  const sameCity = (c["locality"] ?? 0) >= 1;
+  const phoneAgrees =
+    o.payload["phone_agrees"] === true ||
+    (o.ruleKey === "binding_phone_match" && (c["identifier"] ?? 0) >= 1);
+  const domainMatch = o.ruleKey === "binding_domain_match";
+  const addressMatch = o.ruleKey === "binding_address_match";
+  const nameSim =
+    typeof o.payload["name_similarity"] === "number"
+      ? (o.payload["name_similarity"] as number)
+      : (c["name"] ?? 0);
+
+  if (nameExact && (sameCity || phoneAgrees || domainMatch)) {
+    const second = sameCity ? "same city" : phoneAgrees ? "agreeing L&I phone" : "unique domain";
+    return info("tier1", `exact name + ${second}`);
+  }
+  if (nameExact) return info("tier2", "exact name (no city/phone corroboration)");
+  if ((phoneAgrees || domainMatch || addressMatch) && nameSim >= 0.5) {
+    const kind = phoneAgrees ? "L&I phone" : domainMatch ? "root domain" : "registered address";
+    return info("tier2", `${kind} match · name ${nameSim.toFixed(2)}`);
+  }
+  return info("tier3", `${o.ruleKey.replace(/^binding_/, "")} · name ${nameSim.toFixed(2)}`);
+}
+
 export interface ObservationListItem {
   id: string;
   observationType: string;
@@ -1009,7 +1086,9 @@ export async function listRegistryObservations(
   opts: { status?: string; limit?: number } = {},
 ): Promise<ObservationListItem[]> {
   const status = opts.status ?? "pending";
-  const limit = Math.min(Math.max(opts.limit ?? 10, 1), 200);
+  // Cap raised to 500 so the tiered review page can load the whole pending queue
+  // in one window (accurate per-tier counts + full-tier batch selection).
+  const limit = Math.min(Math.max(opts.limit ?? 10, 1), 500);
   const res = await db.execute(sql`
     SELECT ro.id, ro.observation_type, ro.organization_id, o.canonical_name AS organization_name,
       ro.registry_entity_id, ro.rule_key, ro.trust_score, ro.trust_components_json,

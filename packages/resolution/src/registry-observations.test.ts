@@ -5,6 +5,7 @@ import {
   buildRegistryAddressIndex,
   buildRegistryDomainIndex,
   buildRegistryGooglePhoneIndex,
+  classifyReviewTier,
   computeTrust,
   crossNameKey,
   evaluateStrictBind,
@@ -166,6 +167,68 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
     });
     expect(r.strict).toBe(true);
     expect(r.sharedTradeCodes).toEqual(["mechanical"]);
+  });
+});
+
+describe("classifyReviewTier (confidence grouping for batch review)", () => {
+  const bind = (over: Partial<Parameters<typeof classifyReviewTier>[0]>) =>
+    classifyReviewTier({
+      observationType: "binding_name_match",
+      ruleKey: "binding_name_exact",
+      trustScore: 0.7,
+      trustComponents: { name: 1, locality: 0.3, identifier: 0.5 },
+      payload: {},
+      ...over,
+    });
+
+  it("tier1 — exact name + same city (one step from the auto-bound strict tier)", () => {
+    const r = bind({ trustComponents: { name: 1, locality: 1 } });
+    expect(r.tier).toBe("tier1");
+    expect(r.reason).toContain("same city");
+  });
+
+  it("tier1 — exact name + agreeing L&I phone even without same city", () => {
+    const r = bind({ trustComponents: { name: 1, locality: 0.3 }, payload: { phone_agrees: true } });
+    expect(r.tier).toBe("tier1");
+    expect(r.reason).toContain("phone");
+  });
+
+  it("tier2 — exact name alone (no city/phone corroboration)", () => {
+    expect(bind({ trustComponents: { name: 1, locality: 0.3 } }).tier).toBe("tier2");
+  });
+
+  it("tier2 — a unique identifier match with a plausible name", () => {
+    const r = bind({
+      ruleKey: "binding_phone_match",
+      trustComponents: { name: 0.6, locality: 0.3, identifier: 1 },
+      payload: { name_similarity: 0.6 },
+    });
+    expect(r.tier).toBe("tier2");
+  });
+
+  it("tier3 — low-similarity phone match (secondary/weak)", () => {
+    const r = bind({
+      ruleKey: "binding_phone_match",
+      trustComponents: { name: 0.3, locality: 0.3, identifier: 1 },
+      payload: { name_similarity: 0.3 },
+    });
+    expect(r.tier).toBe("tier3");
+  });
+
+  it("tier3 — google-phone match is never tier1/2 on its own (de-rated channel)", () => {
+    const r = bind({
+      ruleKey: "binding_google_phone_match",
+      trustComponents: { name: 0.7, locality: 0.3, identifier: 0.75 },
+      payload: { name_similarity: 0.7 },
+    });
+    expect(r.tier).toBe("tier3");
+  });
+
+  it("non-binding enrichment tiers by trust band (already-bound org)", () => {
+    const base = { observationType: "phone_adoption", ruleKey: "phone_from_lni", trustComponents: {}, payload: {} };
+    expect(classifyReviewTier({ ...base, trustScore: 0.85 }).tier).toBe("tier1");
+    expect(classifyReviewTier({ ...base, trustScore: 0.7 }).tier).toBe("tier2");
+    expect(classifyReviewTier({ ...base, trustScore: 0.5 }).tier).toBe("tier3");
   });
 });
 

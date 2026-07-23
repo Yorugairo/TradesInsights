@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { listRegistryObservations } from "@otn/resolution";
+import { classifyReviewTier, listRegistryObservations, type ReviewTier } from "@otn/resolution";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { cell, table } from "../../../../lib/ui.js";
@@ -8,8 +8,8 @@ import { RegistryReviewTable, type EvidenceView, type ReviewRow } from "./action
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+const DEFAULT_LIMIT = 300;
+const MAX_LIMIT = 500;
 
 type Observation = Awaited<ReturnType<typeof listRegistryObservations>>[number];
 
@@ -45,18 +45,34 @@ export default async function RegistryReviewPage({
   for (const o of fetched) ruleCounts.set(o.ruleKey, (ruleCounts.get(o.ruleKey) ?? 0) + 1);
   const rulePresets = [...ruleCounts.entries()].sort((a, b) => b[1] - a[1]);
 
-  const pending = rule ? fetched.filter((o) => o.ruleKey === rule) : fetched;
-  const rows: ReviewRow[] = pending.map((o) => ({
-    id: o.id,
-    trustScore: o.trustScore,
-    observationType: o.observationType,
-    ruleKey: o.ruleKey,
-    suggestion: describe(o),
-    evidence: extractEvidence(o),
-    components: Object.entries(o.trustComponents)
-      .map(([k, v]) => `${k} ${Number(v).toFixed(2)}`)
-      .join(" · "),
-  }));
+  // Confidence tier per candidate (deterministic — drives the grouped batch UI).
+  const TIER_ORDER: ReviewTier[] = ["tier1", "tier2", "tier3"];
+  const tierOf = new Map(fetched.map((o) => [o.id, classifyReviewTier(o)]));
+
+  const filtered = rule ? fetched.filter((o) => o.ruleKey === rule) : fetched;
+  // Highest-confidence tier first, then trust desc within a tier.
+  const pending = [...filtered].sort((a, b) => {
+    const ta = TIER_ORDER.indexOf(tierOf.get(a.id)!.tier);
+    const tb = TIER_ORDER.indexOf(tierOf.get(b.id)!.tier);
+    return ta !== tb ? ta - tb : b.trustScore - a.trustScore;
+  });
+  const rows: ReviewRow[] = pending.map((o) => {
+    const ti = tierOf.get(o.id)!;
+    return {
+      id: o.id,
+      trustScore: o.trustScore,
+      observationType: o.observationType,
+      ruleKey: o.ruleKey,
+      tier: ti.tier,
+      tierLabel: ti.label,
+      tierReason: ti.reason,
+      suggestion: describe(o),
+      evidence: extractEvidence(o),
+      components: Object.entries(o.trustComponents)
+        .map(([k, v]) => `${k} ${Number(v).toFixed(2)}`)
+        .join(" · "),
+    };
+  });
 
   const linkFor = (r: string | null) => {
     const q = new URLSearchParams();

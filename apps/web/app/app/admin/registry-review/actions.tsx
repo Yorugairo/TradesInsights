@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { REVIEW_TIER_LABELS, type ReviewTier } from "@otn/resolution";
 import { cell } from "../../../../lib/ui.js";
 
 /**
@@ -35,10 +36,21 @@ export interface ReviewRow {
   trustScore: number;
   observationType: string;
   ruleKey: string;
+  /** Deterministic confidence tier (classifyReviewTier) — the batch grouping. */
+  tier: ReviewTier;
+  tierLabel: string;
+  tierReason: string;
   suggestion: string;
   evidence: EvidenceView | null;
   components: string;
 }
+
+/** Tier badge palette (green → amber → gray, highest → lowest). */
+const TIER_STYLE: Record<ReviewTier, { bg: string; fg: string }> = {
+  tier1: { bg: "#e6f4ea", fg: "#137333" },
+  tier2: { bg: "#fef7e0", fg: "#a67c00" },
+  tier3: { bg: "#f1f3f4", fg: "#5f6368" },
+};
 
 type RowState = "accepted" | "rejected" | "skipped" | { error: string };
 
@@ -104,6 +116,19 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
   const [result, setResult] = useState<Record<string, RowState>>({});
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.id)), [rows, selected]);
+
+  const tierCounts = useMemo(() => {
+    const m = new Map<ReviewTier, number>();
+    for (const r of rows) m.set(r.tier, (m.get(r.tier) ?? 0) + 1);
+    return m;
+  }, [rows]);
+
+  // One-click grouping: select every loaded candidate in a tier, then the
+  // existing "Accept selected" batch-approves the whole group.
+  const selectTier = useCallback(
+    (tier: ReviewTier) => setSelected(new Set(rows.filter((r) => r.tier === tier).map((r) => r.id))),
+    [rows],
+  );
 
   const toggle = useCallback((id: string) => {
     setSelected((prev) => {
@@ -210,6 +235,15 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
         <button disabled={busy || selected.size === 0} onClick={() => void runBatch("reject")} data-testid="batch-reject">
           Reject selected
         </button>
+        <span style={{ color: "#ccc" }}>|</span>
+        <small style={{ color: "#666" }}>group:</small>
+        {(["tier1", "tier2", "tier3"] as ReviewTier[])
+          .filter((t) => (tierCounts.get(t) ?? 0) > 0)
+          .map((t) => (
+            <button key={t} disabled={busy} onClick={() => selectTier(t)} data-testid={`select-${t}`} title={`Select all ${tierCounts.get(t)} ${t} candidates`}>
+              {REVIEW_TIER_LABELS[t]} ({tierCounts.get(t)})
+            </button>
+          ))}
         {progress && <small style={{ color: "#555" }}>{progress}</small>}
         <small style={{ color: "#999", marginLeft: "auto" }}>
           keys: <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>x</kbd> select · <kbd>a</kbd>/<kbd>r</kbd> decide
@@ -228,6 +262,7 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
               />
             </th>
             <th style={cell}>Trust</th>
+            <th style={cell}>Tier</th>
             <th style={cell}>Type</th>
             <th style={cell}>Suggestion</th>
             <th style={cell}>Rule</th>
@@ -256,6 +291,21 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
                 </td>
                 <td style={cell}>
                   <strong>{o.trustScore.toFixed(2)}</strong>
+                </td>
+                <td style={cell}>
+                  <span
+                    title={o.tierReason}
+                    style={{
+                      background: TIER_STYLE[o.tier].bg,
+                      color: TIER_STYLE[o.tier].fg,
+                      padding: "1px 6px",
+                      borderRadius: 10,
+                      fontSize: "0.72rem",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {o.tierLabel}
+                  </span>
                 </td>
                 <td style={cell}>{o.observationType.replace(/_/g, " ")}</td>
                 <td style={cell}>{o.suggestion}</td>
@@ -287,7 +337,7 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
           })}
           {rows.length === 0 && (
             <tr>
-              <td style={cell} colSpan={7}>
+              <td style={cell} colSpan={8}>
                 Queue is empty — the nightly pass regenerates it when the registry connection is configured.
               </td>
             </tr>
