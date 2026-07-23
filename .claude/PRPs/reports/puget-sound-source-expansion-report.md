@@ -64,3 +64,45 @@ Built the reusable engine and unlocked the region, then onboarded the flagship c
 - [ ] Build **OpenDataSoft** adapter → Vancouver; **Excel-report** adapter → Snohomish County
 - [ ] **Kent** operator-local PDF (WAF-blocked datacenter → genuine-browser capture lane)
 - [ ] Backlog: Renton multi-layer union; Kitsap thin party-less records; §12.3 geography calibration for new counties
+
+---
+
+# Batch 2 (2026-07-23) — generic Socrata engine, Everett + Spokane, Solis distance bands
+
+## Summary
+Built the second reusable engine (generic Socrata), enabled two more cities, backlogged three on live evidence, and resolved batch 1's §12.3 geography caveat with a distance ladder. **Eval byte-identical again.** Commits: `3e40a73`, `f78416f`, `4f2b729`, `f36f3a1` (pushed to `claude/tmux-install-320aiz`).
+
+## Tasks Completed (batch 2)
+
+| # | Task | Status | Notes |
+|---|---|---|---|
+| 3 | Generic `SocrataPermitsAdapter` | ✅ | `3e40a73` — Socrata twin of the ArcGIS engine + placeholder party filter; 17 tests |
+| 3a | **Everett** onboarded | ✅ | `f78416f` `enabled:true` — first genuine Snohomish source; 279-record fixture |
+| 3b | **Auburn** | ⛔ Backlog (registered `enabled:false`) | ETL frozen since 2025-02 on all 3 datasets; parser proven, one-flag flip |
+| 4 | **Spokane City** onboarded | ✅ | `f78416f` `enabled:true` — audit URL was wrong (`Permit/` folder); 324-record fixture |
+| 4a | **Clark County** | ⛔ Backlog | No authoritative county building-permit layer exposed |
+| 4b | **Burien** | ⛔ Backlog | No discoverable publishing surface (on-prem 404, Hub empty) |
+| 5 | **Solis distance bands** | ✅ | `4f2b729` — scorer v1.10.0; fixes the 0.8 > 0.6 inversion; eval byte-identical |
+| 6 | Batch-1 regression repair | ✅ | `4f2b729` — stale `Snohomish`-rejected domain test |
+| 7 | Docs/backlog/STATUS | ✅ | `f36f3a1` — incl. new freshness-verification rule |
+
+## Validation Results (batch 2)
+
+| Level | Status | Notes |
+|---|---|---|
+| Static Analysis | ✅ | `pnpm -r typecheck` 11/11 |
+| Unit Tests | ✅ | **all 51 package suites / 510 tests green** (34 new) |
+| Eval gate (§12.3) | ✅ **byte-identical** | precision 1.0 / recall 0.9609375, same 5 missed ids |
+| Fixture discipline | ✅ | 3 real fixtures + `metadata.json` manual comparisons |
+| DB-backed suites | ⚠️ Not run | 40 `apps/worker` suites need local Docker PG on :5433 (not running); unrelated to these changes |
+
+## Deviations from Plan (batch 2)
+
+1. **Auburn shipped disabled, not enabled.** The plan (and batch-1 audit) treated Auburn as a clean build target. Live freshness checking showed its ETL frozen ~17 months. Shipping it enabled would have served stale data as current; it is registered + parser-proven but `enabled:false`.
+2. **Clark and Burien could not be built at all.** Both were listed as "verify + drop-in config". Neither has a usable public surface today — backlogged with the exact evidence rather than forced.
+3. **Everett was richer than "1 confirming fetch" implied**, and its obvious-looking sibling dataset is dead. Net: a better source than planned, from a different dataset id than an unverified reading would have picked.
+4. **Scoring change added.** Not in the plan; requested by the owner in-session and it resolves the caveat batch 1 recorded.
+
+## Open Item for the Owner
+
+The distance bands are **correct but dormant**: Solis's `territory.counties_included` is still `[Thurston, Pierce, Lewis, King]`, so Snohomish/Kitsap/Clark/Spokane records never reach `routeSolis`. Everett's data flows into the corpus but not into Solis's queue. **Widening the territory is a business decision** (the config marks it provisional pending Solis's confirmation) and is what activates the ladder — deliberately left to the owner, and pinned by a test so it can't happen silently.
