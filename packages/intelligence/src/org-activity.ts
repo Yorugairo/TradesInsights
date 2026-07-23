@@ -73,6 +73,11 @@ export interface OrgActivityOptions {
   minProjects?: number;
   includeFlagged?: boolean;
   limit?: number;
+  /** Restrict to one permitting jurisdiction (city-level league table). Narrower
+   * than `county`; both may be combined. Also what makes a rollup deterministic
+   * over a shared database: without it the SQL window below is the top 500 orgs
+   * GLOBALLY, so a low-activity org can be crowded out by unrelated data. */
+  jurisdiction?: string;
 }
 
 interface VariantRow {
@@ -99,6 +104,9 @@ export async function orgActivityRollup(
   const minProjects = opts.minProjects ?? 2;
   const limit = Math.min(opts.limit ?? 100, 500);
   const countyFilter = opts.county ? sql`AND p.county = ${opts.county}` : sql``;
+  const jurisdictionFilter = opts.jurisdiction
+    ? sql`AND p.permitting_jurisdiction = ${opts.jurisdiction}`
+    : sql``;
 
   const res = await db.execute(sql`
     WITH proj_val AS (
@@ -130,6 +138,7 @@ export async function orgActivityRollup(
       )})
         AND p.permitting_jurisdiction != 'Test Jurisdiction'
         ${countyFilter}
+        ${jurisdictionFilter}
       GROUP BY pr.organization_id
       HAVING count(DISTINCT pr.project_id) >= ${minProjects}
     )

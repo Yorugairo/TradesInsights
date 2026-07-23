@@ -52,10 +52,19 @@ async function main() {
         mode: apply ? "apply" : "preview (dry run — no writes)",
         strictCandidates: summary.strictCandidates.length,
         strictAutoBound: summary.strictAutoBound,
+        // In preview these are what an apply WOULD queue for review (new rows
+        // only); in an apply they are what it did queue.
+        [apply ? "reviewQueued" : "reviewWouldQueue"]: summary.bindingCandidates,
+        byRule: summary.byRule,
       },
       "strict-bind complete",
     );
-    if (summary.strictCandidates.length === 0) logger.info({}, "no strict-tier candidates");
+    if (summary.strictCandidates.length === 0) {
+      logger.info(
+        { reviewWouldQueue: apply ? undefined : summary.bindingCandidates },
+        "no strict-tier candidates (auto-bind); softer matches go to review",
+      );
+    }
   } finally {
     await registryPool?.end();
     await pool.end();

@@ -903,5 +903,30 @@ describe("registry-side DBA aliases (contract column `aliases`) as match keys", 
     const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
     expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
   });
+  it("dry run REPORTS what an apply would queue, and still writes nothing", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    const before = (await adb.execute(
+      sql`SELECT count(*)::int AS n FROM registry_observations WHERE organization_id = ${aOrgId}`,
+    )).rows[0] as { n: number };
+
+    const preview = await generateRegistryObservations(adb, [dbaRow()], { dryRun: true });
+    // The whole point: a preview that computes a candidate must SAY so. This
+    // counter used to be hard-zero in dryRun, which read as "nothing to queue".
+    expect(preview.bindingCandidates).toBeGreaterThanOrEqual(1);
+    expect(preview.byRule["binding_name_exact"]).toBeGreaterThanOrEqual(1);
+    expect(preview.strictAutoBound).toBe(0);
+
+    // …and nothing was actually written.
+    const after = (await adb.execute(
+      sql`SELECT count(*)::int AS n FROM registry_observations WHERE organization_id = ${aOrgId}`,
+    )).rows[0] as { n: number };
+    expect(after.n).toBe(before.n);
+
+    // Already-queued rows are not new work, so a second preview after a real
+    // apply reports 0 — the number means "would insert", not "matches found".
+    await generateRegistryObservations(adb, [dbaRow()]);
+    const second = await generateRegistryObservations(adb, [dbaRow()], { dryRun: true });
+    expect(second.bindingCandidates).toBe(0);
+  });
 });
 });

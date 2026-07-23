@@ -196,8 +196,24 @@ describe("Batch3 #1 — triage clusters", () => {
     });
     expect(summary.matched).toBe(3);
     expect(summary.decided).toBe(3);
-    expect(summary.created).toBe(3); // rejected TIs become their own projects
     expect(summary.errors).toEqual([]);
+    // Every rejected row is re-resolved away from the anchor — but NOT
+    // necessarily into three separate projects. All three TIs share ADDR_A and
+    // near-identical titles, so once the first one creates a project the other
+    // two legitimately merge into it via the address+name pass; whether they do
+    // depends on ordering. Asserting `created === 3` encoded that race and made
+    // this test flaky. What the case actually claims is that the cluster was
+    // decided exactly, so assert the real invariant: each row landed somewhere,
+    // and no row stayed on the anchor.
+    expect(summary.created).toBeGreaterThanOrEqual(1);
+    expect(summary.created).toBeLessThanOrEqual(3);
+    const resolved = await db.execute(sql`
+      SELECT count(*)::int AS n FROM record_resolutions rr
+      JOIN source_records sr ON sr.id = rr.source_record_id
+      WHERE sr.source_id = ${sourceId} AND rr.status = 'active'
+        AND rr.project_id <> ${anchorA}
+        AND sr.external_id LIKE ${`TA-TI-${RUN}-%`}`);
+    expect((resolved.rows[0] as { n: number }).n).toBe(3);
 
     // Track the new projects for cleanup.
     const created = await db.execute(sql`

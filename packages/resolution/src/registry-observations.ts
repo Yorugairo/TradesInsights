@@ -985,6 +985,17 @@ export async function generateRegistryObservations(
   }
 
   // ── persist (dedupe; decided rows never resurrected) + auto-accept ──
+  // A dry run writes nothing, so it cannot learn from INSERT ... RETURNING which
+  // candidates are new. Without this the preview reported 0 for every counter and
+  // read as "nothing to queue" when the truth was "counting is skipped" — load the
+  // existing keys up front so the preview's numbers mean the same thing an apply's
+  // do: rows that WOULD be inserted.
+  const existingDedupeKeys = new Set<string>();
+  if (opts.dryRun) {
+    const res = await db.execute(sql`SELECT dedupe_key FROM registry_observations`);
+    for (const r of res.rows as { dedupe_key: string }[]) existingDedupeKeys.add(r.dedupe_key);
+  }
+
   for (const ins of inserts) {
     const trust = computeTrust(ins.components);
     if (trust < MIN_QUEUE_TRUST) {
@@ -1015,7 +1026,19 @@ export async function generateRegistryObservations(
       });
     }
 
-    if (opts.dryRun) continue; // preview: compute everything, write nothing
+    if (opts.dryRun) {
+      // Preview: write nothing, but report what an apply WOULD queue. An
+      // already-present dedupe key is not new work, so it is not counted.
+      // `strictAutoBound` stays 0 by definition — nothing is bound here; the
+      // strict candidates are listed in `strictCandidates` above.
+      if (existingDedupeKeys.has(ins.dedupeKey)) continue;
+      summary.byRule[ins.ruleKey] = (summary.byRule[ins.ruleKey] ?? 0) + 1;
+      if (ins.observationType === "binding_name_match") summary.bindingCandidates += 1;
+      else if (ins.observationType === "phone_adoption") summary.phoneAdoptions += 1;
+      else if (ins.observationType === "alias_export") summary.aliasExports += 1;
+      else summary.tradeExports += 1;
+      continue;
+    }
 
     if (strictBind) {
       // Bind whether the candidate row is NEW or an already-pending row from a

@@ -21,6 +21,13 @@ import { orgActivityRollup, relationshipTargets } from "@otn/intelligence";
 import { resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toUpperCase();
+// Every rollup below is scoped to THIS run's jurisdiction. The rollup's SQL
+// window is the top 500 orgs globally, ordered by relevance then valuation, so
+// an unscoped call lets orgs seeded by other test files (which run in parallel
+// against the same database) crowd out this file's low-activity fixtures —
+// HULDA QUX has 0 relevant projects and no valuation, so it sorts last and was
+// the first to fall off. Scoping makes these assertions deterministic.
+const JURISDICTION = `Org Test City ${RUN}`;
 
 let db: Db;
 let pool: pg.Pool;
@@ -47,7 +54,7 @@ async function seedProjectWithRole(
     .insert(projects)
     .values({
       canonicalName: `ORGT-${RUN}-${n}`,
-      permittingJurisdiction: `Org Test City ${RUN}`,
+      permittingJurisdiction: JURISDICTION,
       county: "Thurston",
       currentStage: "permit_issued",
       firstSeenAt: new Date(),
@@ -184,7 +191,7 @@ afterAll(async () => {
 
 describe("P1 org activity rollup", () => {
   it("ranks by router-judged relevance and hides flagged names by default", async () => {
-    const rows = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2 });
+    const rows = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2, jurisdiction: JURISDICTION });
     const names = rows.map((r) => r.name);
     expect(names).toContain(`TRIAGE BUILDERS LLC ${RUN}`);
     expect(names).toContain(`KNOWN GC INC ${RUN}`);
@@ -203,6 +210,7 @@ describe("P1 org activity rollup", () => {
       accountProfileId: accountId,
       minProjects: 2,
       includeFlagged: true,
+      jurisdiction: JURISDICTION,
     });
     const b = rows.find((r) => r.name.startsWith("NO PRIMARY APPLICANT"))!;
     expect(b.flags).toContain("placeholder");
@@ -211,7 +219,7 @@ describe("P1 org activity rollup", () => {
   });
 
   it("groups legal-suffix variants into one league row with variants listed", async () => {
-    const rows = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2 });
+    const rows = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2, jurisdiction: JURISDICTION });
     const cole = rows.filter((r) => r.name.startsWith("COLE DRYWALL"));
     expect(cole).toHaveLength(1); // one row, not one per spelling
     expect(cole[0]!.variantNames.sort()).toEqual(
@@ -222,12 +230,13 @@ describe("P1 org activity rollup", () => {
   });
 
   it("splits fused addresses, flags the individual, hides by default", async () => {
-    const byDefault = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2 });
+    const byDefault = await orgActivityRollup(db, { accountProfileId: accountId, minProjects: 2, jurisdiction: JURISDICTION });
     expect(byDefault.some((r) => r.name.includes("HULDA QUX"))).toBe(false);
     const included = await orgActivityRollup(db, {
       accountProfileId: accountId,
       minProjects: 2,
       includeFlagged: true,
+      jurisdiction: JURISDICTION,
     });
     const h = included.find((r) => r.name === `HULDA QUX ${RUN}`)!;
     expect(h).toBeDefined(); // display name is the split name, not the fused blob
