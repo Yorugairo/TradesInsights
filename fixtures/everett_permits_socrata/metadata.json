@@ -1,0 +1,41 @@
+{
+  "source_key": "everett_permits_socrata",
+  "captured_at": "2026-07-23",
+  "dataset_id": "3w3u-656c",
+  "dataset_name": "Trakit Permits",
+  "domain": "data.everettwa.gov",
+  "landing_url": "https://data.everettwa.gov/d/3w3u-656c",
+  "capture_query": "$where=applieddate >= '2026-07-13T00:00:00' | $order=applieddate,permitno | $limit=600",
+  "date_encoding": "ISO 8601 floating timestamps (e.g. '2026-07-10T00:00:00.000')",
+  "geometry_encoding": "geocoded_column — GeoJSON {type:'Point',coordinates:[lng,lat]}",
+  "manual_comparison": {
+    "row_count": 279,
+    "with_contractor_name_raw": 262,
+    "orgs_emitted_after_placeholder_filter": 230,
+    "placeholders_dropped": ["OWNER", "N/A", "NA", "TBD"],
+    "with_geometry": 272,
+    "with_jobvalue_gt_0": 248,
+    "stage_distribution": { "permit_issued": 108, "approved": 12, "permit_applied": 159 },
+    "note": "No status column exists — stage derives from date presence (issueddate ⇒ permit_issued; approveddate only ⇒ approved; neither ⇒ permit_applied), and statusRaw stays honestly null. 32 of the 262 non-null contractorname values are placeholders and are dropped rather than emitted as businesses.",
+    "data_quality_canary": "Some historical rows carry an impossible issue date (observed: permitno P1405-006 with issueddate '2914-05-27', applieddate 2014) — a source-side typo. It is OUTSIDE this fixture window, and the D1 checkDateWindow invariant (2000-01-01..2100-01-01) flags such rows at runtime rather than ingesting them silently."
+  },
+  "field_map": {
+    "externalId": "permitno",
+    "permitType": "permittype",
+    "permitSubtype": "permitsubtype",
+    "description": "permitdesc",
+    "address": "siteaddress",
+    "valuation": "jobvalue",
+    "applied": "applieddate",
+    "approved": "approveddate",
+    "issued": "issueddate",
+    "parcel": "siteapn",
+    "contractor": "contractorname (role primary_contractor)",
+    "geocodedColumn": "geocoded_column"
+  },
+  "columns_present_but_unmapped": ["expireddate", "ownername", "applicantname", "tenantname", "recordid"],
+  "county": "Snohomish",
+  "permitting_jurisdiction": "City of Everett",
+  "person_vs_business": "ONLY contractorname is emitted, as business identity (contractor of record — e.g. 'WESTROCK CONSTRUCTION LLC', 'CORNERSTONE GENERAL CONTRS INC'). ownername and applicantname are routinely INDIVIDUALS (e.g. 'JENNIFER TAMBLIN', 'EDWARD MCMANAMNA') and are deliberately NOT emitted as organizations — person-gate, matching the Seattle precedent. Placeholder contractor values are filtered to null.",
+  "robots_terms": "Socrata SODA open-data API, documented public endpoint. No auth, no robots restriction on /resource. Rate: bounded $limit/$offset windowed pulls with deterministic $order, SOURCE_USER_AGENT."
+}

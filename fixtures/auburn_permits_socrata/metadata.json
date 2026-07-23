@@ -1,0 +1,45 @@
+{
+  "source_key": "auburn_permits_socrata",
+  "captured_at": "2026-07-23",
+  "dataset_id": "fted-8bve",
+  "dataset_name": "Permits",
+  "domain": "data.auburnwa.gov",
+  "landing_url": "https://data.auburnwa.gov/d/fted-8bve",
+  "capture_query": "$where=applied >= '2025-01-01T00:00:00' | $order=applied,permit | $limit=600",
+  "date_encoding": "ISO 8601 floating timestamps (e.g. '2025-01-17T00:00:00.000')",
+  "geometry_encoding": "none — the dataset publishes no coordinates (address only)",
+  "status": "DISABLED (enabled:false in config/sources.yaml)",
+  "disabled_reason": {
+    "finding": "The dataset ETL is FROZEN. max(applied) = 2025-02-25 and rowsUpdatedAt = 2025-02-26T03:30:48Z, and the SAME timestamp applies to all three Auburn permit datasets (fted-8bve 'Permits', fvjv-6bef 'Issued Permits Snapshot', nfcm-it2j 'Issued Permits in Last 12 Months'). Auburn's open-data permit publishing stopped ~17 months before capture.",
+    "consequence": "Enabling it would immediately trip the source-health stale rule (stale > 2x cadence) and deliver 17-month-old data as if current.",
+    "resolution": "Schema + parser are VERIFIED against this real fixture and the adapter is registered, so re-activation is a one-flag flip to enabled:true if Auburn resumes publishing. Re-check freshness before flipping."
+  },
+  "manual_comparison": {
+    "row_count": 275,
+    "with_contractor_raw": 275,
+    "orgs_emitted_after_placeholder_filter": 223,
+    "placeholders_dropped": ["CONTRACTOR UNKNOWN", "OWNER"],
+    "stage_distribution": { "permit_issued": 214, "complete": 58, "withdrawn": 3 },
+    "distinct_statuses_in_fixture": ["AVAILABLE", "FINALED", "ISSUED", "VOID", "WITHDRAWN"],
+    "permit_types_in_fixture": ["ADDITION", "ALTERATIONS", "BACKFLOW PREMISE", "BUILDING", "CONSTRUCTION", "FIRE", "GRADING", "MECHANICAL", "PARKING", "PLUMBING"],
+    "note": "Rich permit-type coverage all-time (MECHANICAL 8402, CONSTRUCTION 5149, BUILDING 4044, ALTERATIONS 2704, TENANTIMPROVEMENT 1845) — genuinely useful interior-trades signal, which is why the parser was finished despite the freeze.",
+    "data_quality_finding": "The `finaled` column is populated on EVERY row — all 213 ISSUED rows carry a finaled date — so it is a last-status-change stamp, NOT a completion signal. It is therefore deliberately NOT mapped to `completed`; mapping it would mark every issued permit 'complete'. The `status` string is authoritative (FINALED => complete). Caught by this golden fixture."
+  },
+  "field_map": {
+    "externalId": "permit",
+    "permitType": "type",
+    "permitSubtype": "subtype",
+    "status": "status",
+    "description": "description",
+    "address": "address",
+    "applied": "applied",
+    "issued": "issued",
+    "parcel": "parcel",
+    "contractor": "contractor (role primary_contractor)"
+  },
+  "columns_present_but_unmapped": ["finaled (see data_quality_finding)", "owner", "applicant"],
+  "county": "King",
+  "permitting_jurisdiction": "City of Auburn",
+  "person_vs_business": "ONLY contractor is emitted, as business identity (e.g. 'HUNTS PLUMBING AND MECH LLC'). owner and applicant are routinely INDIVIDUALS (e.g. 'EDUARD DEMCHUK', 'KIM HUGHES') and are deliberately NOT emitted as organizations — person-gate. The placeholder values 'CONTRACTOR UNKNOWN' and 'OWNER' are filtered to null rather than emitted as businesses.",
+  "robots_terms": "Socrata SODA open-data API, documented public endpoint. No auth, no robots restriction on /resource. Rate: bounded $limit/$offset windowed pulls with deterministic $order, SOURCE_USER_AGENT."
+}
