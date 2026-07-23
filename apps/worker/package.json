@@ -25,6 +25,8 @@
     "feedback:report": "tsx src/cli/feedback-report.ts",
     "match:audit": "tsx src/cli/match-audit.ts",
     "alias:backfill": "tsx src/cli/alias-backfill.ts",
+    "brand:backfill": "tsx src/cli/brand-backfill.ts",
+    "brand:backfill:apply": "tsx src/cli/brand-backfill.ts --apply",
     "alias:backfill:apply": "tsx src/cli/alias-backfill.ts --apply",
     "strict-bind:preview": "tsx src/cli/strict-bind.ts",
     "strict-bind:apply": "tsx src/cli/strict-bind.ts --apply",
