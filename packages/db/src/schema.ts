@@ -279,6 +279,12 @@ export const organizations = pgTable(
     /** Cached PUBLIC identity snapshot from the registry contract view (display
      * cache stamped at bind; the registry stays the identity authority). */
     registryIdentityJson: jsonb("registry_identity_json"),
+    /** The OPERATING BRAND this org resolves to within `registry_ref`'s legal
+     * entity — the L&I contractor licence, which is unique per brand (the UBI is
+     * not: one entity trades under several). Null when the binding was made at
+     * enterprise level (strong-key UBI match, no name hit) — unknown, never
+     * inferred, because guessing it would fuse two brands into one row. */
+    registryBrandRef: text("registry_brand_ref"),
     organizationType: text("organization_type"),
     website: text("website"),
     status: text("status"),
@@ -287,6 +293,8 @@ export const organizations = pgTable(
   (t) => [
     index("organizations_name_ix").on(t.canonicalName),
     index("organizations_ubi_ix").on(t.ubi),
+    // Brands of one enterprise are read together (rollup, brand disambiguation).
+    index("organizations_registry_brand_ref_ix").on(t.registryBrandRef),
   ],
 );
 

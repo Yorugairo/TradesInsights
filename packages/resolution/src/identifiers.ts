@@ -401,34 +401,38 @@ export async function findOrganizationBySourceEntityId(
 
 /**
  * WS-B.4 — resolve an incoming org to an existing REGISTRY-BOUND organization
- * that shares a strong identifier (UBI / contractor number), or null. Used as a
- * resolver tier ABOVE the exact-name match so name variants of one bound entity
- * collapse onto the registry-canonical org (accurate roles / velocity / league)
- * instead of spawning a duplicate. Gated to `registry_ref IS NOT NULL`: it never
- * CREATES a binding (that stays the registry-link's job) — it only reuses one the
- * registry already confirmed. Strong identifiers are unique per entity, so a
- * shared normalized key means the same entity. Normalizes the SAME way the
- * persist path does (`alnumUpper`, UBI ≥ 7) so keys line up with the store.
+ * that shares its CONTRACTOR LICENCE, or null. Used as a resolver tier ABOVE the
+ * exact-name match so spelling variants of one brand collapse onto a single org
+ * (accurate roles / velocity / league) instead of spawning duplicates. Gated to
+ * `registry_ref IS NOT NULL`: it never CREATES a binding (that stays the
+ * registry-link's job) — it only reuses one the registry already confirmed.
+ * Normalizes the SAME way the persist path does (`alnumUpper`) so keys line up.
+ *
+ * DELIBERATELY NOT UBI (`_rawUbi` is accepted for call-site compatibility and
+ * ignored). A UBI identifies the LEGAL ENTITY, and one entity trades under
+ * several brands — collapsing on it merged Apollo Sheet Metal into Apollo
+ * Mechanical Contractors, destroying per-brand contacts and trade attribution.
+ * The licence is issued per brand, so it collapses duplicates of one brand while
+ * keeping sibling brands apart. Brands still roll up together through their
+ * shared `registry_ref` (see `enterpriseRollup`), so nothing is lost.
+ *
+ * NOTE: `linkRegistry`'s `ubi_exact` BINDING is a different thing and still uses
+ * UBI — binding an org to its legal entity is correct; merging two orgs is not.
  */
 export async function findBoundOrganizationByStrongKey(
   db: Db,
-  rawUbi: string | null | undefined,
+  _rawUbi: string | null | undefined,
   rawLicense: string | null | undefined,
 ): Promise<string | null> {
-  const ubi = alnumUpper(rawUbi ?? undefined);
   const license = alnumUpper(rawLicense ?? undefined);
-  const hasUbi = !!ubi && ubi.length >= 7;
-  const hasLicense = !!license;
-  if (!hasUbi && !hasLicense) return null;
+  if (!license) return null;
   const res = await db.execute(sql`
     SELECT oi.organization_id
     FROM organization_identifiers oi
     JOIN organizations o ON o.id = oi.organization_id
     WHERE o.registry_ref IS NOT NULL
-      AND (
-        (${hasUbi} AND oi.identifier_type = 'ubi' AND oi.value_normalized = ${ubi ?? ""})
-        OR (${hasLicense} AND oi.identifier_type = 'contractor_number' AND oi.value_normalized = ${license ?? ""})
-      )
+      AND oi.identifier_type = 'contractor_number'
+      AND oi.value_normalized = ${license}
     LIMIT 1`);
   const row = res.rows[0] as { organization_id?: string } | undefined;
   return row?.organization_id ?? null;
@@ -511,12 +515,32 @@ export async function backfeedAcceptedIdentity(
 ): Promise<{ stamped: number }> {
   if (snapshot == null) return { stamped: 0 };
   const ubi = alnumUpper(snapshot["ubi"] as string | null | undefined);
-  const rawNumbers = Array.isArray(snapshot["contractor_numbers"])
-    ? (snapshot["contractor_numbers"] as unknown[])
-    : [];
-  const licenses = rawNumbers
+  // BRAND-SCOPED: stamp only the licence of the operating brand this org matched,
+  // NOT the entity's whole `contractor_numbers` array.
+  //
+  // The array belongs to the LEGAL ENTITY, and one entity trades under several
+  // brands (UBI 600443607 = Apollo Heating & A/C + Apollo Mechanical + Apollo
+  // Sheet Metal, each with its own licence). Stamping all of them gave every
+  // brand-org the same licence set, so the resolver's strong-key collapse then
+  // fused genuinely distinct brands into one row — losing per-brand contacts and
+  // trade visibility. One licence per brand keeps them apart, while two spelling
+  // variants of the SAME brand still share a licence and still collapse.
+  //
+  // No brand ⇒ no licence. An enterprise-level bind (UBI strong key, no name
+  // hit) legitimately doesn't know which brand it is; guessing would fuse rows.
+  const matchedBrandLicence = alnumUpper(snapshot["brand_licence"] as string | null | undefined);
+  // Fallback when the match didn't identify a brand (enterprise-level bind, or a
+  // contract older than the `brands` column): if the entity holds exactly ONE
+  // licence there is no ambiguity — that licence IS its only brand, so stamping
+  // it cannot fuse anything. Two or more ⇒ genuinely unknown ⇒ stamp none.
+  const entityLicences = (
+    Array.isArray(snapshot["contractor_numbers"]) ? (snapshot["contractor_numbers"] as unknown[]) : []
+  )
     .map((v) => alnumUpper(typeof v === "string" ? v : null))
     .filter((v): v is string => v !== null);
+  const brandLicence =
+    matchedBrandLicence ?? (entityLicences.length === 1 ? entityLicences[0]! : null);
+  const licenses = brandLicence ? [brandLicence] : [];
 
   const rows: { type: string; normalized: string }[] = [];
   if (ubi && ubi.length >= 7) rows.push({ type: "ubi", normalized: ubi });
@@ -536,10 +560,16 @@ export async function backfeedAcceptedIdentity(
     await db.execute(sql`
       UPDATE organizations SET ubi = ${ubi} WHERE id = ${organizationId} AND ubi IS NULL`);
   }
-  if (licenses.length > 0) {
+  if (brandLicence) {
+    // This is now the BRAND's licence rather than an arbitrary first element of
+    // the entity's array, so `contractor_registration` finally means something
+    // specific for a multi-brand entity.
     await db.execute(sql`
-      UPDATE organizations SET contractor_registration = ${licenses[0]!}
+      UPDATE organizations SET contractor_registration = ${brandLicence}
       WHERE id = ${organizationId} AND contractor_registration IS NULL`);
+    await db.execute(sql`
+      UPDATE organizations SET registry_brand_ref = ${brandLicence}
+      WHERE id = ${organizationId} AND registry_brand_ref IS NULL`);
   }
   return { stamped };
 }

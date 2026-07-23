@@ -137,6 +137,9 @@ describe("WS-B.4 — findBoundOrganizationByStrongKey (registry_ref dedup key)",
     const ubi = `7${RUN.replace(/[^0-9]/g, "0")}`; // run-unique test UBI (>= 7 chars)
     const boundRef = `b4b4b4b4-0000-0000-0000-${RUN.toLowerCase().padEnd(12, "0").slice(0, 12)}`;
     const unboundUbi = `8${RUN.replace(/[^0-9]/g, "0")}`;
+    // The collapse key is the per-BRAND contractor licence, not the UBI.
+    const lic = `RIVERAB${RUN.slice(0, 5)}`;
+    const unboundLic = `PAINTWK${RUN.slice(0, 5)}`;
     // A source record to attribute the identifiers to (FK; never resolved).
     const sr = await insertRecord(
       record({ externalId: `B4SR-${RUN}` }),
@@ -153,15 +156,24 @@ describe("WS-B.4 — findBoundOrganizationByStrongKey (registry_ref dedup key)",
       .returning({ id: organizations.id });
     try {
       // Persisted the real way so the finder is tested against the actual normalization.
-      await persistOrganizationIdentifiers(db, bound!.id, sr.id, { ubi });
-      await persistOrganizationIdentifiers(db, unbound!.id, sr.id, { ubi: unboundUbi });
+      await persistOrganizationIdentifiers(db, bound!.id, sr.id, { ubi, contractorLicense: lic });
+      await persistOrganizationIdentifiers(db, unbound!.id, sr.id, {
+        ubi: unboundUbi,
+        contractorLicense: unboundLic,
+      });
 
-      // Matches the bound org by a shared strong key, normalized the same way (spaces stripped).
-      expect(await findBoundOrganizationByStrongKey(db, `  ${ubi}  `, null)).toBe(bound!.id);
+      // Matches the bound org by a shared LICENCE, normalized the same way
+      // (spaces stripped).
+      expect(await findBoundOrganizationByStrongKey(db, null, `  ${lic}  `)).toBe(bound!.id);
       // Gated to registry_ref IS NOT NULL — an unbound org sharing a key is never collapsed onto.
-      expect(await findBoundOrganizationByStrongKey(db, unboundUbi, null)).toBeNull();
+      expect(await findBoundOrganizationByStrongKey(db, null, unboundLic)).toBeNull();
       // No strong key ⇒ null.
       expect(await findBoundOrganizationByStrongKey(db, null, null)).toBeNull();
+      // A UBI must NEVER collapse two orgs: it identifies the LEGAL ENTITY, and
+      // one entity trades under several brands. Collapsing on it fused Apollo
+      // Sheet Metal into Apollo Mechanical Contractors. Brands still roll up
+      // together via their shared registry_ref (see enterpriseRollup).
+      expect(await findBoundOrganizationByStrongKey(db, ubi, null)).toBeNull();
     } finally {
       await db.execute(
         sql`DELETE FROM organization_identifiers WHERE organization_id IN (${bound!.id}, ${unbound!.id})`,
@@ -175,6 +187,10 @@ describe("WS-B.4 — findBoundOrganizationByStrongKey (registry_ref dedup key)",
 describe("organization alias capture (migration 0031 — the name arm of the identity graph)", () => {
   it("captures a genuine name variant when collapsing onto a bound org, and skips a same-key restatement", async () => {
     const ubi = `9${RUN.replace(/[^0-9]/g, "0")}`;
+    // The collapse key is the LICENCE, not the UBI: a UBI is the legal entity
+    // and one entity trades under several brands, so collapsing on it would
+    // fuse sibling brands (see findBoundOrganizationByStrongKey).
+    const lic = `SWPLUM${RUN.slice(0, 6)}`;
     const boundRef = `a11a5000-0000-0000-0000-${RUN.toLowerCase().padEnd(12, "0").slice(0, 12)}`;
     // recordType 'inspection' keeps these fixtures out of the provenance test's
     // record census below, which counts the four project-forming types.
@@ -189,7 +205,7 @@ describe("organization alias capture (migration 0031 — the name arm of the ide
       .returning({ id: organizations.id });
     const orgId = bound!.id;
     try {
-      await persistOrganizationIdentifiers(db, orgId, seed.id, { ubi });
+      await persistOrganizationIdentifiers(db, orgId, seed.id, { ubi, contractorLicense: lic });
 
       // A later record names the SAME entity (same UBI) under a different name.
       // The resolver collapses it onto the bound org — and that discarded name
@@ -203,6 +219,7 @@ describe("organization alias capture (migration 0031 — the name arm of the ide
               name: `SW Plumbing & Heating ${RUN}`,
               role: "primary_contractor",
               ubi,
+              contractorLicense: lic,
               evidenceText: `Contractor: SW Plumbing & Heating ${RUN} (UBI ${ubi})`,
             },
           ],
@@ -231,6 +248,7 @@ describe("organization alias capture (migration 0031 — the name arm of the ide
               name: `Southwest Plumbing ${RUN} LLC`,
               role: "primary_contractor",
               ubi,
+              contractorLicense: lic,
               evidenceText: `Contractor: Southwest Plumbing ${RUN} LLC (UBI ${ubi})`,
             },
           ],

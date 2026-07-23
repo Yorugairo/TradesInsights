@@ -70,11 +70,40 @@ export interface RegistryIdentityRow {
    * a permit naming a DBA must be able to reach the entity. Optional/null-safe so
    * an older contract without the column degrades to canonical-only matching. */
   aliases?: string[] | null;
+  /** The entity's full OPERATING-BRAND roster, canonical included and flagged.
+   * WA L&I is two-level: the UBI is the legal entity (shared), the contractor
+   * LICENCE is the operating brand (unique per brand) — so this is what makes a
+   * brand addressable rather than merely matchable. Optional/null-safe: an older
+   * contract without the column degrades to enterprise-only identity. */
+  brands?: RegistryBrand[] | null;
 }
 
-/** Public identity snapshot cached on organizations.registry_identity_json. */
-export function identitySnapshot(row: RegistryIdentityRow): Record<string, unknown> {
+/** One operating brand of a registry entity (contract column `brands`). */
+export interface RegistryBrand {
+  name: string;
+  /** The brand's own contractor licence. Null when L&I published none — unknown,
+   * never inferred from a sibling brand. */
+  licence: string | null;
+  /** True for the entity's canonical name; false for a DBA. */
+  isCanonical: boolean;
+}
+
+/**
+ * Public identity snapshot cached on organizations.registry_identity_json.
+ *
+ * `brand` names the ONE operating brand this org was matched to (when known).
+ * It is what the accept-side backfeed stamps: without it the accept would stamp
+ * the entity's whole licence array and fuse distinct brands into one org.
+ */
+export function identitySnapshot(
+  row: RegistryIdentityRow,
+  brand?: RegistryBrand | null,
+): Record<string, unknown> {
   return {
+    // Unknown brand stays null — an enterprise-level bind (UBI strong key, no
+    // name match) legitimately has no brand, and guessing one would fuse rows.
+    brand_name: brand?.name ?? null,
+    brand_licence: brand?.licence ?? null,
     entity_id: row.entityId,
     canonical_name: row.canonicalName,
     ubi: row.ubi,
@@ -204,26 +233,32 @@ export interface RegistryLinkOptions {
  * needs; the reader role has SELECT on the view alone (contract boundary).
  */
 export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise<RegistryIdentityRow[]> {
-  const columns = (withAliases: boolean): string =>
+  const columns = (optional: string[]): string =>
     `SELECT entity_id, ubi, contractor_numbers, canonical_name, canonical_name_normalized,
             phone, city_token, state_code, registered_address, registered_postal_code,
             status, record_count, root_domain, first_minted_at,
-            google_phone, google_rating, google_review_count, trade_codes${withAliases ? ", aliases" : ""}
+            google_phone, google_rating, google_review_count, trade_codes${optional.map((c) => `, ${c}`).join("")}
        FROM registry_public.trades_identity_v1`;
 
-  // `aliases` is the newest contract column. If Insights deploys ahead of the
-  // registry migration that adds it, selecting it would throw 42703 and take the
-  // WHOLE registry read down (silently skipping binding). Fall back to the
-  // pre-alias column list instead: the alias lane goes quiet, everything else
-  // keeps working. Only 42703 is swallowed — a real connection or permission
-  // error still propagates.
-  let res: { rows: Record<string, unknown>[] };
-  try {
-    res = await pool.query(columns(true));
-  } catch (err) {
-    if ((err as { code?: string } | null)?.code !== "42703") throw err;
-    res = await pool.query(columns(false));
+  // `aliases` and `brands` are the newest contract columns, added in that order.
+  // If Insights deploys ahead of either registry migration, selecting a missing
+  // column throws 42703 and would take the WHOLE registry read down (silently
+  // skipping binding). Degrade one column at a time instead — brands off, then
+  // aliases off — so the newest lane goes quiet while everything else keeps
+  // working. ONLY 42703 is swallowed; a connection or permission error still
+  // propagates, because those must never look like "no registry data".
+  const ladder = [["aliases", "brands"], ["aliases"], []];
+  let res: { rows: Record<string, unknown>[] } | undefined;
+  for (const [i, optional] of ladder.entries()) {
+    try {
+      res = await pool.query(columns(optional));
+      break;
+    } catch (err) {
+      const isMissingColumn = (err as { code?: string } | null)?.code === "42703";
+      if (!isMissingColumn || i === ladder.length - 1) throw err;
+    }
   }
+  if (!res) throw new Error("registry identity query produced no result");
   return res.rows.map((r: Record<string, unknown>) => ({
     entityId: r["entity_id"] as string,
     ubi: (r["ubi"] as string | null) ?? null,
@@ -244,7 +279,27 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     googleReviewCount: r["google_review_count"] == null ? null : Number(r["google_review_count"]),
     tradeCodes: (r["trade_codes"] as string[] | null) ?? null,
     aliases: (r["aliases"] as string[] | null) ?? null,
+    brands: parseBrands(r["brands"]),
   }));
+}
+
+/** Defensive read of the `brands` jsonb column: keep only well-formed entries so
+ * a malformed row can never fabricate a licence. Unknown licence stays null. */
+function parseBrands(raw: unknown): RegistryBrand[] | null {
+  if (!Array.isArray(raw)) return null;
+  const brands: RegistryBrand[] = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object") continue;
+    const rec = entry as Record<string, unknown>;
+    const name = typeof rec["name"] === "string" ? rec["name"].trim() : "";
+    if (!name) continue;
+    brands.push({
+      name,
+      licence: typeof rec["licence"] === "string" && rec["licence"].length > 0 ? rec["licence"] : null,
+      isCanonical: rec["is_canonical"] === true,
+    });
+  }
+  return brands.length > 0 ? brands : null;
 }
 
 /**

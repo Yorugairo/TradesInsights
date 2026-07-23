@@ -50,7 +50,7 @@ import {
   normalizeRootDomain,
 } from "./identifiers.js";
 import { crossNameKey, nameSimilarity } from "./normalize.js";
-import { identitySnapshot, type RegistryIdentityRow } from "./registry-link.js";
+import { identitySnapshot, type RegistryBrand, type RegistryIdentityRow } from "./registry-link.js";
 import {
   buildTradeMatcher,
   FALLBACK_TRADE_MATCHER,
@@ -449,6 +449,20 @@ export async function generateRegistryObservations(
   // one Insights name matching MULTIPLE registry entities is not reviewable
   // as a single suggestion and must wait for a stronger key).
   const byNameKey = new Map<string, RegistryIdentityRow[]>();
+  // entityId → name key → the OPERATING BRAND that key belongs to. Built as the
+  // name index is built, so a hit can say WHICH brand matched. That is what the
+  // accept stamps: without it the accept backfeeds the entity's whole licence
+  // array and fuses distinct brands (Apollo Sheet Metal / Apollo Mechanical)
+  // into one org on the next record.
+  const brandByEntityKey = new Map<string, Map<string, RegistryBrand>>();
+  const addBrandKey = (key: string, row: RegistryIdentityRow, brand: RegistryBrand): void => {
+    if (!key) return;
+    const perEntity = brandByEntityKey.get(row.entityId) ?? new Map<string, RegistryBrand>();
+    // First brand wins a key: a licence-bearing brand must not be replaced by a
+    // later licence-less duplicate of the same name.
+    if (!perEntity.has(key)) perEntity.set(key, brand);
+    brandByEntityKey.set(row.entityId, perEntity);
+  };
   const addNameKey = (key: string, row: RegistryIdentityRow): void => {
     if (!key) return;
     const bucket = byNameKey.get(key);
@@ -472,6 +486,12 @@ export async function generateRegistryObservations(
     // silently outranks a canonical match.
     for (const alias of row.aliases ?? []) {
       if (typeof alias === "string" && alias.length > 0) addNameKey(crossNameKey(alias), row);
+    }
+    // `brands` carries the same names WITH their individual licences, so it maps
+    // a matched key to a specific operating brand. Purely additive to the index
+    // above: it introduces no new match keys, only attribution.
+    for (const brand of row.brands ?? []) {
+      addBrandKey(crossNameKey(brand.name), row, brand);
     }
   }
   const byEntity = new Map(registryRows.map((r) => [r.entityId, r]));
@@ -684,6 +704,11 @@ export async function generateRegistryObservations(
     }
     if (!hit || !ruleKey) continue;
 
+    // Which operating brand did this match land on? Only a NAME-keyed hit can
+    // say: a phone/address/domain hit identifies the enterprise, not the brand,
+    // and is left null rather than defaulting to the canonical (which would
+    // stamp the wrong licence and fuse brands).
+    const matchedBrand = brandByEntityKey.get(hit.entityId)?.get(key) ?? null;
     const locality = hit.cityToken && org.localities.some((l) => l.includes(hit.cityToken!)) ? 1 : 0.3;
     const components: TrustComponents = {
       name: nameComponent,
@@ -744,10 +769,14 @@ export async function generateRegistryObservations(
         // The org name-variant that matched (migration 0031); null for every
         // other rule, so a reviewer always sees WHICH name earned an alias hit.
         matched_alias: matchedAlias,
+        // The operating brand this candidate binds to, and its own licence —
+        // what the accept stamps instead of the entity's whole licence array.
+        matched_brand_name: matchedBrand?.name ?? null,
+        matched_brand_licence: matchedBrand?.licence ?? null,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
         role_records: org.record_count,
-        snapshot: identitySnapshot(hit),
+        snapshot: identitySnapshot(hit, matchedBrand),
       },
       components,
       // One suggestion per org+entity pair regardless of which rule found it.

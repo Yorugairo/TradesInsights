@@ -794,6 +794,8 @@ describe("binding_alias_exact — matching on a name the org was ALSO published 
     await adb.execute(sql`DELETE FROM source_records WHERE id = ${aRecId}`);
     await adb.execute(sql`DELETE FROM raw_artifacts WHERE id = ${aArtId}`);
     await adb.execute(sql`DELETE FROM source_runs WHERE id = ${aRunId}`);
+    // The brand-scoped accept test stamps identifiers on this org.
+    await adb.execute(sql`DELETE FROM organization_identifiers WHERE organization_id = ${aOrgId}`);
     await adb.execute(sql`DELETE FROM organizations WHERE id = ${aOrgId}`);
     await adb.execute(sql`DELETE FROM account_profiles WHERE id = ${aAccountId}`);
     await apool.end();
@@ -927,6 +929,45 @@ describe("registry-side DBA aliases (contract column `aliases`) as match keys", 
     await generateRegistryObservations(adb, [dbaRow()]);
     const second = await generateRegistryObservations(adb, [dbaRow()], { dryRun: true });
     expect(second.bindingCandidates).toBe(0);
+  });
+  it("brand-scoped accept: stamps ONLY the matched brand's licence, and pins it", async () => {
+    await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
+    await adb.execute(sql`DELETE FROM organization_identifiers WHERE organization_id = ${aOrgId}`);
+    await adb.execute(sql`
+      UPDATE organizations SET registry_ref = NULL, registry_brand_ref = NULL,
+        contractor_registration = NULL, ubi = NULL WHERE id = ${aOrgId}`);
+
+    // The entity holds THREE licences; the org matched the "Ridgeline" brand.
+    const multiBrand = dbaRow({
+      contractorNumbers: ["SIBLINGA111", "RIDGELINEB222", "SIBLINGC333"],
+      brands: [
+        { name: `Gene Johnsn Plb Htg ${ARUN}`, licence: "SIBLINGA111", isCanonical: true },
+        { name: `Ridgeline Exteriors ${ARUN}`, licence: "RIDGELINEB222", isCanonical: false },
+        { name: `Other Sibling ${ARUN}`, licence: "SIBLINGC333", isCanonical: false },
+      ],
+    });
+    await generateRegistryObservations(adb, [multiBrand]);
+    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
+    const bind = pending.find((o) => o.organizationId === aOrgId)!;
+    expect(bind.payload["matched_brand_licence"]).toBe("RIDGELINEB222");
+
+    await decideRegistryObservation(adb, bind.id, "accept", { decidedBy: "test:brand" });
+
+    // ONE licence — the brand's. Stamping all three is what fused sibling brands.
+    const ids = (await adb.execute(sql`
+      SELECT value_normalized FROM organization_identifiers
+      WHERE organization_id = ${aOrgId} AND identifier_type = 'contractor_number'
+      ORDER BY value_normalized`)).rows as { value_normalized: string }[];
+    expect(ids.map((r) => r.value_normalized)).toEqual(["RIDGELINEB222"]);
+
+    const [org] = (await adb.execute(sql`
+      SELECT registry_brand_ref, contractor_registration, ubi
+      FROM organizations WHERE id = ${aOrgId}`)).rows as {
+      registry_brand_ref: string | null; contractor_registration: string | null; ubi: string | null;
+    }[];
+    expect(org!.registry_brand_ref).toBe("RIDGELINEB222");
+    expect(org!.contractor_registration).toBe("RIDGELINEB222");
+    expect(org!.ubi).toBe("603888222"); // the ENTERPRISE key is still stamped
   });
 });
 });
