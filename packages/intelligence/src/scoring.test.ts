@@ -621,6 +621,83 @@ describe("v1.9.0 — owner-directed provisional Solis tweaks (2026-07-20, §12.3
   });
 });
 
+describe("v1.10.0 — Solis geography is a DISTANCE ladder (2026-07-23, §12.3)", () => {
+  const ti = (over: Partial<ProjectFeatures>): ProjectFeatures =>
+    features({
+      text: "tenant improvement interior remodel drywall and paint suite 200",
+      maxValuation: 250_000,
+      stage: "permit_issued",
+      ...over,
+    });
+  /** The SHIPPED Solis account still covers only the four pilot counties. To
+   * exercise the Wave-3 bands at all we must widen the territory — which is
+   * exactly the owner decision that would activate them in production. */
+  const WIDE: AccountScoringInput = {
+    ...ACCOUNTS[2]!,
+    territory: {
+      counties_included: [
+        "Thurston", "Pierce", "Lewis", "King", "Kitsap", "Snohomish", "Clark", "Spokane",
+      ],
+      counties_excluded: [],
+    },
+  };
+  const geoOf = (county: string, acct: AccountScoringInput = WIDE) =>
+    routeProject(ti({ county }), [acct]).find((r) => r.accountKey === "solis_interiors")
+      ?.components["geography"];
+
+  it("keeps the four calibrated pilot counties EXACTLY (frozen-eval regression guard)", () => {
+    expect(geoOf("Thurston")).toBe(1);
+    expect(geoOf("Pierce")).toBe(0.9);
+    expect(geoOf("Lewis")).toBe(0.9);
+    expect(geoOf("King")).toBe(0.6);
+  });
+
+  it("grades the Wave-3 counties by distance, all BELOW King's calibrated 0.6", () => {
+    // The bug this fixes: these four used to share a flat 0.8 default — ABOVE
+    // King — so a ~300-mile Spokane job outranked a ~60-mile Seattle job.
+    expect(geoOf("Kitsap")).toBe(0.5);
+    expect(geoOf("Snohomish")).toBe(0.4);
+    expect(geoOf("Clark")).toBe(0.3);
+    expect(geoOf("Spokane")).toBe(0.15);
+    for (const county of ["Kitsap", "Snohomish", "Clark", "Spokane"]) {
+      expect(geoOf(county)!).toBeLessThan(geoOf("King")!);
+    }
+  });
+
+  it("is monotonically non-increasing with distance from the Olympia home point", () => {
+    const ladder = ["Thurston", "Pierce", "King", "Kitsap", "Snohomish", "Clark", "Spokane"];
+    const values = ladder.map((c) => geoOf(c)!);
+    for (let i = 1; i < values.length; i += 1) {
+      expect(values[i]!).toBeLessThanOrEqual(values[i - 1]!);
+    }
+  });
+
+  it("scores a nearer project strictly higher than an identical farther one", () => {
+    const near = routeProject(ti({ county: "King" }), [WIDE])[0]!;
+    const far = routeProject(ti({ county: "Spokane" }), [WIDE])[0]!;
+    expect(near.score).toBeGreaterThan(far.score);
+  });
+
+  it("treats an unknown county as FAR (0.3), not as a middling default", () => {
+    // Unknown distance is not evidence of proximity — this is the value that
+    // used to be 0.8 and caused the inversion.
+    const acct: AccountScoringInput = {
+      ...ACCOUNTS[2]!,
+      territory: { counties_included: ["Whatcom"], counties_excluded: [] },
+    };
+    expect(geoOf("Whatcom", acct)).toBe(0.3);
+  });
+
+  it("the SHIPPED Solis territory still excludes the Wave-3 counties (owner gate)", () => {
+    // Onboarding Everett (Snohomish) does NOT silently start sending Solis
+    // out-of-territory leads: routing is territory-gated first, so the new bands
+    // only take effect when the owner widens counties_included.
+    for (const county of ["Snohomish", "Kitsap", "Clark", "Spokane"]) {
+      expect(routeProject(ti({ county }), [ACCOUNTS[2]!])).toEqual([]);
+    }
+  });
+});
+
 describe("WS-B — gc_quality + trade_match are score-NEUTRAL signals (§12.3)", () => {
   const WANTED_TRADES = ["drywall", "painting"] as const;
   // The Solis account carrying its configured trades (from `capabilities`).

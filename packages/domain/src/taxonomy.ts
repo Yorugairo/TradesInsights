@@ -56,11 +56,13 @@ export type EventType = z.infer<typeof EventTypeSchema>;
 // Puget Sound densification (Wave 3): the four pilot counties plus the western/
 // eastern WA counties whose CLEAN permit sources are onboarded in this wave
 // (Snohomish, Kitsap, Clark, Spokane). Additive — existing county behavior and
-// the frozen §12.3 scorer are untouched; scoring is county-string-tolerant
-// (`solisGeography` returns a 0.8 default for any non-pilot county), so records
-// in the new counties validate and flow through the existing default path.
-// NOTE (owner, §12.3): distant new-county jobs currently score at that 0.8
-// geography default — HIGHER than King's calibrated 0.6 — pending calibration.
+// the frozen §12.3 scorer are untouched; scoring is county-string-tolerant, so
+// records in the new counties validate and flow through the scorer normally.
+// RESOLVED 2026-07-23 (scoring v1.10.0): each of these counties now has an
+// explicit Solis DISTANCE band (`SOLIS_GEOGRAPHY_BANDS` in
+// packages/intelligence/src/scoring.ts) — Kitsap 0.5, Snohomish 0.4, Clark 0.3,
+// Spokane 0.15 — so they no longer outrank King's calibrated 0.6 on geography.
+// The four pilot counties are unchanged, keeping the frozen eval byte-identical.
 export const COUNTIES = [
   "Thurston",
   "Pierce",

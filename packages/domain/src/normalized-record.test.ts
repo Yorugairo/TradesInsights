@@ -40,9 +40,20 @@ describe("NormalizedSourceRecordSchema", () => {
   });
 
   it("rejects a county outside the launch counties", () => {
+    // Whatcom has no onboarded source and is deliberately NOT in the enum — the
+    // closed set is what stops an adapter inventing a county it cannot serve.
     expect(() =>
-      NormalizedSourceRecordSchema.parse({ ...valid, county: "Snohomish" }),
+      NormalizedSourceRecordSchema.parse({ ...valid, county: "Whatcom" }),
     ).toThrow();
+  });
+
+  it("accepts the Wave-3 densification counties added with their sources", () => {
+    // Snohomish (Everett), Kitsap, Clark and Spokane (City of Spokane) joined the
+    // enum in Wave 3; records in them must validate, and each carries an explicit
+    // Solis distance band so none of them outranks King on geography.
+    for (const county of ["Snohomish", "Kitsap", "Clark", "Spokane"]) {
+      expect(NormalizedSourceRecordSchema.parse({ ...valid, county })).toBeTruthy();
+    }
   });
 
   it("rejects zero valuation — unknown must be null, never zero", () => {

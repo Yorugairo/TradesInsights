@@ -33,7 +33,16 @@ import { bidTrackFor, type BidTrack } from "./bid-window.js";
 //       fires — relationship-first, and leaves every frozen eval example
 //       (no warm set) byte-identical.
 //   (4) layered easy-win proximity bands live in config/delivery, not here.
-export const SCORING_ALGORITHM_VERSION = "1.9.0";
+// 1.10.0 — Solis geography becomes a DISTANCE LADDER (owner directive
+// 2026-07-23, still PROVISIONAL §12.3). Wave 3 put Snohomish/Kitsap/Clark/
+// Spokane in the County enum, where they hit a flat 0.8 default — ABOVE King's
+// calibrated 0.6 despite all being farther from Olympia, so a ~300-mile Spokane
+// job outranked a ~60-mile Seattle job on geography. SOLIS_GEOGRAPHY_BANDS now
+// grades by drive distance and the unknown-county default drops 0.8 → 0.3
+// (unknown distance is not evidence of proximity). The four pilot counties keep
+// their exact calibrated values, and the frozen eval set contains only those
+// four — so this is eval byte-identical by construction.
+export const SCORING_ALGORITHM_VERSION = "1.10.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -231,13 +240,45 @@ function evidenceQuality(f: ProjectFeatures): number {
   return f.aGradeEvidence > 0 ? 1 : 0;
 }
 
-/** Solis geography fit (owner directive 2026-07-20, PROVISIONAL §12.3): up-weight the
- * home metro over distant King commercial; Pierce/Lewis home counties sit ~equal. */
+/**
+ * Solis geography fit as a DISTANCE gradient from the home metro (owner
+ * directive 2026-07-23, PROVISIONAL §12.3). Solis Interiors works out of
+ * Lacey/Olympia (Thurston); an interior-finishes crew's willingness to travel
+ * falls off with drive time, so the band is a distance ladder — not a flat
+ * in-territory/out flag.
+ *
+ * WHY THIS CHANGED: Wave 3 added Snohomish/Kitsap/Clark/Spokane to the County
+ * enum. Until now they all fell through to a flat 0.8 default — HIGHER than
+ * King's calibrated 0.6, even though every one of them is FARTHER from Olympia
+ * than King is. That inverted the ranking (a ~300-mile Spokane job outscored a
+ * ~60-mile Seattle job on geography). These bands remove the inversion.
+ *
+ * The four PILOT counties keep their calibrated values EXACTLY (Thurston 1.0,
+ * Pierce/Lewis 0.9, King 0.6). The frozen eval set contains only those four
+ * counties, so this change is eval byte-identical by construction; only the
+ * Wave-3 counties and the unknown-county default move.
+ *
+ * Distances are approximate one-way drive from Olympia and are documented so a
+ * calibration session can move a band with the reason visible.
+ */
+const SOLIS_GEOGRAPHY_BANDS: Record<string, number> = {
+  Thurston: 1,     // home metro (Lacey/Olympia) — 0 mi
+  Pierce: 0.9,     // adjacent north — ~30 mi
+  Lewis: 0.9,      // adjacent south — ~30 mi
+  King: 0.6,       // distant secondary (Seattle/Bellevue commercial) — ~60 mi
+  Kitsap: 0.5,     // ~60 mi but across the Sound: ferry or Narrows detour
+  Snohomish: 0.4,  // beyond the Seattle crossing — ~90-110 mi
+  Clark: 0.3,      // far south — ~100 mi, effectively the Portland market
+  Spokane: 0.15,   // cross-state — ~300 mi; corpus data, not a serviceable market
+};
+
+/** A county with no calibrated band is treated as FAR, not as a middling
+ * default: unknown distance is not evidence of proximity. (This is the value
+ * that used to be 0.8 and caused the inversion above.) */
+const SOLIS_GEOGRAPHY_UNKNOWN = 0.3;
+
 function solisGeography(county: string): number {
-  if (county === "Thurston") return 1;                        // home metro (Lacey/Olympia)
-  if (county === "Pierce" || county === "Lewis") return 0.9;  // home counties, ~equal
-  if (county === "King") return 0.6;                          // distant secondary (Seattle commercial)
-  return 0.8;                                                 // other in-territory
+  return SOLIS_GEOGRAPHY_BANDS[county] ?? SOLIS_GEOGRAPHY_UNKNOWN;
 }
 
 function inCounties(f: ProjectFeatures, included: string[], excluded: string[]): boolean {
