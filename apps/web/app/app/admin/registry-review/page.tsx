@@ -84,6 +84,8 @@ export default async function RegistryReviewPage({
   return (
     <main style={{ padding: "1rem", maxWidth: 1100 }}>
       <p>
+        <Link href="/app/admin/cockpit">← cockpit</Link>
+        {" · "}
         <Link href="/app/admin/review">← resolution review</Link>
         {" · "}
         <Link href="/app/admin/corporate-families">corporate families →</Link>

@@ -72,6 +72,8 @@ export default async function CorporateFamiliesPage({
   return (
     <main style={{ padding: "1rem", maxWidth: 1150 }}>
       <p>
+        <Link href="/app/admin/cockpit">← cockpit</Link>
+        {" · "}
         <Link href="/app/admin/registry-review">← registry review</Link>
       </p>
       <h1>Corporate families — common control above the legal entity</h1>

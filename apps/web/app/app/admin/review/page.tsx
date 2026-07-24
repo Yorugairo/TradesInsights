@@ -18,6 +18,9 @@ export default async function AdminReviewPage() {
 
   return (
     <main>
+      <p>
+        <Link href="/app/admin/cockpit">← cockpit</Link>
+      </p>
       <h1>Resolution review queue</h1>
       <p>
         Ambiguous matches held for a human decision (spec §10). Merge joins the record to the
