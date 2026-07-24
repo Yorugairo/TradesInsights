@@ -9,6 +9,7 @@ export * from "./memo.js";
 export * from "./pursuit.js";
 export * from "./invitations.js";
 export * from "./relationships.js";
+export * from "./opportunity-evidence.js";
 export * from "./trust.js";
 export * from "./extraction/contract.js";
 export * from "./extraction/provider.js";
