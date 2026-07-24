@@ -239,14 +239,29 @@ So the scoring rule is **phone agreement + name agreement**, never phone alone.
 
 - **WHY THIS OUTRANKS MATCHING**: no matching improvement can help the 85% that
   were never queried. This is the single biggest lever on "who do I call".
-- **GOTCHA / COST**: Places lookups cost money per call. Do NOT plan a 21,751-row
-  sweep. First find out what capped the existing run at ~3,800 (a limit flag? a
-  source list? a budget gate?) — that cause is currently UNMEASURED. Then backfill
-  in priority order: entities appearing in Solis opportunities, then the 215
-  primary contractors, then multi-project entities.
-- **VALIDATE**: the audit reconciles (`looked_up + never_looked_up = 25,545`) and
-  names the cap's cause; the backfill runs behind an explicit `--limit` and logs
-  spend.
+- **DIAGNOSIS COMPLETE (2026-07-24)** — `apps/registry/scripts/google-place-coverage-audit.mjs`
+  (read-only) now reproduces it. **The cap is the INPUT LIST, not a limit and not
+  geography.** `run_google_self_scrape_full_target.py` reads
+  `aggregate/self_scrape_input_target_a_b1_priority.csv` — a priority-tier subset.
+  Supporting evidence, all re-checkable by the script:
+  - coverage FLAT across counties (11.5%–18.6%) ⇒ not scoped geographically;
+  - coverage FLAT across mint-order deciles (16.7% → 13.0%, **no cliff**) ⇒ the
+    run was NOT truncated at a row cap (a truncated run leaves ~100% early, 0% late);
+  - ONE source run, one day, `google_maps_place_self_scrape`.
+  ⇒ The 21,751 uncovered entities were **never queried**, so a widened target list
+  should pay. Patriot is the proof case: findable listing, never fetched.
+- **NO RUN TELEMETRY**: `registry_internal` has no run table, so the original
+  run's attempted/succeeded counters were never recorded — the cap had to be
+  inferred from the data's shape. A widened run must record its counters.
+- **PRIORITISATION CANNOT BE DONE REGISTRY-SIDE** (measured): `record_count>=3`
+  leaves 37 entities, "has a trade" leaves 19,706, "has a phone" leaves 21,739 —
+  too narrow to be a work list, or simply "everything". The registry does not know
+  which entities a customer sees. The real list must be built Insights-side from
+  live opportunities and their primary contractors (Phase 3) and fed in.
+- **GOTCHA / COST**: lookups cost per row. Do NOT plan a 21,751-row sweep; the
+  backfill runs behind an explicit `--limit`, priority-ordered, logging spend.
+  Also note `source_system = google_maps_place_self_scrape` — a scrape, not the
+  paid Places API, so widening it is a terms-of-use decision as well as a cost one.
 
 ---
 
