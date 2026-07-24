@@ -1,7 +1,7 @@
 import "../load-env.js";
 import { createDb, createPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
-import { linkOpportunityEvidence } from "@otn/intelligence";
+import { auditOpportunityEvidence, linkOpportunityEvidence } from "@otn/intelligence";
 
 // pnpm link-evidence:preview   (read-only — prints what WOULD link)
 // pnpm link-evidence:apply     (writes the rows)
@@ -16,6 +16,7 @@ import { linkOpportunityEvidence } from "@otn/intelligence";
 // run of either reports zero.
 //
 // Flags:
+//   --audit                 reconcile against the publication gate (read-only, wins over --apply)
 //   --apply                 write (default is dry run)
 //   --limit=N               only the first N opportunities, ordered by id
 //   --account=<uuid>        scope to one account profile
@@ -33,11 +34,41 @@ function stringArg(name: string): string | undefined {
 }
 
 async function main() {
-  const apply = process.argv.includes("--apply");
-  const logger = createLogger({ app: apply ? "link-evidence-apply" : "link-evidence-preview" });
+  const audit = process.argv.includes("--audit");
+  const apply = !audit && process.argv.includes("--apply");
+  const logger = createLogger({
+    app: audit ? "link-evidence-audit" : apply ? "link-evidence-apply" : "link-evidence-preview",
+  });
   const pool = createPool();
   const db = createDb(pool);
   try {
+    if (audit) {
+      // Read-only. `--audit` beats `--apply` deliberately: an audit that wrote
+      // would be measuring its own effect.
+      const result = await auditOpportunityEvidence(db, {
+        limit: numericArg("limit"),
+        accountProfileId: stringArg("account"),
+        maxPerOpportunity: numericArg("max-per-opportunity"),
+        logger,
+      });
+      logger.info(
+        {
+          mode: "audit (read-only)",
+          opportunitiesScanned: result.opportunitiesScanned,
+          projectsChecked: result.projectsChecked,
+          passing: result.passing,
+          failingCoreEvent: result.failingCoreEvent,
+          failingFactsEvidenced: result.failingFactsEvidenced,
+          // Empty is the expected and correct state.
+          failureDetails: result.failureDetails,
+          reconciliation: result.reconciliation,
+        },
+        result.reconciliation.balances
+          ? "evidence audit — reconciliation balances"
+          : "evidence audit — RECONCILIATION DOES NOT BALANCE",
+      );
+      return;
+    }
     const summary = await linkOpportunityEvidence(db, {
       dryRun: !apply,
       limit: numericArg("limit"),

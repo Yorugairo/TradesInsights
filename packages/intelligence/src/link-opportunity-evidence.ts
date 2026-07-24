@@ -26,6 +26,7 @@
  */
 import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
+import { checkAGradeCoreEvent, checkFactsEvidenced } from "./gate/gate.js";
 import {
   classifyClaim,
   isKnownFactPath,
@@ -364,5 +365,115 @@ export async function linkOpportunityEvidence(
       "fact paths outside the claim vocabulary — a source schema may have changed",
     );
   }
+  return summary;
+}
+
+// ── Audit ────────────────────────────────────────────────────────────────────
+
+/**
+ * Reconciliation of what the linker did against what the publication gate
+ * demands.
+ *
+ * WHY THIS IS NOT A BUG HUNT. Measured 2026-07-24, every one of the 6,007
+ * projects behind an opportunity passes both checks. The value is that the
+ * number is now produced by the gate's OWN functions. The same figure was first
+ * obtained from hand-written SQL that duplicated `checkAGradeCoreEvent`'s
+ * core-event logic, and a second copy of a rule is how two surfaces quietly stop
+ * agreeing. This also turns a one-off measurement into a regression detector for
+ * when non-A-grade sources land.
+ *
+ * NOTE THE ASYMMETRY IT TESTS: the gate reads `evidence_items` DIRECTLY through
+ * `source_record_id`, while the linker reaches the same rows via
+ * `opportunities.project_id -> record_resolutions`. Two independent paths to one
+ * question — if they ever disagree, that is worth knowing.
+ */
+export interface EvidenceAuditSummary {
+  opportunitiesScanned: number;
+  projectsChecked: number;
+  passing: number;
+  failingCoreEvent: number;
+  failingFactsEvidenced: number;
+  /** Distinct `detail` strings from failing checks, so a failure is diagnosable
+   * from the summary alone rather than needing a re-run. */
+  failureDetails: string[];
+  reconciliation: {
+    pairsConsidered: number;
+    linked: number;
+    unlinkable: number;
+    /** Every reason enumerated. Nothing is lumped into "other". */
+    unlinkableByReason: Record<ClaimRefusal | "capped_out", number>;
+    balances: boolean;
+  };
+}
+
+export async function auditOpportunityEvidence(
+  db: Db,
+  opts: LinkEvidenceOptions = {},
+): Promise<EvidenceAuditSummary> {
+  // Reuse the linker in dry-run so the reconciliation describes the SAME
+  // computation the apply path performs, not a parallel estimate of it.
+  const link = await linkOpportunityEvidence(db, { ...opts, dryRun: true });
+
+  const opportunityIds = await fetchOpportunityIds(db, {
+    accountProfileId: opts.accountProfileId,
+    limit: opts.limit,
+  });
+  const projectIds = new Set<string>();
+  for (let i = 0; i < opportunityIds.length; i += OPPORTUNITY_BATCH) {
+    const batch = opportunityIds.slice(i, i + OPPORTUNITY_BATCH);
+    const res = await db.execute(sql`
+      SELECT DISTINCT project_id FROM opportunities WHERE id IN (${uuidList(batch)})`);
+    for (const r of res.rows as Record<string, unknown>[]) projectIds.add(String(r["project_id"]));
+  }
+
+  const summary: EvidenceAuditSummary = {
+    opportunitiesScanned: opportunityIds.length,
+    projectsChecked: projectIds.size,
+    passing: 0,
+    failingCoreEvent: 0,
+    failingFactsEvidenced: 0,
+    failureDetails: [],
+    reconciliation: {
+      pairsConsidered: link.pairsConsidered,
+      linked: link.linked + link.alreadyLinked,
+      unlinkable: 0,
+      unlinkableByReason: {
+        discovery_only_grade: link.refusedByReason.discovery_only_grade,
+        unknown_grade: link.refusedByReason.unknown_grade,
+        capped_out: link.cappedDropped,
+      },
+      balances: false,
+    },
+  };
+
+  const details = new Set<string>();
+  for (const projectId of projectIds) {
+    // Memoised by project: 9,128 opportunities collapse to 6,007 projects, and
+    // the checks are per-project, so per-opportunity calls would be identical
+    // answers at 1.5x the cost.
+    //
+    // `extraction` is null on purpose — this audits the DETERMINISTIC layer.
+    // Passing a fabricated extraction would test nothing real.
+    const [core, facts] = await Promise.all([
+      checkAGradeCoreEvent(db, projectId),
+      checkFactsEvidenced(db, projectId, null),
+    ]);
+    if (!core.pass) {
+      summary.failingCoreEvent += 1;
+      details.add(`a_grade_core_event: ${core.detail}`);
+    }
+    if (!facts.pass) {
+      summary.failingFactsEvidenced += 1;
+      details.add(`facts_evidenced: ${facts.detail}`);
+    }
+    if (core.pass && facts.pass) summary.passing += 1;
+  }
+  summary.failureDetails = [...details].sort();
+
+  const r = summary.reconciliation;
+  r.unlinkable = Object.values(r.unlinkableByReason).reduce((a, b) => a + b, 0);
+  // The whole point of a reconciliation: every considered pair is accounted for
+  // as either linked or unlinkable-for-a-named-reason.
+  r.balances = r.linked + r.unlinkable === r.pairsConsidered;
   return summary;
 }

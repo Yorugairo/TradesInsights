@@ -92,7 +92,13 @@ async function checkIdentity(db: Db, projectId: string): Promise<GateCheck> {
 }
 
 /** §15: "At least one A-grade source supports the core event." */
-async function checkAGradeCoreEvent(db: Db, projectId: string): Promise<GateCheck> {
+/**
+ * EXPORTED FOR THE EVIDENCE AUDIT ONLY. `evaluateGate` remains the entry point
+ * for deciding whether anything may be delivered — this is exposed so the audit
+ * can ask the gate's own question of linked evidence instead of reimplementing
+ * it in SQL, which is how two surfaces start disagreeing about the same rule.
+ */
+export async function checkAGradeCoreEvent(db: Db, projectId: string): Promise<GateCheck> {
   // Core event = the most recent material event (falls back to the most
   // recent event of any kind when none is flagged material).
   const res = await db.execute(sql`
@@ -122,7 +128,7 @@ async function checkAGradeCoreEvent(db: Db, projectId: string): Promise<GateChec
  * (discovery-only), and C-grade only counts with non-C corroboration on the
  * same fact path.
  */
-async function checkFactsEvidenced(
+export async function checkFactsEvidenced(
   db: Db,
   projectId: string,
   extraction: ModelExtraction | null,

@@ -38,7 +38,8 @@
     "delivery:metrics": "tsx src/cli/delivery-metrics.ts",
     "alerts:run": "tsx src/cli/alerts-run.ts",
     "export:run": "tsx src/cli/export-run.ts",
-    "person-shape:report": "tsx src/cli/person-shape-report.ts"
+    "person-shape:report": "tsx src/cli/person-shape-report.ts",
+    "link-evidence:audit": "tsx src/cli/link-evidence.ts --audit"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",
