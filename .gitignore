@@ -23,3 +23,6 @@ AGENTS.md
 # self-learning loop — transient per-session state (LEARNED.md itself is tracked)
 .claude/learned/.state/
 captures/
+
+# pals-hydrate-export CLI output — regenerated every batch, not source
+apps/worker/pals-hydrate-seed.json

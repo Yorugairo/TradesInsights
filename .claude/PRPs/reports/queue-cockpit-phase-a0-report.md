@@ -57,11 +57,25 @@ failures aborts; low-and-slow (2.5s+jitter, 250/batch); lookup-class hard rule
 (never crawl) enforced by the seed CLI.
 
 ## Operator runbook (per batch)
+
+**Windows, one command** (added 2026-07-24 after a manual run surfaced two
+paper cuts — PowerShell execution-policy blocking `pnpm.ps1`, and
+`pnpm --filter <pkg> <script>` running with cwd set to that PACKAGE, not repo
+root, which silently misplaced the seed file on the first manual attempt):
+```
+scripts\pals-hydrate-batch.cmd [limit]
+```
+Self-locating (works double-clicked from Explorer or run from any directory),
+sequences all three steps below, aborts with a clear message on failure at any
+step, safe to re-run (already-captured permits are skipped, so re-running after
+an ingest failure does not re-open the browser).
+
+**Manual / non-Windows equivalent** (what the batch file wraps):
 ```bash
 pnpm --filter @otn/worker pals:hydrate:export --limit=250
 ```
 ```bash
-cd apps/web && node ../../scripts/pals-header-capture.mjs --list=../../pals-hydrate-seed.json --out=$OTN_CAPTURE_DIR/pierce_pals_contractor
+cd apps/web && node ../../scripts/pals-header-capture.mjs --list=../worker/pals-hydrate-seed.json --out=$OTN_CAPTURE_DIR/pierce_pals_contractor
 ```
 ```bash
 OTN_CAPTURE_DIR=<dir> pnpm --filter @otn/worker source:run:operator-local
