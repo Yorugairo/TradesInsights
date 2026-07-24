@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPrincipalPersonIndex,
   corePrincipalKey,
+  isPersonShapedOrgName,
   matchPrincipalsToPeople,
   personCoreKey,
   type PersonCandidate,
@@ -218,5 +219,78 @@ describe("matchPrincipalsToPeople", () => {
       mixed,
     );
     expect(pairs.map((p) => p.verdict)).toEqual(["corroborated", "contradicted"]);
+  });
+});
+
+describe("isPersonShapedOrgName", () => {
+  it("recognises a person-shaped org name", () => {
+    expect(isPersonShapedOrgName("LISA L PRICE")).toBe(true);
+    expect(isPersonShapedOrgName("LUIS VERA")).toBe(true);
+    expect(isPersonShapedOrgName("CHRISTINE L MISKIN")).toBe(true);
+  });
+
+  it("keeps obvious companies out", () => {
+    expect(isPersonShapedOrgName("WOLF INDUSTRIES INC")).toBe(false);
+    expect(isPersonShapedOrgName("ADAIR HOMES INC")).toBe(false);
+    expect(isPersonShapedOrgName("NEWAUKUM CONSTRUCTION LLC")).toBe(false);
+    expect(isPersonShapedOrgName("EMERALD CITY CONSTRUCTION & RENOVATIONS")).toBe(false);
+  });
+
+  it("lets the trade token beat a surname-looking first word", () => {
+    // The one people get wrong: FRANKLIN reads as a surname, but ROOFING is a
+    // business token and decides it.
+    expect(isPersonShapedOrgName("FRANKLIN ROOFING")).toBe(false);
+  });
+
+  it("still calls known denylist survivors businesses", () => {
+    // These four slipped an earlier version of BUSINESS_TOKENS and were added.
+    expect(isPersonShapedOrgName("CHEHALIS SHEET METAL")).toBe(false);
+    expect(isPersonShapedOrgName("SOUTH SOUND SOLAR")).toBe(false);
+    expect(isPersonShapedOrgName("COLUMBIA POOLS")).toBe(false);
+    expect(isPersonShapedOrgName("BUTLER SURVEYING")).toBe(false);
+  });
+
+  it("MISCLASSIFIES real companies whose trade word is not in the denylist", () => {
+    // Documented, not aspirational. These are live primary contractors that match
+    // a registry entity, and every one is why the refusal is report-only:
+    // refusing on this test would destroy 12.9% of all available name matches.
+    for (const name of [
+      "JOHNSON CONTROLS",
+      "CINTAS FIRE PROTECTION",
+      "JH KELLY",
+      "RESCUE ROOTER",
+      "WASHINGTON GENERATORS",
+      "APEX TREE EXPERTS",
+      "GENESIS BUILDINGS",
+      "NW SIGN CREW",
+    ]) {
+      expect(isPersonShapedOrgName(name)).toBe(true);
+    }
+  });
+
+  it("narrows the false positives when a surname allowlist is supplied", () => {
+    // The allowlist is what makes the gate sound: HEROES and CREW are not
+    // surnames L&I records, so they stop being "people".
+    const surnames = new Set(["PRICE", "VERA", "PIPER"]);
+    expect(isPersonShapedOrgName("HYDRO HEROES", surnames)).toBe(false);
+    expect(isPersonShapedOrgName("NW SIGN CREW", surnames)).toBe(false);
+    expect(isPersonShapedOrgName("LISA L PRICE", surnames)).toBe(true);
+    // ...but it cannot rescue a company whose last word IS a real surname.
+    expect(isPersonShapedOrgName("PROJECTS BY PIPER", surnames)).toBe(true);
+  });
+
+  it("treats null, empty and whitespace as not person-shaped", () => {
+    expect(isPersonShapedOrgName(null)).toBe(false);
+    expect(isPersonShapedOrgName(undefined)).toBe(false);
+    expect(isPersonShapedOrgName("")).toBe(false);
+    expect(isPersonShapedOrgName("   ")).toBe(false);
+  });
+
+  it("still reads a name through prefix noise, keys it wrongly", () => {
+    // `cleanNameChars` strips the colon, so TENANT becomes the given name. The
+    // person verdict is right; the KEY is garbage. Fixing prefix noise belongs to
+    // the matching work, not here — changing it would move principal-lane rows.
+    expect(isPersonShapedOrgName("TENANT: DESTINY SIMPSON")).toBe(true);
+    expect(personCoreKey("TENANT: DESTINY SIMPSON")).toBe("SIMPSON|TENANT");
   });
 });

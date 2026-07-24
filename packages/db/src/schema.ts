@@ -432,10 +432,11 @@ export const opportunityEvidence = pgTable(
   // but the SAME item legitimately supports many opportunities when several
   // accounts chase one project.
   //
-  // `opportunity_evidence_opp_ix` predates this (0000_init) and is now redundant
-  // — `opportunityId` leads the unique index, so it already serves lookups by
-  // opportunity. Kept so this declaration matches the live database; see
-  // 0033_opportunity_evidence_indexes.sql for the note on removing it.
+  // `opportunity_evidence_opp_ix` predates this (0000_init) and is NOT redundant,
+  // despite `opportunityId` leading the unique index. Measured: the planner picks
+  // the narrow 960 kB index for full-row lookups by opportunity, because the
+  // unique index does not cover claim_type/confirmed/confidence and is 4.7x wider
+  // to traverse. The unique index wins where it covers the projection. Keep both.
   (t) => [
     index("opportunity_evidence_opp_ix").on(t.opportunityId),
     uniqueIndex("opportunity_evidence_opp_item_ux").on(t.opportunityId, t.evidenceItemId),

@@ -37,7 +37,8 @@
     "eval:run": "tsx src/cli/eval-run.ts",
     "delivery:metrics": "tsx src/cli/delivery-metrics.ts",
     "alerts:run": "tsx src/cli/alerts-run.ts",
-    "export:run": "tsx src/cli/export-run.ts"
+    "export:run": "tsx src/cli/export-run.ts",
+    "person-shape:report": "tsx src/cli/person-shape-report.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",

@@ -133,6 +133,47 @@ export function personCoreKey(
 }
 
 /**
+ * Is this "organization" name actually a person?
+ *
+ * REPORTING ONLY. Nothing in the binding path consults this, and that is a
+ * deliberate, measured decision rather than an oversight.
+ *
+ * The obvious use — skip person-shaped orgs so the queue stops proposing
+ * homeowner↔contractor binds — was measured before being built and rejected. Of
+ * 3,777 unbound orgs, 2,376 are person-shaped by this test, and 33 of those 2,376
+ * nonetheless MATCH a registry entity by name: `JOHNSON CONTROLS`,
+ * `CINTAS FIRE PROTECTION`, `JH KELLY`, `RESCUE ROOTER`, `WASHINGTON GENERATORS`.
+ * Only 256 unbound orgs match anything at all, so refusing on this test would
+ * destroy 12.9% of every available match, and all but one of the 33 is a real
+ * company.
+ *
+ * The safeguard that would fix that — "a registry name match proves it is a
+ * business, so never refuse it" — cannot work yet. It only fires for contractors
+ * already loaded, and L&I sits at 26,934 of 75,364 (35.7%), with general
+ * contractors at roughly 3,074 of ~51,000. Coverage is thinnest exactly where the
+ * binding work needs it densest.
+ *
+ * Nor does the problem age out: this reads the INSIGHTS org name, while Google
+ * enrichment improves REGISTRY entity names, so a refused org would never reach
+ * the matcher however good the registry became.
+ *
+ * Enabling refusal is gated on the completed L&I load (roadmap P6). Until then
+ * this exists to MEASURE the gap, not to act on it.
+ *
+ * `knownSurnames` should be passed whenever the caller holds it: requiring a real
+ * L&I principal surname is strictly stricter, and for a refusal that is the safe
+ * direction. It rescues `HYDRO HEROES`, `NW SIGN CREW`, `GENESIS BUILDINGS` — but
+ * not `PROJECTS BY PIPER`, because Piper is a genuine surname. It narrows the
+ * tail; it does not remove it.
+ */
+export function isPersonShapedOrgName(
+  raw: string | null | undefined,
+  knownSurnames?: ReadonlySet<string>,
+): boolean {
+  return personCoreKey(raw, knownSurnames) !== null;
+}
+
+/**
  * The registry's FULL principal key, character-cleaned — `SURNAME, GIVEN M`.
  *
  * This, NOT the coarse key, is what groups a corporate family: both sides of a

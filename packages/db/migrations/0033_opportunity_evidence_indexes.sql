@@ -19,12 +19,24 @@
 -- opportunities — several accounts can be chasing the same project — so the
 -- constraint is deliberately on the pair and never on `evidence_item_id` alone.
 --
--- NOTE ON REDUNDANCY: `opportunity_id` is the leading column of this new index,
--- so the older single-column `opportunity_evidence_opp_ix` no longer earns its
--- write cost. It is left in place here rather than dropped — removing an index
--- that predates this work is a separate, deliberate decision, and the table is
--- empty so the cost is currently zero. Revisit before the linker's first bulk
--- run.
+-- THE OLDER INDEX IS NOT REDUNDANT — DO NOT DROP IT. It is tempting to think so,
+-- because `opportunity_id` leads this new index and a leading column can serve
+-- lookups on its own. Measured on the populated table, that reasoning is wrong:
+--
+--   SELECT claim_type, confirmed, confidence ... WHERE opportunity_id = $1
+--     -> Index Scan using opportunity_evidence_opp_ix
+--
+-- The planner picks the OLD index because this unique index does not COVER those
+-- columns, and at 4,504 kB against 960 kB it is 4.7x more index to traverse for
+-- the same heap fetches. That query is exactly the read this data exists for —
+-- rendering an opportunity's evidence.
+--
+-- This index still wins wherever it covers the projection:
+--
+--   SELECT opportunity_id, evidence_item_id WHERE opportunity_id IN (...)
+--     -> Index Only Scan using opportunity_evidence_opp_item_ux, Heap Fetches: 0
+--
+-- Two indexes, two access patterns, both earning their keep.
 --
 -- IF NOT EXISTS so a re-run against an environment that already has the index is
 -- a no-op rather than an error.
