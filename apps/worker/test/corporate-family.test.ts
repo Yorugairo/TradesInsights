@@ -209,7 +209,7 @@ describe("principal ↔ person discovery", () => {
       contractRow(ENTITY_A, "Black Lion Heating"),
       contractRow(ENTITY_B, "Sturm Heating"),
     ]);
-    const [match] = matchPrincipalsToPeople(
+    const pairs = matchPrincipalsToPeople(
       [{
         source: "organization",
         organizationId: orgIds[2]!,
@@ -219,7 +219,8 @@ describe("principal ↔ person discovery", () => {
       }],
       index,
     );
-    expect(match?.entities.map((e) => e.entityId).sort()).toEqual([ENTITY_A, ENTITY_B].sort());
-    expect(match?.alreadyBound).toBe(false);
+    // One row PER entity — pair-level review, not one row listing both.
+    expect(pairs.map((p) => p.entity.entityId).sort()).toEqual([ENTITY_A, ENTITY_B].sort());
+    expect(pairs.every((p) => !p.alreadyBound)).toBe(true);
   });
 });

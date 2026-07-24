@@ -130,37 +130,93 @@ describe("matchPrincipalsToPeople", () => {
     ...over,
   });
 
-  it("reaches every entity the person controls, across both name conventions", () => {
-    const [match] = matchPrincipalsToPeople([candidate({})], index);
-    expect(match?.coreKey).toBe("ERDAHL|DARRIN");
-    expect(match?.entities.map((e) => e.entityName)).toEqual(["Black Lion", "Sturm Heating"]);
-    expect(match?.alreadyBound).toBe(false);
+  // ONE ROW PER (person, entity). Person-level rows put a plausible match and a
+  // collision in the same cell under one verdict, which is what made the queue
+  // unreadable.
+  it("emits one pair per entity the person reaches", () => {
+    const pairs = matchPrincipalsToPeople([candidate({})], index);
+    expect(pairs).toHaveLength(2);
+    expect(pairs.map((p) => p.entity.entityName).sort()).toEqual(["Black Lion", "Sturm Heating"]);
+    expect(pairs.every((p) => p.coreKey === "ERDAHL|DARRIN")).toBe(true);
+    expect(pairs.every((p) => p.alreadyBound === false)).toBe(true);
   });
 
-  it("flags a match that merely confirms an existing binding", () => {
-    const [match] = matchPrincipalsToPeople([candidate({ registryRef: "e1" })], index);
-    expect(match?.alreadyBound).toBe(true);
+  it("flags only the pair that confirms an existing binding", () => {
+    const pairs = matchPrincipalsToPeople([candidate({ registryRef: "e1" })], index);
+    expect(pairs.filter((p) => p.alreadyBound).map((p) => p.entity.entityId)).toEqual(["e1"]);
   });
 
-  // The whole point of governance §3: a company name must not reach a person.
+  // The whole point of governance §1: a company name must not reach a person.
   it("never matches a business-shaped candidate", () => {
     expect(matchPrincipalsToPeople([candidate({ personName: "Erdahl Heating LLC" })], index)).toEqual([]);
+  });
+
+  // The denylist can never be finished; the allowlist is what makes it sound.
+  // `CHEHALIS SHEET METAL` shipped past an earlier denylist in live data.
+  it("rejects a business whose words are not on the denylist, via the surname allowlist", () => {
+    const stray = buildPrincipalPersonIndex([
+      row({ entityId: "e1", principals: [{ name: "Erdahl, Darrin P", key: "ERDAHL, DARRIN P" }] }),
+    ]);
+    // "PACIFIC" is not an L&I principal surname, so the name cannot be keyed.
+    expect(personCoreKey("Esco Pacific", stray.surnames)).toBeNull();
+    expect(matchPrincipalsToPeople([candidate({ personName: "Esco Pacific" })], stray)).toEqual([]);
   });
 
   it("returns nothing for a person the registry does not know", () => {
     expect(matchPrincipalsToPeople([candidate({ personName: "Jane Doe" })], index)).toEqual([]);
   });
 
-  it("orders the widest new grouping first", () => {
-    const wide = buildPrincipalPersonIndex([
-      row({ entityId: "e1", principals: [{ name: "A, B", key: "A, B" }] }),
-      row({ entityId: "e2", principals: [{ name: "A, B", key: "A, B" }] }),
-      row({ entityId: "e3", principals: [{ name: "C, D", key: "C, D" }] }),
+  // The Moore Furniture / Gill Group case, from the Insights side.
+  it("marks a middle-initial disagreement as contradicted", () => {
+    const moore = buildPrincipalPersonIndex([
+      row({ entityId: "e1", canonicalName: "Gill Group Inc", principals: [{ name: "Moore, Michael Lane", key: "MOORE, MICHAEL L" }] }),
     ]);
-    const matches = matchPrincipalsToPeople(
-      [candidate({ personName: "D C" }), candidate({ personName: "B A" })],
-      wide,
+    const [pair] = matchPrincipalsToPeople(
+      [candidate({ personName: "Michael F Moore" })],
+      moore,
     );
-    expect(matches.map((m) => m.coreKey)).toEqual(["A|B", "C|D"]);
+    expect(pair?.verdict).toBe("contradicted");
+    expect(pair?.explanation).toContain("different person of the same name");
+    expect(pair?.signals.find((s) => s.key === "middle_initial")?.agrees).toBe(false);
+  });
+
+  it("counts namesakes and demotes a common name", () => {
+    const common = buildPrincipalPersonIndex([
+      row({ entityId: "e1", canonicalName: "A + Painting", principals: [{ name: "Stewart, James A", key: "STEWART, JAMES A" }] }),
+      row({ entityId: "e2", canonicalName: "Security 101", principals: [{ name: "Stewart, James B", key: "STEWART, JAMES B" }] }),
+      row({ entityId: "e3", canonicalName: "Stewart Fire", principals: [{ name: "Stewart, James C", key: "STEWART, JAMES C" }] }),
+    ]);
+    const [pair] = matchPrincipalsToPeople([candidate({ personName: "James Stewart" })], common);
+    expect(pair?.namesakes).toBe(3);
+    expect(pair?.signals.find((s) => s.key === "common_name")?.agrees).toBe(false);
+  });
+
+  it("credits a unique name, a surname echo, city agreement, and a contractor role", () => {
+    const [pair] = matchPrincipalsToPeople(
+      [candidate({
+        personName: "Natalie Pompa",
+        jurisdictions: ["City of Renton"],
+        role: "primary_contractor",
+      })],
+      buildPrincipalPersonIndex([
+        row({ entityId: "e1", canonicalName: "Pompa Electric", cityToken: "renton",
+              principals: [{ name: "Pompa, Natalie", key: "POMPA, NATALIE" }] }),
+      ]),
+    );
+    expect(pair?.verdict).toBe("strong");
+    expect(pair?.points).toBe(4);
+    expect(pair?.signals.map((s) => s.key)).toEqual(["unique_name", "surname_echo", "city", "role"]);
+  });
+
+  it("ranks well-corroborated pairs above contradicted ones", () => {
+    const mixed = buildPrincipalPersonIndex([
+      row({ entityId: "e1", canonicalName: "Pompa Electric", principals: [{ name: "Pompa, Natalie", key: "POMPA, NATALIE" }] }),
+      row({ entityId: "e2", canonicalName: "Gill Group Inc", principals: [{ name: "Moore, Michael Lane", key: "MOORE, MICHAEL L" }] }),
+    ]);
+    const pairs = matchPrincipalsToPeople(
+      [candidate({ personName: "Michael F Moore" }), candidate({ personName: "Natalie Pompa" })],
+      mixed,
+    );
+    expect(pairs.map((p) => p.verdict)).toEqual(["corroborated", "contradicted"]);
   });
 });

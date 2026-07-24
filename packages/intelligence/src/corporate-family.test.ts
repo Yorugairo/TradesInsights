@@ -33,9 +33,49 @@ describe("buildFamilies", () => {
     ]);
     expect(families).toHaveLength(1);
     expect(families[0]?.entityIds).toEqual(["e1", "e2"]);
-    expect(families[0]?.familyId).toBe("ERDAHL|DARRIN");
+    // The FULL registry key — registry-side normalization already folded
+    // `Darrin Paul` to `Darrin P`, so both spellings land on one family.
+    expect(families[0]?.familyId).toBe("ERDAHL, DARRIN P");
     // Both raw spellings are kept for review; neither is treated as canonical.
     expect(families[0]?.principalNames).toEqual(["Erdahl, Darrin P", "Erdahl, Darrin Paul"]);
+  });
+
+  // The regression this fix exists for. Grouping on the coarse `SURNAME|GIVEN`
+  // key merged Michael Lane Moore (Crofton MD) with Michael F Moore (Ephrata WA)
+  // — 463 of 912 live entity pairs carried exactly this conflict.
+  it("does NOT merge two people who differ only by middle initial", () => {
+    const { families } = buildFamilies([
+      row("mf", "Moore Furniture Inc", [{ name: "Moore, Michael F", key: "MOORE, MICHAEL F" }]),
+      row("gg", "Gill Group Inc", [{ name: "Moore, Michael Lane", key: "MOORE, MICHAEL L" }]),
+    ]);
+    expect(families).toEqual([]);
+  });
+
+  it("carries per-pair corroboration so a reviewer sees what else agrees", () => {
+    const { families } = buildFamilies([
+      row("e1", "Pompa Electric", [{ name: "Pompa, Natalie", key: "POMPA, NATALIE" }], {
+        phone: "2535550100", cityToken: "renton", tradeCodes: ["electrical"],
+      }),
+      row("e2", "Pompa Heating", [{ name: "Pompa, Natalie", key: "POMPA, NATALIE" }], {
+        phone: "(253) 555-0100", cityToken: "renton", tradeCodes: ["electrical", "hvac"],
+      }),
+    ]);
+    const [pair] = families[0]!.pairs;
+    expect(families[0]?.pairs).toHaveLength(1);
+    expect(pair?.corroboration.points).toBe(3);
+    expect(pair?.corroboration.verdict).toBe("strong");
+    expect(families[0]?.minPoints).toBe(3);
+  });
+
+  it("reports the WEAKEST pair, so one unproven link is not hidden by a strong one", () => {
+    const p = { name: "Big, Family", key: "BIG, FAMILY" };
+    const { families } = buildFamilies([
+      row("e1", "One", [p], { phone: "2535550100", cityToken: "renton" }),
+      row("e2", "Two", [p], { phone: "2535550100", cityToken: "renton" }),
+      row("e3", "Three", [p], { phone: null, cityToken: "spokane" }),
+    ]);
+    expect(families[0]?.pairs).toHaveLength(3);
+    expect(families[0]?.minPoints).toBe(0);
   });
 
   it("does not treat a lone entity as a family", () => {
@@ -63,7 +103,7 @@ describe("buildFamilies", () => {
       row("e2", "Rescue Rooter", [{ name: "Mcmahon, James T", key: "MCMAHON, JAMES T" }]),
     ]);
     expect(families).toHaveLength(1);
-    expect(families[0]?.familyId).toBe("MCMAHON|JAMES");
+    expect(families[0]?.familyId).toBe("MCMAHON, JAMES T");
     expect(families[0]?.entityIds).toEqual(["e1", "e2"]);
   });
 
@@ -76,7 +116,7 @@ describe("buildFamilies", () => {
     ]);
     expect(families).toHaveLength(1);
     expect(families[0]?.entityIds).toEqual(["e1", "e2", "e3"]);
-    expect(families[0]?.principalKeys).toEqual(["A|ANN", "B|BOB"]);
+    expect(families[0]?.principalKeys).toEqual(["A, ANN", "B, BOB"]);
   });
 
   it("DROPS an over-cap group rather than truncating it", () => {
@@ -86,7 +126,7 @@ describe("buildFamilies", () => {
     );
     const { families, dropped } = buildFamilies(many);
     expect(families).toEqual([]);
-    expect(dropped).toEqual([{ principalKey: "AGENTISH|SNEAKY", entityCount: MAX_FAMILY_ENTITIES + 1 }]);
+    expect(dropped).toEqual([{ principalKey: "AGENTISH, SNEAKY", entityCount: MAX_FAMILY_ENTITIES + 1 }]);
   });
 
   it("keeps a group exactly at the cap", () => {
