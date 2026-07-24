@@ -1,0 +1,32 @@
+-- Opportunity payload, Phase 2 — give `opportunity_evidence` the UNIQUE index
+-- its writer needs.
+--
+-- The table has existed since 0000_init with two foreign keys and one plain
+-- index (`opportunity_evidence_opp_ix` on `opportunity_id`, 0000_init.sql:288),
+-- but NO UNIQUE INDEX and no primary key. It has sat at 0 rows for its whole
+-- life, so nothing ever exercised the write path and nothing surfaced the gap.
+--
+-- That matters now because the evidence linker walks
+-- `opportunities.project_id` -> `record_resolutions` -> `evidence_items` and
+-- re-sees the same (opportunity, evidence item) pair on every run. Its write
+-- path is INSERT ... ON CONFLICT DO NOTHING, and ON CONFLICT REQUIRES A UNIQUE
+-- INDEX to name as its arbiter — without one the statement does not merely
+-- duplicate rows, it fails outright with "no unique or exclusion constraint
+-- matching the ON CONFLICT specification".
+--
+-- Uniqueness is per (opportunity, evidence item): one evidence item supports one
+-- opportunity once. The same evidence item legitimately supports MANY
+-- opportunities — several accounts can be chasing the same project — so the
+-- constraint is deliberately on the pair and never on `evidence_item_id` alone.
+--
+-- NOTE ON REDUNDANCY: `opportunity_id` is the leading column of this new index,
+-- so the older single-column `opportunity_evidence_opp_ix` no longer earns its
+-- write cost. It is left in place here rather than dropped — removing an index
+-- that predates this work is a separate, deliberate decision, and the table is
+-- empty so the cost is currently zero. Revisit before the linker's first bulk
+-- run.
+--
+-- IF NOT EXISTS so a re-run against an environment that already has the index is
+-- a no-op rather than an error.
+CREATE UNIQUE INDEX IF NOT EXISTS opportunity_evidence_opp_item_ux
+  ON opportunity_evidence (opportunity_id, evidence_item_id);

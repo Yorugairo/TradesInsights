@@ -426,7 +426,20 @@ export const opportunityEvidence = pgTable(
     confirmed: boolean("confirmed").notNull(),
     confidence: doublePrecision("confidence"),
   },
-  (t) => [index("opportunity_evidence_opp_ix").on(t.opportunityId)],
+  // The linker re-sees the same (opportunity, evidence item) pair on every run,
+  // so its ON CONFLICT DO NOTHING needs a unique index to name as arbiter. The
+  // pair is the right grain: one evidence item supports one opportunity once,
+  // but the SAME item legitimately supports many opportunities when several
+  // accounts chase one project.
+  //
+  // `opportunity_evidence_opp_ix` predates this (0000_init) and is now redundant
+  // — `opportunityId` leads the unique index, so it already serves lookups by
+  // opportunity. Kept so this declaration matches the live database; see
+  // 0033_opportunity_evidence_indexes.sql for the note on removing it.
+  (t) => [
+    index("opportunity_evidence_opp_ix").on(t.opportunityId),
+    uniqueIndex("opportunity_evidence_opp_item_ux").on(t.opportunityId, t.evidenceItemId),
+  ],
 );
 
 /**
