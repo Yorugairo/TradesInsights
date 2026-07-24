@@ -21,9 +21,14 @@
  * - LOOKUP-CLASS HARD RULE: the input list comes from pals-hydrate-export
  *   (permits we already hold). This script never discovers or crawls.
  *
- * USAGE (playwright ships with apps/web's devDependencies):
- *   cd apps/web && node ../../scripts/pals-header-capture.mjs \
- *     --list=../../pals-hydrate-seed.json --out=$OTN_CAPTURE_DIR/pierce_pals_contractor \
+ * USAGE (run from the repo ROOT — @playwright/test is a root devDependency
+ * specifically so this resolves there; Node's ESM resolver walks up from
+ * THIS FILE's own location, not the caller's cwd, so it must live under an
+ * ancestor directory of a node_modules that has the package — repo root
+ * qualifies, apps/web does NOT, since apps/web is scripts/'s sibling, not
+ * its ancestor):
+ *   node scripts/pals-header-capture.mjs \
+ *     --list=apps/worker/pals-hydrate-seed.json --out=$OTN_CAPTURE_DIR/pierce_pals_contractor \
  *     [--limit=250] [--delay-ms=2500] [--max-failures=5] [--headless]
  *
  * Output: one verbatim `<applPermitId>.json` per permit (the raw response body,
@@ -62,13 +67,17 @@ async function main() {
   }
   await mkdir(outDir, { recursive: true });
 
-  // Playwright comes from apps/web's devDependencies — hence the `cd apps/web`
-  // in the usage line. Fail with instructions, not a bare module error.
+  // @playwright/test is a ROOT devDependency (Node's ESM resolver walks up
+  // from this file's own path, not cwd — see the USAGE comment above for why
+  // that ruled out apps/web). Fail with instructions, not a bare module error.
   let chromium;
   try {
     ({ chromium } = await import("@playwright/test"));
   } catch {
-    console.error("Cannot resolve @playwright/test — run from apps/web (see USAGE in this file).");
+    console.error(
+      "Cannot resolve @playwright/test — run `pnpm install` at the repo root " +
+        "(it is a root devDependency; see USAGE in this file for why).",
+    );
     process.exit(2);
   }
 

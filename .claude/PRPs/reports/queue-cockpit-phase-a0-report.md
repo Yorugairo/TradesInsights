@@ -16,7 +16,7 @@ Phases A1–A6 (Google Places enrichment) and B–E remain; the plan stays in
 | NULL-only stamp of `organizations.contractor_registration` | `identifiers.ts:321` | plumbed |
 | Deterministic bind on that column | `registry-link.ts` (`contractor_number_exact`) | plumbed |
 | Capture-fed operator-local run pattern | `source-run-operator-local.ts` + tumwater precedent | reused verbatim |
-| Playwright | `apps/web` devDependencies | already present, no new deps |
+| Playwright | `apps/web` devDependencies | already present — **but not usable from `scripts/`; see Deviation 4** |
 
 ## What was built
 | File | Action | Purpose |
@@ -70,17 +70,32 @@ sequences all three steps below, aborts with a clear message on failure at any
 step, safe to re-run (already-captured permits are skipped, so re-running after
 an ingest failure does not re-open the browser).
 
-**Manual / non-Windows equivalent** (what the batch file wraps):
+**Manual / non-Windows equivalent** (what the batch file wraps — run entirely
+from repo root, per Deviation 4 below):
 ```bash
 pnpm --filter @otn/worker pals:hydrate:export --limit=250
-```
-```bash
-cd apps/web && node ../../scripts/pals-header-capture.mjs --list=../worker/pals-hydrate-seed.json --out=$OTN_CAPTURE_DIR/pierce_pals_contractor
-```
-```bash
+node scripts/pals-header-capture.mjs --list=apps/worker/pals-hydrate-seed.json --out=$OTN_CAPTURE_DIR/pierce_pals_contractor
 OTN_CAPTURE_DIR=<dir> pnpm --filter @otn/worker source:run:operator-local
 ```
 Then the nightly resolve/link pass stamps licences and binds deterministically.
+
+## Deviation 4 (post-ship correction, same day): playwright resolution
+The original design ran the capture script from `apps/web` on the theory that
+`cd`-ing there would put `@playwright/test` on its module search path. Wrong —
+Node's ESM resolver walks up ancestor directories from the *importing file's
+own path* (`import.meta.url`), not from `process.cwd()`. `scripts/` and
+`apps/web/` are siblings, so `apps/web/node_modules` was never reachable no
+matter the caller's directory. First real run surfaced this immediately
+(`Cannot resolve @playwright/test — run from apps/web`, even when run FROM
+apps/web).
+
+Fix: added `@playwright/test@^1.50.0` as a **root** devDependency (repo root
+is a genuine ancestor of `scripts/`, matching how `typescript`/`vitest`/
+`eslint` already live there for the same reason) and ran `pnpm install`.
+Verified with a resolution-only smoke test (`node -e "import('@playwright/test')…"`
+from repo root — succeeds) before re-testing the real script. Simplified the
+batch file and the manual runbook to run everything from repo root — the
+`apps/web` step is gone entirely, not just relocated.
 
 ## Yield context (live)
 Addressable pool: **6,145 Pierce permits, zero enriched**. Caveat for the yield
