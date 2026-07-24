@@ -239,29 +239,49 @@ So the scoring rule is **phone agreement + name agreement**, never phone alone.
 
 - **WHY THIS OUTRANKS MATCHING**: no matching improvement can help the 85% that
   were never queried. This is the single biggest lever on "who do I call".
-- **DIAGNOSIS COMPLETE (2026-07-24)** — `apps/registry/scripts/google-place-coverage-audit.mjs`
-  (read-only) now reproduces it. **The cap is the INPUT LIST, not a limit and not
-  geography.** `run_google_self_scrape_full_target.py` reads
-  `aggregate/self_scrape_input_target_a_b1_priority.csv` — a priority-tier subset.
-  Supporting evidence, all re-checkable by the script:
-  - coverage FLAT across counties (11.5%–18.6%) ⇒ not scoped geographically;
-  - coverage FLAT across mint-order deciles (16.7% → 13.0%, **no cliff**) ⇒ the
-    run was NOT truncated at a row cap (a truncated run leaves ~100% early, 0% late);
-  - ONE source run, one day, `google_maps_place_self_scrape`.
-  ⇒ The 21,751 uncovered entities were **never queried**, so a widened target list
-  should pay. Patriot is the proof case: findable listing, never fetched.
-- **NO RUN TELEMETRY**: `registry_internal` has no run table, so the original
-  run's attempted/succeeded counters were never recorded — the cap had to be
-  inferred from the data's shape. A widened run must record its counters.
+- **DIAGNOSIS COMPLETE, AND MY FIRST READING WAS WRONG.** I claimed the uncovered
+  entities were "never queried". They were. Place IDs were resolved registry-wide
+  and the self-scrape COMPLETED — all 52 chunks, offsets 0..25,846, 25,898 rows.
+  Nothing was interrupted. **Three separate bottlenecks stack:**
+
+  | # | Bottleneck | Rows | Where the data is |
+  |---|---|---|---|
+  | 1 | Scored priority `other`, excluded from the scrape target | 24,003 | ids in hand, never fetched |
+  | 2 | Scraped, then `all_candidates_rejected` by the match scorer | 3,755 | `db-landing/google_place_import_rejects.csv` (carries `best_google_place_id` + name) |
+  | 3 | Ambiguous / manual review | 3,729 | ~2,251 still pending in the DB queue |
+
+  The landing manifest scored **11,601 contractors and accepted only 4,116** —
+  which is the ~3,800 in the database. Everything reconciles.
+
+- **DONE (registry `e86c312d`)**: `registry_google_place_candidates` + loader.
+  **49,849 bridge rows, 27,621 distinct place IDs, 40,607 matched by licence
+  (81.5%), 18,092 distinct entities — of which 14,768 have NO profile today.**
+  Patriot is attached (`ChIJhaP2P834kFQR02xMbGun5eE`, tier `other`), proving the
+  tier filter, not matching, was its problem.
+
+- **THE REAL FAILURE MODE WAS STATE LOCATION.** The ids lived in a gitignored
+  `artifacts/` folder and the run's own counters were never written to the
+  database, so the cap had to be inferred from data shape and the ids took a
+  filesystem-wide search to find. Landing them fixes that, and makes the fetch
+  resumable from `fetch_status` rather than from `chunks/offset-NNNNNN` directories.
+
+- **REMAINING WORK, cheapest first:**
+  1. **Re-score the 3,755 rejects — FREE, no API call.** Their Google name and
+     place ID are on disk. Re-run them through the Phase 0 confirmation rule
+     (phone + name, `classifyGoogleConfirmation`) rather than the original scorer.
+  2. **Fetch details for the `other` tier** — ids in hand, only the fetch remains.
+     Priority-ordered from Insights (live opportunities → the 215 primary
+     contractors), behind an explicit `--limit`, logging spend.
+  3. **Work the 2,251 pending** queue rows in the UI.
+
 - **PRIORITISATION CANNOT BE DONE REGISTRY-SIDE** (measured): `record_count>=3`
-  leaves 37 entities, "has a trade" leaves 19,706, "has a phone" leaves 21,739 —
-  too narrow to be a work list, or simply "everything". The registry does not know
-  which entities a customer sees. The real list must be built Insights-side from
-  live opportunities and their primary contractors (Phase 3) and fed in.
-- **GOTCHA / COST**: lookups cost per row. Do NOT plan a 21,751-row sweep; the
-  backfill runs behind an explicit `--limit`, priority-ordered, logging spend.
-  Also note `source_system = google_maps_place_self_scrape` — a scrape, not the
-  paid Places API, so widening it is a terms-of-use decision as well as a cost one.
+  leaves 37 entities, "has a trade" 19,706, "has a phone" 21,739 — too narrow to be
+  a work list, or simply "everything". The registry does not know which entities a
+  customer sees; that list comes from Insights.
+
+- **GOTCHA / COST**: `source_system = google_maps_place_self_scrape` — a scrape,
+  not the paid Places API. Widening it is a terms-of-use decision as well as a cost
+  one. Step 1 above needs neither.
 
 ---
 
