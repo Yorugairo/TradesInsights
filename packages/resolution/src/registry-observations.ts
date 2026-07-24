@@ -52,6 +52,17 @@ import {
 import { crossNameKey, nameSimilarity } from "./normalize.js";
 import { identitySnapshot, type RegistryBrand, type RegistryIdentityRow } from "./registry-link.js";
 import {
+  EMPTY_IDENTIFIER_INDEX,
+  gradeIdentifierComponent,
+  IDENTIFIER_AGREES_STRONG,
+  IDENTIFIER_AGREES_WEAK,
+  IDENTIFIER_CONTRADICTS,
+  IDENTIFIER_ENTITY_TYPICAL,
+  lookupIdentifier,
+  type IdentifierAgreement,
+  type RegistryIdentifierIndex,
+} from "./registry-identifiers.js";
+import {
   buildTradeMatcher,
   FALLBACK_TRADE_MATCHER,
   type TradeMatcher,
@@ -156,19 +167,87 @@ export interface TrustComponents {
    * matches the registry's L&I value; 0 = the org has identifier evidence and
    * it CONTRADICTS the registry; 0.5 = no identifier evidence (neutral). */
   identifier: number;
-  /** Locality corroboration ∈ [0,1]: registry city seen in the org's project counties/cities. */
+  /** Locality corroboration ∈ [0,1], graded by geography — see `gradeLocality`. */
   locality: number;
   /** Strongest role the org holds on projects (contractor > applicant > owner). */
   role: number;
   /** Independent corroboration: distinct source records naming the org (capped). */
   corroboration: number;
-  /** Laplace-smoothed accept rate of this rule from reviewed decisions. */
-  ruleHistory: number;
+  /** Laplace-smoothed accept rate of this rule from reviewed HUMAN decisions, or
+   * NULL when the rule has too few to say anything — see `MIN_HUMAN_DECISIONS`.
+   * Null is excluded from the score rather than defaulted, because a default is
+   * a claim about the rule that the evidence does not support. */
+  ruleHistory: number | null;
 }
 
 export const TRUST_WEIGHTS: Record<keyof TrustComponents, number> = {
   name: 0.3, identifier: 0.15, locality: 0.1, role: 0.1, corroboration: 0.15, ruleHistory: 0.2,
 };
+
+/**
+ * Human decisions a rule needs before its accept rate is allowed to move the
+ * score. Below this the component is null and its weight redistributes.
+ *
+ * WHY (measured 2026-07-24): across the entire history of the queue there are 19
+ * decisions and ALL of them are `auto:strict-bind` — zero human. `ruleHistory`
+ * already excludes auto-decisions, so every rule sat on the untouched Laplace
+ * prior of exactly 0.500, contributing a CONSTANT 0.5 × 0.2 = 0.1 to every row in
+ * the queue. That is not a weak signal, it is no signal wearing 20% of the score:
+ * it compressed every real difference between rows into the remaining 80%.
+ *
+ * Ten is a starting point, not a discovered constant — enough that one reviewer's
+ * first afternoon cannot swing a rule's trust, low enough to start learning fast.
+ */
+export const MIN_HUMAN_DECISIONS = 10;
+
+/**
+ * Locality bands. The old component was binary — 1.0 for a city-token hit, 0.3
+ * for everything else — which put "works in the next town over" in the same
+ * bucket as "we have no idea where this entity is". Measured on the 254-row
+ * bulk: 244 rows scored 0.3, and 61 of those were SAME-COUNTY matches while 68
+ * had no county on the registry side at all.
+ *
+ * `DIFFERENT` sits BELOW `UNKNOWN` deliberately: knowing both counties and
+ * finding them different is mild evidence against, whereas not knowing is not
+ * evidence at all. It is only mild — trades contractors legitimately work
+ * outside their home county — so it is a nudge, not a veto.
+ */
+export const LOCALITY_SAME_CITY = 1;
+export const LOCALITY_SAME_COUNTY = 0.6;
+/** The plan's floor: geography unknown on one side or the other. */
+export const LOCALITY_UNKNOWN = 0.3;
+export const LOCALITY_DIFFERENT_COUNTY = 0.15;
+
+/**
+ * Graded locality from the geography both systems actually hold.
+ *
+ * NOTE — this is NOT the metre-distance banding the plan sketched. That was
+ * predicated on `geo_distance_meters`, which is the registry's INTERNAL
+ * Google-listing-versus-L&I distance for one entity; it says nothing about how
+ * far an org's projects are from an entity. Insights projects carry `city`,
+ * `county` and `address_normalized` and no coordinates at all, so an org↔entity
+ * distance in metres cannot be computed today. City/county agreement is the real
+ * geography available on both sides.
+ *
+ * Pure — the org's localities are already lower-cased by `loadOrgFacts`.
+ */
+export function gradeLocality(input: {
+  entityCity: string | null | undefined;
+  entityCounty: string | null | undefined;
+  /** Lower-cased city (or county, where the source gave no city) tokens. */
+  orgLocalities: readonly string[];
+  /** Lower-cased counties of the org's projects. */
+  orgCounties: readonly string[];
+}): number {
+  const city = input.entityCity?.toLowerCase() ?? null;
+  if (city && input.orgLocalities.some((l) => l.includes(city))) return LOCALITY_SAME_CITY;
+
+  const county = input.entityCounty?.toLowerCase() ?? null;
+  if (!county) return LOCALITY_UNKNOWN;
+  const known = input.orgCounties.filter((c) => c.length > 0);
+  if (known.length === 0) return LOCALITY_UNKNOWN;
+  return known.some((c) => c === county) ? LOCALITY_SAME_COUNTY : LOCALITY_DIFFERENT_COUNTY;
+}
 
 /** Phone-only matches need at least this much name agreement to be reviewable
  * (phones get recycled and shared; a phone with a foreign name is noise). */
@@ -185,20 +264,47 @@ export const ADDRESS_DOMINANCE_MARGIN = 0.2;
  * L&I registered phone's 1.0 — a Google Business profile phone is
  * account-entered, not L&I-verified (mirrors the phone_from_google adoption
  * precedent: distinct channel, own rule history, never inherits L&I trust). */
-export const GOOGLE_PHONE_IDENTIFIER_COMPONENT = 0.75;
+export const GOOGLE_PHONE_IDENTIFIER_COMPONENT = IDENTIFIER_AGREES_WEAK;
 
-/** Deterministic weighted trust ∈ [0,1]; stored beside its components. */
+/**
+ * Deterministic weighted trust ∈ [0,1]; stored beside its components.
+ *
+ * A NULL component is excluded and its weight redistributed across the
+ * components that are present, so the score stays on [0,1] and remains a
+ * weighted average of real evidence. The alternative — substituting a neutral
+ * default — silently mixes an assumption into a number the operator reads as
+ * measurement, and (with `ruleHistory` null on every rule today) would pin 20% of
+ * every score to the same constant.
+ */
 export function computeTrust(c: TrustComponents): number {
   let score = 0;
+  let weight = 0;
   for (const key of Object.keys(TRUST_WEIGHTS) as (keyof TrustComponents)[]) {
-    score += TRUST_WEIGHTS[key] * Math.max(0, Math.min(1, c[key]));
+    const value = c[key];
+    if (value === null || value === undefined || Number.isNaN(value)) continue;
+    score += TRUST_WEIGHTS[key] * Math.max(0, Math.min(1, value));
+    weight += TRUST_WEIGHTS[key];
   }
-  return Math.round(score * 1000) / 1000;
+  if (weight === 0) return 0;
+  return Math.round((score / weight) * 1000) / 1000;
 }
 
 /** Laplace-smoothed accept rate: unreviewed rules start at the 0.5 prior. */
 export function laplaceAcceptRate(accepts: number, decisions: number): number {
   return (accepts + 1) / (decisions + 2);
+}
+
+/**
+ * The rule's accept rate, or null when too few humans have ruled on it to say.
+ * `decisions` must already exclude `auto:%` deciders (see `ruleHistory`) — a
+ * rule grading its own auto-bindings is a self-reinforcing loop, not a track
+ * record.
+ */
+export function ruleHistoryComponent(
+  history: { accepts: number; decisions: number } | undefined,
+): number | null {
+  if (!history || history.decisions < MIN_HUMAN_DECISIONS) return null;
+  return laplaceAcceptRate(history.accepts, history.decisions);
 }
 
 /**
@@ -354,6 +460,10 @@ interface OrgFacts {
   role_weight: number;
   record_count: number;
   localities: string[];
+  /** Counties of the org's projects — the coarser locality band (Task 2.2). Kept
+   * SEPARATE from `localities`, which collapses city and county into one list and
+   * so cannot tell "same county, different city" from "no match at all". */
+  counties: string[];
 }
 
 /** Orgs holding roles on projects, with locality + corroboration facts. */
@@ -362,7 +472,8 @@ async function loadOrgFacts(db: Db, opts: { boundOnly?: boolean } = {}): Promise
     SELECT o.id, o.canonical_name, o.registry_ref,
       max(CASE pr.role WHEN 'primary_contractor' THEN 1.0 WHEN 'applicant' THEN 0.6 ELSE 0.3 END) AS role_weight,
       count(DISTINCT pr.source_record_id)::int AS record_count,
-      array_agg(DISTINCT lower(coalesce(sr.normalized_json->>'city', p.county))) AS localities
+      array_agg(DISTINCT lower(coalesce(sr.normalized_json->>'city', p.county))) AS localities,
+      array_agg(DISTINCT lower(p.county)) FILTER (WHERE p.county IS NOT NULL) AS counties
     FROM organizations o
     JOIN project_roles pr ON pr.organization_id = o.id
     JOIN projects p ON p.id = pr.project_id
@@ -378,6 +489,9 @@ async function loadOrgFacts(db: Db, opts: { boundOnly?: boolean } = {}): Promise
     record_count: Number(r["record_count"] ?? 0),
     localities: ((r["localities"] as (string | null)[] | null) ?? []).filter(
       (x): x is string => typeof x === "string",
+    ),
+    counties: ((r["counties"] as (string | null)[] | null) ?? []).filter(
+      (x): x is string => typeof x === "string" && x.length > 0,
     ),
   }));
 }
@@ -399,6 +513,9 @@ export interface GenerateSummary {
    * floor/weight tuning at the §12.3 calibration session is evidence-driven. */
   belowFloor: number;
   byRule: Record<string, number>;
+  /** Existing PENDING rows whose score/payload this pass recomputed. Decided rows
+   * are never rescored — their evidence is frozen at the decision. */
+  rescored: number;
 }
 
 /**
@@ -474,11 +591,16 @@ export async function generateRegistryObservations(
     tradeTaxonomy?: TradeTaxonomyRow[] | null;
     /** Compute everything but write NOTHING — the read-only strict-bind preview. */
     dryRun?: boolean;
+    /** The registry identifier graph (`registry_public.trades_identifiers_v1`),
+     * loaded by the caller exactly as `registryRows` is. Absent/empty is safe:
+     * the `identifier` component falls back to its unknown band rather than
+     * inventing agreement it cannot see. */
+    identifierIndex?: RegistryIdentifierIndex | null;
   } = {},
 ): Promise<GenerateSummary> {
   const summary: GenerateSummary = {
     skipped: false, bindingCandidates: 0, phoneAdoptions: 0, aliasExports: 0, tradeExports: 0, autoAccepted: 0,
-    strictAutoBound: 0, strictCandidates: [], belowFloor: 0, byRule: {},
+    strictAutoBound: 0, strictCandidates: [], belowFloor: 0, byRule: {}, rescored: 0,
   };
   if (registryRows === null) {
     summary.skipped = true;
@@ -487,10 +609,7 @@ export async function generateRegistryObservations(
   }
 
   const history = await ruleHistory(db);
-  const rate = (ruleKey: string): number => {
-    const h = history.get(ruleKey);
-    return laplaceAcceptRate(h?.accepts ?? 0, h?.decisions ?? 0);
-  };
+  const rate = (ruleKey: string): number | null => ruleHistoryComponent(history.get(ruleKey));
 
   // Registry name index (exact cross-key → rows; ambiguous keys are dropped —
   // one Insights name matching MULTIPLE registry entities is not reviewable
@@ -615,6 +734,18 @@ export async function generateRegistryObservations(
   }
 
   // ── binding_name_match: unbound orgs vs registry (name key, phone-aware) ──
+  const identifierIndex = opts.identifierIndex ?? EMPTY_IDENTIFIER_INDEX;
+  /**
+   * Is the value this match hinged on unique to the entity, or shared? A shared
+   * phone/domain means the sibling entities carrying it remain live alternatives,
+   * so the agreement is real evidence but not proof.
+   */
+  const agreementFor = (type: string, value: string): IdentifierAgreement => {
+    const found = lookupIdentifier(identifierIndex, type, value);
+    if (!found) return "weak"; // the graph cannot vouch for it — do not claim proof
+    return found.isStrong ? "strong" : "weak";
+  };
+
   const unbound = (await loadOrgFacts(db)).filter((o) => o.registry_ref === null);
   for (const org of unbound) {
     const phones = orgPhones.get(org.id) ?? new Set<string>();
@@ -626,19 +757,24 @@ export async function generateRegistryObservations(
     let hit: RegistryIdentityRow | undefined;
     let ruleKey = "";
     let nameComponent = 1;
-    let identifier = 0.5;
+    // How the org's OWN identifier evidence relates to the matched entity. "none"
+    // is the honest default — 252 of the 254 pending name-exact rows carry no org
+    // identifier at all — and `gradeIdentifierComponent` turns that into a band
+    // based on how pinned-down the entity is, rather than a flat neutral.
+    let agreement: IdentifierAgreement = "none";
     if (nameHits && nameHits.length === 1) {
-      // Unique name match; phone evidence corroborates (1) or contradicts (0).
+      // Unique name match; phone evidence corroborates or contradicts.
       hit = nameHits[0]!;
       const phoneAgrees = hit.phone !== null && phones.has(hit.phone);
-      identifier = phones.size === 0 ? 0.5 : phoneAgrees ? 1 : 0;
+      agreement =
+        phones.size === 0 ? "none" : phoneAgrees ? agreementFor("phone", hit.phone!) : "contradicts";
       ruleKey = phoneAgrees ? "binding_name_phone" : "binding_name_exact";
     } else if (nameHits && nameHits.length > 1 && phones.size > 0) {
       // Ambiguous name key — the L&I phone may disambiguate to exactly one.
       const agreeing = nameHits.filter((h) => h.phone !== null && phones.has(h.phone));
       if (agreeing.length === 1) {
         hit = agreeing[0]!;
-        identifier = 1;
+        agreement = agreementFor("phone", hit.phone!);
         ruleKey = "binding_name_phone";
       }
     } else if (phones.size > 0) {
@@ -656,7 +792,7 @@ export async function generateRegistryObservations(
       if (best) {
         hit = best.row;
         nameComponent = best.sim;
-        identifier = 1;
+        agreement = best.row.phone ? agreementFor("phone", best.row.phone) : "weak";
         ruleKey = "binding_phone_match";
       }
     }
@@ -677,7 +813,11 @@ export async function generateRegistryObservations(
       if (best) {
         hit = best.row;
         nameComponent = best.sim;
-        identifier = GOOGLE_PHONE_IDENTIFIER_COMPONENT;
+        // Always the DE-RATED band, even when the number is unique to the entity:
+        // a Google Business phone is account-entered, not L&I-verified, and that
+        // channel-quality de-rating is independent of uniqueness (the same
+        // reasoning as `phone_from_google`'s separate adoption lane).
+        agreement = "weak";
         ruleKey = "binding_google_phone_match";
         matchedGooglePhone = best.phone;
       }
@@ -691,7 +831,12 @@ export async function generateRegistryObservations(
       if (addrHit) {
         hit = addrHit.row;
         nameComponent = addrHit.sim;
-        identifier = 1; // the registered address IS the matched L&I identifier
+        // The registered address IS the matched L&I identifier — but a SHARED one
+        // (suite block, office park) leaves every other tenant a live alternative.
+        // Strength comes from the Insights-side bucket, not the registry graph:
+        // the two key addresses differently (see CROSS_SYSTEM_IDENTIFIER_TYPES),
+        // and this bucket is the one that actually produced the match.
+        agreement = addrHit.bucketSize === 1 ? "strong" : "weak";
         ruleKey = "binding_address_match";
         addressBucketSize = addrHit.bucketSize;
       }
@@ -713,7 +858,7 @@ export async function generateRegistryObservations(
       if (best) {
         hit = best.row;
         nameComponent = best.sim;
-        identifier = 1; // the registered website root domain IS the matched identifier
+        agreement = agreementFor("root_domain", best.domain);
         ruleKey = "binding_domain_match";
         matchedDomain = best.domain;
       }
@@ -743,7 +888,12 @@ export async function generateRegistryObservations(
           hit = only.row;
           nameComponent = 1;
           const phoneAgrees = only.row.phone !== null && phones.has(only.row.phone);
-          identifier = phones.size === 0 ? 0.5 : phoneAgrees ? 1 : 0;
+          agreement =
+            phones.size === 0
+              ? "none"
+              : phoneAgrees
+                ? agreementFor("phone", only.row.phone!)
+                : "contradicts";
           ruleKey = "binding_alias_exact";
           matchedAlias = only.alias;
         }
@@ -782,7 +932,16 @@ export async function generateRegistryObservations(
     const matchedRegistryName = effectiveMatchKey
       ? resolveMatchedRegistryName(hit, effectiveMatchKey, matchedBrand)
       : (hit.canonicalName ?? "");
-    const locality = hit.cityToken && org.localities.some((l) => l.includes(hit.cityToken!)) ? 1 : 0.3;
+    const locality = gradeLocality({
+      entityCity: hit.cityToken,
+      entityCounty: hit.registeredCountyName,
+      orgLocalities: org.localities,
+      orgCounties: org.counties,
+    });
+    const identifier = gradeIdentifierComponent({
+      agreement,
+      footprint: identifierIndex.footprintByEntity.get(hit.entityId) ?? null,
+    });
     const components: TrustComponents = {
       name: nameComponent,
       identifier,
@@ -865,6 +1024,18 @@ export async function generateRegistryObservations(
         matched_brand_phone: matchedBrand?.phone ?? null,
         registry_city: hit.cityToken,
         org_localities: org.localities.slice(0, 8),
+        // The geography behind the graded `locality` component, so a reviewer can
+        // check the band rather than trust the number.
+        registry_county: hit.registeredCountyName ?? null,
+        org_counties: org.counties.slice(0, 8),
+        // Authoritative L&I trade codes the org's permits also point at. A
+        // corroborating FACT for the tier, not a score input — the strict gate
+        // already computed it, so tiering reuses it rather than re-deriving.
+        trade_match: gate.sharedTradeCodes.length > 0,
+        shared_trade_codes: gate.sharedTradeCodes,
+        // What the `identifier` component is actually reporting: agreement on a
+        // channel, or (when the org has no evidence) the entity's own footprint.
+        identifier_agreement: agreement,
         role_records: org.record_count,
         snapshot: identitySnapshot(hit, matchedBrand),
       },
@@ -1186,6 +1357,20 @@ export async function generateRegistryObservations(
       continue;
     }
 
+    // RESCORE-ON-CONFLICT. This used to be DO NOTHING, which meant a row scored
+    // once kept that score forever: the 254 pending binding candidates were all
+    // computed before locality was graded and before the identifier graph
+    // existed, so a scoring improvement could never reach the rows an operator
+    // is actually looking at. A queue that cannot be re-ranked is not a ranked
+    // queue.
+    //
+    // The WHERE clause is the safety: only rows still PENDING and never decided
+    // are touched. A human (or auto) decision freezes the row's score and payload
+    // as the evidence the decision was made on — re-writing that would falsify
+    // the audit trail, and `applied_at`/`exported_at` downstream depend on it.
+    //
+    // `xmax = 0` distinguishes a genuine INSERT from an UPDATE, so the summary
+    // keeps meaning "new candidates" rather than counting every rescore as new.
     const res = await db.execute(sql`
       INSERT INTO registry_observations
         (observation_type, organization_id, registry_entity_id, rule_key, payload_json,
@@ -1197,9 +1382,20 @@ export async function generateRegistryObservations(
          ${historyAutoAccept ? "accepted" : "pending"},
          ${historyAutoAccept ? "auto:rule-history" : null},
          ${historyAutoAccept ? new Date().toISOString() : null})
-      ON CONFLICT (dedupe_key) DO NOTHING
-      RETURNING id`);
+      ON CONFLICT (dedupe_key) DO UPDATE
+        SET rule_key = EXCLUDED.rule_key,
+            payload_json = EXCLUDED.payload_json,
+            trust_score = EXCLUDED.trust_score,
+            trust_components_json = EXCLUDED.trust_components_json,
+            updated_at = now()
+        WHERE registry_observations.status = 'pending'
+          AND registry_observations.decided_at IS NULL
+      RETURNING id, (xmax = 0) AS inserted`);
     if (res.rows.length === 0) continue;
+    if ((res.rows[0] as { inserted?: boolean }).inserted !== true) {
+      summary.rescored += 1;
+      continue;
+    }
     summary.byRule[ins.ruleKey] = (summary.byRule[ins.ruleKey] ?? 0) + 1;
     if (historyAutoAccept) summary.autoAccepted += 1;
     if (ins.observationType === "binding_name_match") summary.bindingCandidates += 1;
@@ -1219,6 +1415,7 @@ export async function generateRegistryObservations(
       dryRun: opts.dryRun === true,
       belowFloor: summary.belowFloor,
       byRule: summary.byRule,
+      rescored: summary.rescored,
     },
     "registry-observations generated",
   );
@@ -1285,25 +1482,72 @@ export function classifyReviewTier(o: {
       o.ruleKey === "binding_name_phone" ||
       o.ruleKey === "binding_alias_exact") &&
     (c["name"] ?? 0) >= 1;
-  const sameCity = (c["locality"] ?? 0) >= 1;
-  const phoneAgrees =
-    o.payload["phone_agrees"] === true ||
-    (o.ruleKey === "binding_phone_match" && (c["identifier"] ?? 0) >= 1);
-  const domainMatch = o.ruleKey === "binding_domain_match";
-  const addressMatch = o.ruleKey === "binding_address_match";
   const nameSim =
     typeof o.payload["name_similarity"] === "number"
       ? (o.payload["name_similarity"] as number)
       : (c["name"] ?? 0);
 
-  if (nameExact && (sameCity || phoneAgrees || domainMatch)) {
-    const second = sameCity ? "same city" : phoneAgrees ? "agreeing L&I phone" : "unique domain";
-    return info("tier1", `exact name + ${second}`);
+  // ── The corroborators, each an independently checkable FACT ──────────────
+  const locality = c["locality"] ?? LOCALITY_UNKNOWN;
+  const sameCity = locality >= LOCALITY_SAME_CITY;
+  const sameCounty = locality >= LOCALITY_SAME_COUNTY;
+  const contradictedLocality = locality <= LOCALITY_DIFFERENT_COUNTY;
+  const identifier = c["identifier"] ?? IDENTIFIER_ENTITY_TYPICAL;
+  // A DE-RATED channel: a Google Business phone is account-entered, not
+  // L&I-verified, so it has never been allowed to carry a row on its own. That
+  // predates this rewrite and is preserved verbatim.
+  const derated = o.ruleKey === "binding_google_phone_match";
+  const channel = derated
+    ? "Google phone"
+    : o.ruleKey === "binding_domain_match"
+      ? "root domain"
+      : o.ruleKey === "binding_address_match"
+        ? "registered address"
+        : "L&I phone";
+
+  // An agreeing identifier — strong (unique to the entity) or weak (shared).
+  // Below the weak band the component is reporting the entity's own footprint,
+  // not agreement, so it is NOT a corroborator. `phone_agrees` is read from the
+  // payload too: it is an independently checkable fact, and rows generated
+  // before the component was graded carry it when the component does not.
+  const identifierAgrees =
+    o.payload["phone_agrees"] === true || (!derated && identifier >= IDENTIFIER_AGREES_WEAK);
+  const identifierStrong =
+    o.payload["phone_agrees"] === true || (!derated && identifier >= IDENTIFIER_AGREES_STRONG);
+  const identifierContradicts = identifier <= IDENTIFIER_CONTRADICTS;
+  const sharedTrade = o.payload["trade_match"] === true;
+
+  // Contradicted identity is never promoted, whatever else agrees: the org has
+  // evidence on this channel and it points at somebody else.
+  if (identifierContradicts) return info("tier3", `${channel} CONTRADICTS · inspect`);
+
+  const corroborators: string[] = [];
+  if (sameCity) corroborators.push("same city");
+  else if (sameCounty) corroborators.push("same county");
+  if (identifierAgrees) {
+    corroborators.push(`${identifierStrong ? "unique" : "shared"} ${channel}`);
   }
-  if (nameExact) return info("tier2", "exact name (no city/phone corroboration)");
-  if ((phoneAgrees || domainMatch || addressMatch) && nameSim >= 0.5) {
-    const kind = phoneAgrees ? "L&I phone" : domainMatch ? "root domain" : "registered address";
-    return info("tier2", `${kind} match · name ${nameSim.toFixed(2)}`);
+  if (sharedTrade) corroborators.push("shared trade");
+
+  if (nameExact) {
+    // tier1 needs a SECOND independent fact. "Same county" alone is not one —
+    // a county holds thousands of contractors — so it can join a tier1 reason
+    // but never trigger it.
+    const strongSecond = sameCity || identifierAgrees || sharedTrade;
+    if (strongSecond) return info("tier1", `exact name + ${corroborators.join(" + ")}`);
+    if (contradictedLocality) {
+      return info("tier2", "exact name, but registered in a different county");
+    }
+    if (sameCounty) return info("tier2", "exact name + same county (city differs)");
+    return info("tier2", "exact name only (no corroborating fact)");
+  }
+
+  // Not an exact name — an identifier channel produced the match, so the name is
+  // the thing that has to hold up.
+  if (identifierAgrees && nameSim >= 0.5) {
+    const extra = corroborators.filter((x) => !x.endsWith(channel));
+    const reason = `${identifierStrong ? "unique" : "shared"} ${channel} · name ${nameSim.toFixed(2)}`;
+    return info("tier2", extra.length ? `${reason} + ${extra.join(" + ")}` : reason);
   }
   return info("tier3", `${o.ruleKey.replace(/^binding_/, "")} · name ${nameSim.toFixed(2)}`);
 }

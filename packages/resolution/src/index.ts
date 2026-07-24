@@ -11,6 +11,7 @@ export * from "./identifiers.js";
 export * from "./registry-link.js";
 export * from "./registry-observations.js";
 export * from "./google-place-review.js";
+export * from "./registry-identifiers.js";
 // Corporate-family tier: principal ↔ person discovery. Deliberately NOT part of
 // the name-match index — see the module header.
 export * from "./principal-person.js";

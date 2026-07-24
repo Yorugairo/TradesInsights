@@ -5,6 +5,7 @@ import {
   fetchRegistryIdentityRows,
   fetchTradeTaxonomy,
   generateRegistryObservations,
+  loadRegistryIdentifierIndex,
 } from "@otn/resolution";
 
 // pnpm strict-bind:preview   (read-only — prints what WOULD auto-bind)
@@ -29,9 +30,11 @@ async function main() {
     }
     const registryRows = await fetchRegistryIdentityRows(registryPool);
     const tradeTaxonomy = await fetchTradeTaxonomy(registryPool);
+    const identifierIndex = await loadRegistryIdentifierIndex(registryPool);
     const summary = await generateRegistryObservations(db, registryRows, {
       logger,
       tradeTaxonomy,
+      identifierIndex,
       dryRun: !apply,
     });
     for (const c of summary.strictCandidates) {

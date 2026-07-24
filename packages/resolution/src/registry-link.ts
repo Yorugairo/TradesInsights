@@ -37,6 +37,12 @@ export interface RegistryIdentityRow {
    * whose name drifts — folded through `addressMatchKey` before comparison. */
   registeredAddress: string | null;
   registeredPostalCode: string | null;
+  /** Normalized county of the entity's primary location. The COARSER locality
+   * band: a city-token miss is not the same as being in a different part of the
+   * state, and county is the only geography both systems hold (Insights projects
+   * carry city/county and no coordinates). Optional: absent on hand-built test
+   * rows and on a contract older than the geo columns. */
+  registeredCountyName?: string | null;
   /** Entity lifecycle status. The contract view pre-filters to 'active'; we read
    * and guard on it (buildRegistryIndex) as defense-in-depth if the view ever
    * widens to expose merged/archived rows. Optional: absent on hand-built test
@@ -271,14 +277,24 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
             google_phone, google_rating, google_review_count, trade_codes${optional.map((c) => `, ${c}`).join("")}
        FROM registry_public.trades_identity_v1`;
 
-  // `aliases`, `brands` and `principals` are the newest contract columns, added
-  // in that order. If Insights deploys ahead of any of those registry migrations,
-  // selecting a missing column throws 42703 and would take the WHOLE registry
-  // read down (silently skipping binding). Degrade one column at a time instead —
-  // newest first — so the newest lane goes quiet while everything else keeps
-  // working. ONLY 42703 is swallowed; a connection or permission error still
-  // propagates, because those must never look like "no registry data".
-  const ladder = [["aliases", "brands", "principals"], ["aliases", "brands"], ["aliases"], []];
+  // `aliases`, `brands`, `principals` and `registered_county_name` are the
+  // newest contract columns. If Insights deploys ahead of any of those registry
+  // migrations, selecting a missing column throws 42703 and would take the WHOLE
+  // registry read down (silently skipping binding). Degrade one column at a time
+  // instead — newest first — so the newest lane goes quiet while everything else
+  // keeps working. ONLY 42703 is swallowed; a connection or permission error
+  // still propagates, because those must never look like "no registry data".
+  //
+  // `registered_county_name` is the LAST to be dropped even though it predates
+  // the jsonb columns: losing it degrades locality to the old binary behaviour
+  // for every row, whereas losing `principals` only quiets the family lane.
+  const ladder = [
+    ["aliases", "brands", "principals", "registered_county_name"],
+    ["aliases", "brands", "registered_county_name"],
+    ["aliases", "registered_county_name"],
+    ["registered_county_name"],
+    [],
+  ];
   let res: { rows: Record<string, unknown>[] } | undefined;
   for (const [i, optional] of ladder.entries()) {
     try {
@@ -301,6 +317,7 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     stateCode: (r["state_code"] as string | null) ?? null,
     registeredAddress: (r["registered_address"] as string | null) ?? null,
     registeredPostalCode: (r["registered_postal_code"] as string | null) ?? null,
+    registeredCountyName: (r["registered_county_name"] as string | null) ?? null,
     status: (r["status"] as string | null) ?? null,
     recordCount: r["record_count"] == null ? null : Number(r["record_count"]),
     rootDomain: (r["root_domain"] as string | null) ?? null,

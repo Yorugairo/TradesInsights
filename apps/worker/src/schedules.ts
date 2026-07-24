@@ -18,6 +18,7 @@ import {
   geocodeProjects,
   deriveCorroboration,
   linkRegistry,
+  loadRegistryIdentifierIndex,
   materializeProjectGeometry,
   resolveUnresolved,
 } from "@otn/resolution";
@@ -147,8 +148,16 @@ export async function runMaintenance(logger: Logger): Promise<void> {
       // when no registry connection OR the taxonomy view is not yet published —
       // generateRegistryObservations then falls back to the built-in vocabulary.
       const tradeTaxonomy = registryPool ? await fetchTradeTaxonomy(registryPool) : null;
+      // The registry identifier graph — what makes the `identifier` trust
+      // component discriminate instead of returning a constant. Empty when the
+      // view is not yet published; scoring degrades to its unknown band.
+      const identifierIndex = await loadRegistryIdentifierIndex(registryPool);
       registryLink = await linkRegistry(db, { fetchRows: async () => registryRows, logger });
-      registryObs = await generateRegistryObservations(db, registryRows, { logger, tradeTaxonomy });
+      registryObs = await generateRegistryObservations(db, registryRows, {
+        logger,
+        tradeTaxonomy,
+        identifierIndex,
+      });
       registryExport = await exportRegistryObservations(db, registryPool, { logger });
       // Market aggregates input (Phase 3): stamp projects with SHARED-vocabulary
       // trade codes (permitType-only). Falls back to the built-in vocabulary
