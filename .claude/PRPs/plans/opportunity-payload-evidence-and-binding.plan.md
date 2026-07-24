@@ -20,9 +20,12 @@ opportunities that name the general contractor, carry their registry-verified
 phone, and cite the A-grade record every claim rests on.
 
 ## Metadata
-- **Complexity**: Large (two independent tracks; Phase 2 ships alone)
+- **Complexity**: Large (three independent tracks; each ships alone)
 - **Source PRD**: N/A — follows `identifier-graph-scoring-calibration.plan.md` (complete)
-- **Estimated files**: ~12
+- **Estimated files**: ~18
+- **Order**: Phase 0 first — it is the smallest, it unblocks 72 rows already in the
+  queue, and its Task 0.5 finding (85% of the registry never looked up on Google)
+  outranks every matching improvement in Phase 3.
 
 ---
 
@@ -132,6 +135,120 @@ guarded by a `WHERE` that protects decided/human-touched state.
 ---
 
 ## Step-by-Step Tasks
+
+### PHASE 0 — Make the strongest signal visible (do this first)
+
+**Why first**: 72 of the 278 pending rows (26%) already carry the strongest
+evidence the system can produce — L&I phone == Google phone AND an exact
+org↔entity name match — and they score 0.691–0.950, scattered indistinguishably
+through the middle of the queue. This phase costs little and unblocks the 72
+immediately. Accepting them would also be the FIRST human decisions ever
+recorded, which is what unfreezes the `ruleHistory` component
+(`MIN_HUMAN_DECISIONS = 10`, currently never reached).
+
+#### The circularity finding — read before scoring anything
+Phone agreement ALONE is largely tautological. Of 2,980 accepted links with
+agreeing phones, **2,962 came from `match_method = 'hard_identifier'`, which
+matched ON the phone.** The agreement restates how the link was made.
+
+The proof it cannot stand alone: **384 links have an agreeing phone but a Google
+`display_name` unrelated to the L&I name** — shared switchboards, answering
+services, property managers, franchise lines.
+
+The independent axis is the NAME, which was never used to make those links:
+
+| Signal | Accepted links |
+|---|---|
+| phone agrees (often circular) | 2,980 |
+| **phone + exact name** ← the real signal | **1,327** |
+| phone + close name | 2,596 |
+| phone agrees, name unrelated | 384 |
+
+So the scoring rule is **phone agreement + name agreement**, never phone alone.
+
+#### Task 0.1: Expose the Google name on the contract
+- **ACTION**: Append `google_name` (from `registry_entity_external_profiles.display_name`,
+  same accepted-link LATERAL that already yields `google_phone`) to
+  `registry_public.trades_identity_v1`.
+- **WHY**: This is the concrete "Registry and Insights aren't talking" gap.
+  Insights is STRUCTURALLY BLIND to name agreement — the contract exposes
+  `google_phone` but never the name, so the seam cannot compute the signal at all.
+- **MIRROR**: CONTRACT_VIEW + RE-GRANT; append LAST (a `CREATE OR REPLACE VIEW`
+  cannot insert a column mid-list), then re-assert the `otn_insights_reader` grant.
+- **GOTCHA**: add it to `fetchRegistryIdentityRows`'s degradation ladder
+  (`registry-link.ts`), newest-first, or an Insights deploy ahead of the registry
+  migration takes the whole registry read down with 42703.
+- **VALIDATE**: read as the `otn_insights` role; `anon` still has no USAGE.
+
+#### Task 0.2: Cross-source corroboration in the identifier index
+- **ACTION**: In `packages/resolution/src/registry-identifiers.ts`, compute per
+  entity whether the SAME normalized value appears under two DIFFERENT source
+  types (`phone` + `google_phone` today; `root_domain` + a future Google website
+  the same way). Add it to `EntityIdentifierFootprint`.
+- **IMPLEMENT**: new band `IDENTIFIER_CROSS_SOURCE_CONFIRMED` ABOVE
+  `IDENTIFIER_ENTITY_WELL_PINNED`, awarded ONLY when the name also agrees
+  (per the circularity finding).
+- **WHY**: this is a miss in the work that shipped yesterday. The identifier graph
+  was built on "independent sources meeting on a shared key", and then
+  `gradeIdentifierComponent` counted identifiers without ever checking whether two
+  of them are the same value from independent sources. An entity with agreeing
+  L&I+Google phones currently scores 0.6 — identical to one with three unrelated
+  identifiers.
+- **MIRROR**: PURE_GATE — extend `buildRegistryIdentifierIndex` and grade purely.
+- **GOTCHA**: `phone` and `google_phone` share a value SPACE (both 10 bare digits,
+  `normalizePhoneUS` ≡ `normalizePhoneDigits`), so they are directly comparable.
+  `address` does NOT share a space with anything (see
+  `CROSS_SYSTEM_IDENTIFIER_TYPES`) — do not add it to this comparison.
+- **VALIDATE**: `vitest`; Smith Fire Systems Inc (L&I `2539261880`, Google
+  `(253) 926-1880`, exact name) is a fixture that must reach the new band, and a
+  fixture with agreeing phone + unrelated name must NOT.
+
+#### Task 0.3: Say it in the tier reason
+- **ACTION**: `classifyReviewTier` awards the cross-source band **2 points** (so
+  it reaches tier1 alone) and names it verbatim:
+  `"L&I + Google phone agree · Google name matches"`.
+- **MIRROR**: the points model shipped in `registry-observations.ts` — weights
+  reflect how much a fact narrows IDENTITY.
+- **VALIDATE**: the 72 rows move to tier1; the live mix is re-measured and recorded
+  (was 68/144/66).
+
+#### Task 0.4: One-click grouping in review
+- **ACTION**: Add a "select N L&I+Google confirmed" button to
+  `/app/admin/registry-review`.
+- **MIRROR**: `selectTier` (registry-review/actions.tsx) and "select N address
+  matches" (google-place-review/batch-table.tsx).
+- **NOT auto-bind**: `evaluateStrictBind` stays untouched — owner decision, so the
+  first human decisions can seed rule history rather than the auto-binder grading
+  its own work.
+- **VALIDATE**: the group selects exactly 72 on today's data.
+
+#### Task 0.5: The Google Places COVERAGE gap (diagnose first)
+- **ACTION**: Read-only audit of which entities have never been looked up, then a
+  prioritized backfill lane.
+- **THE FINDING**: `Patriot Fire Protection Inc` has a Google profile with an
+  EXACT name, an exact phone (`(253) 926-2290` = L&I `2539262290`) and an exact
+  address (`2707 70TH AVE E`) — and the registry has no profile row and no queue
+  row for it. **It was never fetched.** Sizing that:
+
+  | | |
+  |---|---|
+  | active trades entities | 25,545 |
+  | with ANY Google profile | **3,794 (14.9%)** |
+  | with an ACCEPTED profile | 3,753 |
+  | **never looked up** | **21,751 (85%)** |
+
+- **WHY THIS OUTRANKS MATCHING**: no matching improvement can help the 85% that
+  were never queried. This is the single biggest lever on "who do I call".
+- **GOTCHA / COST**: Places lookups cost money per call. Do NOT plan a 21,751-row
+  sweep. First find out what capped the existing run at ~3,800 (a limit flag? a
+  source list? a budget gate?) — that cause is currently UNMEASURED. Then backfill
+  in priority order: entities appearing in Solis opportunities, then the 215
+  primary contractors, then multi-project entities.
+- **VALIDATE**: the audit reconciles (`looked_up + never_looked_up = 25,545`) and
+  names the cap's cause; the backfill runs behind an explicit `--limit` and logs
+  spend.
+
+---
 
 ### PHASE 2 — Link the evidence that already exists
 
@@ -249,6 +366,10 @@ pnpm --filter @otn/worker exec tsx src/cli/binding-audit.ts
 ```
 
 ## Acceptance Criteria
+- [ ] `google_name` is on the contract view, readable as `otn_insights`, `anon` still has no USAGE
+- [ ] Cross-source corroboration is detected and scores ONLY with name agreement
+- [ ] The 72 L&I+Google-confirmed rows reach tier1 and say so in words
+- [ ] The Places coverage audit reconciles to 25,545 and names what capped the run
 - [ ] `opportunity_evidence` is populated; `roi.ts`'s count query returns non-zero
 - [ ] Every linked row's `confirmed` flag follows the authority grade, not the row count
 - [ ] The gate audit reconciles and names every unlinkable reason
@@ -264,6 +385,9 @@ pnpm --filter @otn/worker exec tsx src/cli/binding-audit.ts
 | The gate audit reveals published opportunities lacking A-grade support | **Medium** | **High** | That is a finding, not a failure — report it; do not silently "fix" by relaxing the gate |
 | Task 3.3 yields few new binds because the 169 genuinely are not in L&I | **High** | Medium | 3.1 measures this FIRST; if `no_registry_name_match` dominates, stop after 3.2 and say so |
 | Accepting 46 candidates binds a wrong entity | Low | High | Review-only; the 46 are human-decided, and Phase 2 of the last plan made those rows rankable |
+| **Scoring phone agreement as proof** — it is circular for 2,962 of 2,980 links | **High** | **High** | The band requires NAME agreement too; 384 agreeing-phone/unrelated-name rows are the counterexample fixture |
+| Places backfill runs up an unbounded API bill | Medium | **High** | Diagnose the existing cap FIRST; backfill only behind `--limit`, priority-ordered, with spend logged |
+| Google `display_name` is a marketing name, not the legal one | Medium | Low | Score exact AND close matches separately; "close" never alone reaches the top band |
 
 ## Notes
 Phase 2 and Phase 3 are independent and can ship in either order. Phase 2 is the
