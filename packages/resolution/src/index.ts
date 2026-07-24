@@ -10,6 +10,9 @@ export * from "./geocode.js";
 export * from "./identifiers.js";
 export * from "./registry-link.js";
 export * from "./registry-observations.js";
+// Corporate-family tier: principal ↔ person discovery. Deliberately NOT part of
+// the name-match index — see the module header.
+export * from "./principal-person.js";
 export * from "./trade-taxonomy.js";
 export * from "./corroboration.js";
 export * from "./project-trades.js";

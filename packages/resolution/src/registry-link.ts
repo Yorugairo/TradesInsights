@@ -76,6 +76,29 @@ export interface RegistryIdentityRow {
    * brand addressable rather than merely matchable. Optional/null-safe: an older
    * contract without the column degrades to enterprise-only identity. */
   brands?: RegistryBrand[] | null;
+  /** The entity's L&I principals (officers/owners), registered agents already
+   * filtered out registry-side. This is the CORPORATE-FAMILY key: common control
+   * sits above the UBI, so two entities sharing a principal are one buying
+   * decision-maker even though L&I gives them separate UBIs.
+   *
+   * PRIVATE-INDIVIDUAL DATA. May be read and displayed only behind
+   * `currentSession()` (every `/app/*` route); never on a public page, a pSEO
+   * surface, or a digest to a non-customer.
+   *
+   * NEVER a name match key: a principal links ENTITIES to each other. It must not
+   * enter `byNameKey`, become an org alias, or let a permit naming a person match
+   * a business. Optional/null-safe so an older contract degrades to no families. */
+  principals?: RegistryPrincipal[] | null;
+}
+
+/** One L&I principal of a registry entity (contract column `principals`). */
+export interface RegistryPrincipal {
+  /** The raw L&I spelling, for human review. */
+  name: string;
+  /** The registry's normalized `SURNAME, GIVEN M` key — what groups a family.
+   * Produced by `registry_internal.normalize_principal()`, which is the
+   * authoritative definition; never re-derive it from `name` here. */
+  key: string;
 }
 
 /** One operating brand of a registry entity (contract column `brands`). */
@@ -248,14 +271,14 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
             google_phone, google_rating, google_review_count, trade_codes${optional.map((c) => `, ${c}`).join("")}
        FROM registry_public.trades_identity_v1`;
 
-  // `aliases` and `brands` are the newest contract columns, added in that order.
-  // If Insights deploys ahead of either registry migration, selecting a missing
-  // column throws 42703 and would take the WHOLE registry read down (silently
-  // skipping binding). Degrade one column at a time instead — brands off, then
-  // aliases off — so the newest lane goes quiet while everything else keeps
+  // `aliases`, `brands` and `principals` are the newest contract columns, added
+  // in that order. If Insights deploys ahead of any of those registry migrations,
+  // selecting a missing column throws 42703 and would take the WHOLE registry
+  // read down (silently skipping binding). Degrade one column at a time instead —
+  // newest first — so the newest lane goes quiet while everything else keeps
   // working. ONLY 42703 is swallowed; a connection or permission error still
   // propagates, because those must never look like "no registry data".
-  const ladder = [["aliases", "brands"], ["aliases"], []];
+  const ladder = [["aliases", "brands", "principals"], ["aliases", "brands"], ["aliases"], []];
   let res: { rows: Record<string, unknown>[] } | undefined;
   for (const [i, optional] of ladder.entries()) {
     try {
@@ -288,6 +311,7 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     tradeCodes: (r["trade_codes"] as string[] | null) ?? null,
     aliases: (r["aliases"] as string[] | null) ?? null,
     brands: parseBrands(r["brands"]),
+    principals: parsePrincipals(r["principals"]),
   }));
 }
 
@@ -309,6 +333,25 @@ function parseBrands(raw: unknown): RegistryBrand[] | null {
     });
   }
   return brands.length > 0 ? brands : null;
+}
+
+/** Defensive read of the `principals` jsonb column. BOTH fields are required:
+ * a principal without its normalized key cannot group a family, and one without
+ * a display name cannot be reviewed by a human — either way, dropping the entry
+ * is correct. The key is never re-derived from the name; the registry's SQL
+ * normalizer is the single definition. */
+function parsePrincipals(raw: unknown): RegistryPrincipal[] | null {
+  if (!Array.isArray(raw)) return null;
+  const principals: RegistryPrincipal[] = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object") continue;
+    const rec = entry as Record<string, unknown>;
+    const name = typeof rec["name"] === "string" ? rec["name"].trim() : "";
+    const key = typeof rec["key"] === "string" ? rec["key"].trim() : "";
+    if (!name || !key) continue;
+    principals.push({ name, key });
+  }
+  return principals.length > 0 ? principals : null;
 }
 
 /**

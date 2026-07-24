@@ -85,6 +85,8 @@ export default async function RegistryReviewPage({
     <main style={{ padding: "1rem", maxWidth: 1100 }}>
       <p>
         <Link href="/app/admin/review">← resolution review</Link>
+        {" · "}
+        <Link href="/app/admin/corporate-families">corporate families →</Link>
       </p>
       <h1>Registry review — One Trade Network seam</h1>
       <p style={{ color: "#666" }}>

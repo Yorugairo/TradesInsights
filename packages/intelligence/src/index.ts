@@ -40,3 +40,5 @@ export * from "./warm-network.js";
 export * from "./stage-lag.js";
 export * from "./bid-window.js";
 export * from "./enterprise-rollup.js";
+// The tier above enterprise: entities under common control (shared L&I principal).
+export * from "./corporate-family.js";
