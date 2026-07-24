@@ -1441,14 +1441,19 @@ export const REVIEW_TIER_LABELS: Record<ReviewTier, string> = {
 
 /**
  * Deterministic confidence tier for a pending observation — the grouping the
- * operator batch-approves by. Binding candidates are tiered by how many
- * INDEPENDENT strong signals corroborate the match:
- *   tier1 — exact name AND a second strong signal (same city / agreeing L&I
- *           phone / unique root domain): one step from the auto-bound strict tier;
- *   tier2 — exactly one strong signal (exact name alone, or a unique
- *           phone/address/domain identifier with a plausible name);
- *   tier3 — weak or secondary-channel only (google phone, shared-address
- *           dominance, low-similarity name).
+ * operator batch-approves by. Binding candidates are tiered by how much
+ * INDEPENDENT evidence corroborates the match, counted in points (below):
+ *   tier1 — exact name + 2 points: one step from the auto-bound strict tier;
+ *   tier2 — exact name + 1 point, or a unique phone/address/domain identifier
+ *           with a plausible name;
+ *   tier3 — exact name and NOTHING else, a contradicted identifier, or a weak /
+ *           secondary channel only (google phone, low-similarity name).
+ *
+ * A name alone is tier3 by design. It reads as a demotion but is the honest
+ * reading: an exact name match with no corroborating fact is precisely the case
+ * a reviewer must actually look at, and the queue's own shape says so — 254 of
+ * the 278 pending rows are exact-name matches, so "exact name" is the baseline,
+ * not evidence.
  * Non-binding types (phone/alias/trade — always for an already-bound org, so
  * lower identity risk) tier by trust band. Pure — unit-tested, reused by the
  * review page.
@@ -1521,25 +1526,47 @@ export function classifyReviewTier(o: {
   // evidence on this channel and it points at somebody else.
   if (identifierContradicts) return info("tier3", `${channel} CONTRADICTS · inspect`);
 
+  // Corroboration POINTS, weighted by how much each fact narrows identity
+  // rather than merely being consistent with it. Two points is the tier1 bar:
+  // two independent things beyond the name.
+  //
+  // The weights are the whole argument, so they are stated plainly:
+  //   * a unique identifier is 2 — it maps to exactly one entity, by definition;
+  //   * the registered city is 2 — this specific business is registered HERE;
+  //   * the county is 1 — right region, but a county holds thousands of firms;
+  //   * a shared identifier is 1 — real, but its bucket-mates are live
+  //     alternatives;
+  //   * a shared trade is 1, and NOT more. It is a plausibility check, not an
+  //     identity signal: 61% of the pending queue has it, and "both are
+  //     electricians" does not distinguish this entity from the other
+  //     electrician with the same name. Scoring it like a city match is what
+  //     made 67% of the queue tier1 in the first cut of this function.
+  let points = 0;
   const corroborators: string[] = [];
-  if (sameCity) corroborators.push("same city");
-  else if (sameCounty) corroborators.push("same county");
+  if (sameCity) {
+    points += 2;
+    corroborators.push("same city");
+  } else if (sameCounty) {
+    points += 1;
+    corroborators.push("same county");
+  }
   if (identifierAgrees) {
+    points += identifierStrong ? 2 : 1;
     corroborators.push(`${identifierStrong ? "unique" : "shared"} ${channel}`);
   }
-  if (sharedTrade) corroborators.push("shared trade");
+  if (sharedTrade) {
+    points += 1;
+    corroborators.push("shared trade");
+  }
 
   if (nameExact) {
-    // tier1 needs a SECOND independent fact. "Same county" alone is not one —
-    // a county holds thousands of contractors — so it can join a tier1 reason
-    // but never trigger it.
-    const strongSecond = sameCity || identifierAgrees || sharedTrade;
-    if (strongSecond) return info("tier1", `exact name + ${corroborators.join(" + ")}`);
+    const facts = corroborators.join(" + ");
+    if (points >= 2) return info("tier1", `exact name + ${facts}`);
+    if (points === 1) return info("tier2", `exact name + ${facts}`);
     if (contradictedLocality) {
-      return info("tier2", "exact name, but registered in a different county");
+      return info("tier3", "exact name only, and registered in a different county");
     }
-    if (sameCounty) return info("tier2", "exact name + same county (city differs)");
-    return info("tier2", "exact name only (no corroborating fact)");
+    return info("tier3", "exact name only (nothing corroborates it)");
   }
 
   // Not an exact name — an identifier channel produced the match, so the name is

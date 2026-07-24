@@ -213,8 +213,10 @@ describe("classifyReviewTier (confidence grouping for batch review)", () => {
     expect(r.reason).toContain("phone");
   });
 
-  it("tier2 — exact name alone (no city/phone corroboration)", () => {
-    expect(bind({ trustComponents: { name: 1, locality: 0.3 } }).tier).toBe("tier2");
+  it("tier3 — exact name alone: the baseline, not evidence (plan Task 2.4)", () => {
+    // 254 of the 278 pending rows are exact-name matches, so an exact name with
+    // nothing corroborating it is the case a reviewer must actually look at.
+    expect(bind({ trustComponents: { name: 1, locality: 0.3 } }).tier).toBe("tier3");
   });
 
   it("tier2 — a unique identifier match with a plausible name", () => {
@@ -250,12 +252,12 @@ describe("classifyReviewTier (confidence grouping for batch review)", () => {
     expect(r.reason).toContain("same city");
   });
 
-  it("tier2 — alias-exact match with no second signal", () => {
+  it("tier3 — alias-exact match with no second signal (same bar as a canonical name)", () => {
     const r = bind({
       ruleKey: "binding_alias_exact",
       trustComponents: { name: 1, locality: 0.3, identifier: 0.5 },
     });
-    expect(r.tier).toBe("tier2");
+    expect(r.tier).toBe("tier3");
   });
 
   it("non-binding enrichment tiers by trust band (already-bound org)", () => {

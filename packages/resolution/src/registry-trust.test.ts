@@ -165,10 +165,31 @@ describe("classifyReviewTier — evidence-defined (Task 2.4)", () => {
       ...over,
     });
 
-  it("tier1 — exact name + a shared authoritative trade, with no locality at all", () => {
+  it("a shared trade is worth ONE point, not two — it is plausibility, not identity", () => {
+    // 61% of the pending queue shares a trade code with its candidate. "Both are
+    // electricians" does not distinguish this entity from the other electrician
+    // of the same name, so on its own it lifts a row to tier2 and no further.
     const r = bind({ payload: { trade_match: true } });
-    expect(r.tier).toBe("tier1");
+    expect(r.tier).toBe("tier2");
     expect(r.reason).toContain("shared trade");
+  });
+
+  it("tier1 — a shared trade PLUS the right county clears the two-point bar", () => {
+    const r = bind({
+      trustComponents: { name: 1, locality: LOCALITY_SAME_COUNTY, identifier: 0.5 },
+      payload: { trade_match: true },
+    });
+    expect(r.tier).toBe("tier1");
+    expect(r.reason).toContain("same county");
+    expect(r.reason).toContain("shared trade");
+  });
+
+  it("tier1 — the registered city alone is worth two points on its own", () => {
+    // This specific business is registered HERE; that narrows identity in a way
+    // a trade code never does.
+    expect(
+      bind({ trustComponents: { name: 1, locality: LOCALITY_SAME_CITY, identifier: 0.5 } }).tier,
+    ).toBe("tier1");
   });
 
   it("names EVERY corroborating fact, so the reviewer can check them", () => {
@@ -190,23 +211,32 @@ describe("classifyReviewTier — evidence-defined (Task 2.4)", () => {
     expect(r.reason).toContain("same county");
   });
 
-  it("separates 'different county' from 'no locality evidence'", () => {
+  it("separates 'different county' from 'no locality evidence' in the reason", () => {
+    // Both are tier3 — neither corroborates — but a reviewer opening the row
+    // deserves to know which of the two situations they are in.
     const different = bind({
       trustComponents: { name: 1, locality: LOCALITY_DIFFERENT_COUNTY, identifier: 0.5 },
     });
     const unknown = bind({
       trustComponents: { name: 1, locality: LOCALITY_UNKNOWN, identifier: 0.5 },
     });
-    expect(different.tier).toBe("tier2");
-    expect(unknown.tier).toBe("tier2");
+    expect(different.tier).toBe("tier3");
+    expect(unknown.tier).toBe("tier3");
     expect(different.reason).not.toBe(unknown.reason);
     expect(different.reason).toContain("different county");
   });
 
-  it("a SHARED identifier corroborates, but is labelled shared", () => {
+  it("a SHARED identifier is worth one point and is labelled shared", () => {
+    // Its bucket-mates remain live alternatives, so it cannot carry a row alone.
     const r = bind({ trustComponents: { name: 1, locality: LOCALITY_UNKNOWN, identifier: 0.75 } });
-    expect(r.tier).toBe("tier1");
+    expect(r.tier).toBe("tier2");
     expect(r.reason).toContain("shared");
+  });
+
+  it("a UNIQUE identifier is worth two — it maps to exactly one entity", () => {
+    const r = bind({ trustComponents: { name: 1, locality: LOCALITY_UNKNOWN, identifier: 1 } });
+    expect(r.tier).toBe("tier1");
+    expect(r.reason).toContain("unique");
   });
 
   it("a CONTRADICTED identifier is tier3 however much else agrees", () => {
@@ -220,11 +250,12 @@ describe("classifyReviewTier — evidence-defined (Task 2.4)", () => {
 
   it("entity-footprint fallback bands never masquerade as agreement", () => {
     // 0.6 (well-pinned) and 0.35 (shared-only) both mean "the org gave us
-    // nothing to compare"; only >= 0.75 is an actual agreeing identifier.
+    // nothing to compare"; only >= 0.75 is an actual agreeing identifier, so
+    // none of these earns a point.
     for (const identifier of [0.6, 0.5, 0.35, 0.3]) {
       expect(
         bind({ trustComponents: { name: 1, locality: LOCALITY_UNKNOWN, identifier } }).tier,
-      ).toBe("tier2");
+      ).toBe("tier3");
     }
   });
 
@@ -239,5 +270,31 @@ describe("classifyReviewTier — evidence-defined (Task 2.4)", () => {
       }).tier,
     ]);
     expect(tiers).toEqual(new Set(["tier1", "tier2", "tier3"]));
+  });
+
+  it("reproduces the measured live tier mix on the 254-row bulk", () => {
+    // The eight (trade_match, locality) combinations actually present in the
+    // queue, with their row counts, measured 2026-07-24. A regression here means
+    // the tier mix an operator sees has silently moved.
+    const live: [boolean, number, number][] = [
+      [true, LOCALITY_DIFFERENT_COUNTY, 70],
+      [true, LOCALITY_UNKNOWN, 48],
+      [false, LOCALITY_DIFFERENT_COUNTY, 45],
+      [true, LOCALITY_SAME_COUNTY, 35],
+      [false, LOCALITY_SAME_COUNTY, 26],
+      [false, LOCALITY_UNKNOWN, 20],
+      [false, LOCALITY_SAME_CITY, 9],
+      [true, LOCALITY_SAME_CITY, 1],
+    ];
+    const mix = { tier1: 0, tier2: 0, tier3: 0 };
+    for (const [trade, locality, n] of live) {
+      const t = bind({
+        trustComponents: { name: 1, locality, identifier: 0.5 },
+        payload: { trade_match: trade },
+      }).tier;
+      mix[t] += n;
+    }
+    expect(mix).toEqual({ tier1: 45, tier2: 144, tier3: 65 });
+    expect(mix.tier1 + mix.tier2 + mix.tier3).toBe(254);
   });
 });

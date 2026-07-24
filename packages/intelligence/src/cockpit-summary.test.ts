@@ -10,7 +10,11 @@ import { queueSummary } from "./cockpit-summary.js";
  */
 const superRow = (over: Record<string, unknown> = {}) => ({
   matched_rule: "binding_name_exact",
-  reason_key: "",
+  reason_key: "same_address_name_mismatch",
+  // A DECIDABLE reason: `resolutionReview.clusters` previews only clusters an
+  // operator can act on, and the classifier fails closed, so a row with no
+  // reasons would (correctly) be filtered out of the preview entirely.
+  reasons: ["same_address_name_mismatch"],
   candidate_project_id: null,
   candidate_name: null,
   candidate_county: null,

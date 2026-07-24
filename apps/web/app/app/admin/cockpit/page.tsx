@@ -168,9 +168,11 @@ function QueueCard({
 }
 
 function RegistryReviewCard({ summary }: { summary: QueueSummary }) {
-  const { total, byRule } = summary.registryReview;
+  const { total, byRule, byTier } = summary.registryReview;
   const phone = summary.lanes.enrichmentPhoneCandidates30d;
   const top = byRule.slice(0, 3);
+  const tone = (tier: string): "green" | "amber" | "gray" =>
+    tier === "tier1" ? "green" : tier === "tier2" ? "amber" : "gray";
   return (
     <QueueCard
       n={2}
@@ -180,6 +182,15 @@ function RegistryReviewCard({ summary }: { summary: QueueSummary }) {
       hrefLabel="Review bindings →"
     >
       <div>Org → registry identity bindings awaiting a human accept.</div>
+      {byTier.length > 0 && (
+        <div style={{ marginTop: "0.35rem" }}>
+          {byTier.map((t) => (
+            <span key={t.tier} style={{ marginRight: "0.5rem" }}>
+              <Badge tone={tone(t.tier)}>{t.count}</Badge> {t.label}
+            </span>
+          ))}
+        </div>
+      )}
       {top.length > 0 && (
         <div style={{ color: "#666", marginTop: "0.25rem" }}>
           {top.map((r) => (
@@ -226,16 +237,28 @@ function FamiliesCard({ summary }: { summary: QueueSummary }) {
 }
 
 function ResolutionReviewCard({ summary }: { summary: QueueSummary }) {
-  const { total, clusters } = summary.resolutionReview;
+  const { total, actionable, awaitingEvidence, clustersToHalf, clustersToEighty, clusters } =
+    summary.resolutionReview;
   return (
     <QueueCard
       n={1}
       title="Resolution review"
-      count={total.toLocaleString()}
+      // The headline is what the operator can ACT on. Leading with the raw total
+      // overstated the work threefold and made a finite queue look bottomless.
+      count={actionable.toLocaleString()}
       href="/app/admin/review"
       hrefLabel="Bulk-decide by pattern →"
     >
-      <div>Permit → project attachment. Work the top patterns, not the {total.toLocaleString()} rows.</div>
+      <div>
+        Permit → project attachment. The largest <strong>{clustersToHalf}</strong> clusters clear
+        half of it, <strong>{clustersToEighty}</strong> clear 80%.
+      </div>
+      {awaitingEvidence > 0 && (
+        <div style={{ color: "#666", marginTop: "0.25rem" }}>
+          {awaitingEvidence.toLocaleString()} of {total.toLocaleString()} are waiting on parcel/org
+          evidence, not on a reviewer.
+        </div>
+      )}
       {clusters.length > 0 ? (
         <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", color: "#333" }}>
           {clusters.map((c, i) => (

@@ -25,6 +25,8 @@ import { sql } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import {
   buildPrincipalPersonIndex,
+  classifyReviewTier,
+  clustersToCover,
   fetchRegistryIdentityRows,
   matchPrincipalsToPeople,
   triageReviewQueue,
@@ -47,6 +49,16 @@ const GOOGLE_PLACE_VIEW = "registry_public.google_place_review_v1";
 export interface CockpitResolutionReview {
   /** Every pending resolution review, summed across triage clusters. */
   total: number;
+  /** Of those, the ones an operator can actually decide today. The rest are
+   * waiting on parcel/org evidence, which is a pipeline job, not a review job —
+   * counting them as "queue" overstates the work by roughly 3×. */
+  actionable: number;
+  /** Rows blocked on evidence. `actionable + awaitingEvidence === total`. */
+  awaitingEvidence: number;
+  /** Largest actionable clusters needed to clear 50% / 80% of the actionable
+   * rows — what makes the queue feel finite. */
+  clustersToHalf: number;
+  clustersToEighty: number;
   /** The largest pattern-shaped clusters — review-per-pattern, not per-row. */
   clusters: ReviewCluster[];
 }
@@ -54,6 +66,9 @@ export interface CockpitResolutionReview {
 export interface CockpitRegistryReview {
   total: number;
   byRule: { ruleKey: string; count: number }[];
+  /** Evidence-defined confidence tiers (tier1 = exact name + a second checkable
+   * fact). The mix is what says whether the queue is mostly easy or mostly hard. */
+  byTier: { tier: string; label: string; count: number }[];
 }
 
 export interface CockpitFamilies {
@@ -114,14 +129,34 @@ export async function queueSummary(
   return { resolutionReview, registryReview, families, googlePlace, lanes };
 }
 
-/** Canonical resolution-review count: the triage clusters, summed. */
+/**
+ * Canonical resolution-review count: the triage clusters, summed — split by
+ * whether a human can act on them. `clustersToCover` is the same function the
+ * review page calls, so the two surfaces can never quote different numbers.
+ */
 async function resolutionReviewSummary(db: Db): Promise<CockpitResolutionReview> {
   const clusters = await triageReviewQueue(db); // ordered by count DESC
   const total = clusters.reduce((sum, c) => sum + c.count, 0);
-  return { total, clusters: clusters.slice(0, 5) };
+  const decidable = clusters.filter((c) => c.reviewState === "actionable");
+  const actionable = decidable.reduce((sum, c) => sum + c.count, 0);
+  return {
+    total,
+    actionable,
+    awaitingEvidence: total - actionable,
+    clustersToHalf: clustersToCover(decidable, 0.5),
+    clustersToEighty: clustersToCover(decidable, 0.8),
+    clusters: decidable.slice(0, 5),
+  };
 }
 
-/** Canonical registry-review count: pending observations grouped by rule. */
+/**
+ * Canonical registry-review count: pending observations grouped by rule, plus
+ * the evidence-tier mix.
+ *
+ * Tiers are computed in TS rather than SQL because `classifyReviewTier` is the
+ * one authority on what a tier means — a parallel SQL definition is exactly how
+ * two surfaces start disagreeing about the same queue.
+ */
 async function registryReviewSummary(db: Db): Promise<CockpitRegistryReview> {
   const res = await db.execute(sql`
     SELECT rule_key, count(*)::int AS n
@@ -134,7 +169,29 @@ async function registryReviewSummary(db: Db): Promise<CockpitRegistryReview> {
     count: Number(r["n"]),
   }));
   const total = byRule.reduce((sum, r) => sum + r.count, 0);
-  return { total, byRule };
+
+  const rowsRes = await db.execute(sql`
+    SELECT observation_type, rule_key, trust_score, trust_components_json, payload_json
+    FROM registry_observations
+    WHERE status = 'pending'`);
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const r of rowsRes.rows as Record<string, unknown>[]) {
+    const info = classifyReviewTier({
+      observationType: r["observation_type"] as string,
+      ruleKey: r["rule_key"] as string,
+      trustScore: Number(r["trust_score"] ?? 0),
+      trustComponents: (r["trust_components_json"] ?? {}) as Record<string, number>,
+      payload: (r["payload_json"] ?? {}) as Record<string, unknown>,
+    });
+    const seen = counts.get(info.tier);
+    if (seen) seen.count += 1;
+    else counts.set(info.tier, { label: info.label, count: 1 });
+  }
+  const byTier = [...counts.entries()]
+    .map(([tier, v]) => ({ tier, label: v.label, count: v.count }))
+    .sort((a, b) => a.tier.localeCompare(b.tier));
+
+  return { total, byRule, byTier };
 }
 
 /** Phone-lane candidates in the last 30 days (0 until Phase A fuels the lane). */

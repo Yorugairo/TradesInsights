@@ -195,6 +195,69 @@ export async function undoResolution(
  * project) turns per-row review into per-pattern review: a human looks at the
  * candidate once and decides all of its pending records together.
  */
+/**
+ * Whether a pending review is something a HUMAN can decide, or something that
+ * needs machine evidence gathered first.
+ *
+ * The distinction matters because the queue is mostly the second kind. Measured
+ * 2026-07-24: of 2,278 pending rows, 1,518 are `proximity_org` — a fuzzy name
+ * near a location with, in the resolver's own words,
+ * `fuzzy_without_parcel_or_org_support`. All 1,518 carry the identical score of
+ * 0.600 because there is nothing to score. Put in front of an operator they are
+ * not a decision, they are 1,518 shrugs; what they need is a parcel or org
+ * signal, which is a pipeline job, not a review job.
+ */
+export type ResolutionReviewState = "actionable" | "awaiting_evidence";
+
+export const RESOLUTION_REVIEW_STATES: readonly ResolutionReviewState[] = [
+  "actionable",
+  "awaiting_evidence",
+];
+
+/**
+ * Reasons that leave a human with nothing to check. Everything else — a shared
+ * address, an overlapping parcel, a set of candidates to choose between — gives
+ * the reviewer a concrete fact to work from.
+ *
+ * FAIL CLOSED, mirroring `google_place_review_v1`: this is an INCLUDE-list of
+ * "nothing to decide", inverted below so an unrecognised reason lands in
+ * `awaiting_evidence` rather than in the operator's queue. A new resolver rule
+ * therefore goes quiet and visible instead of quietly padding the queue with
+ * rows nobody can act on.
+ */
+const NO_HUMAN_SIGNAL_REASONS = new Set<string>([
+  "fuzzy_without_parcel_or_org_support",
+  "proximity_only",
+]);
+
+/** Reasons that DO give a reviewer something concrete to adjudicate. */
+const HUMAN_DECIDABLE_REASONS = new Set<string>([
+  "same_address_name_mismatch",
+  "same_address",
+  "conflicting_jurisdiction",
+  "multiple_address_candidates",
+  "multiple_parcel_candidates",
+]);
+
+/**
+ * Pure — unit-tested, and reused by both the queue view and the cockpit so the
+ * two can never disagree about how big the real queue is.
+ *
+ * A row is actionable only when at least one of its reasons is known-decidable
+ * AND none of them is a known no-signal reason. `generic_name` appears alongside
+ * both kinds and is deliberately in neither set: it qualifies the OTHER reason
+ * rather than standing alone.
+ */
+export function classifyResolutionReviewState(input: {
+  matchedRule: string;
+  reasons: readonly string[];
+}): ResolutionReviewState {
+  if (input.reasons.some((r) => NO_HUMAN_SIGNAL_REASONS.has(r))) return "awaiting_evidence";
+  return input.reasons.some((r) => HUMAN_DECIDABLE_REASONS.has(r))
+    ? "actionable"
+    : "awaiting_evidence";
+}
+
 export interface ReviewCluster {
   matchedRule: string;
   reasonKey: string;
@@ -206,12 +269,41 @@ export interface ReviewCluster {
   maxScore: number;
   /** Up to 3 record titles so the pattern is recognizable at a glance. */
   sampleTitles: string[];
+  /** Whether an operator can decide this cluster today. */
+  reviewState: ResolutionReviewState;
+  /** Every reason on the cluster — `reasonKey` is only the first. */
+  reasons: string[];
+}
+
+/**
+ * How many clusters, largest first, it takes to cover `fraction` of the rows.
+ *
+ * This is the number that makes the queue feel finite: 2,278 rows across 826
+ * clusters sounds endless, but the largest 91 clusters are half of it. Pure so
+ * the page and the cockpit quote the same figure.
+ */
+export function clustersToCover(clusters: readonly ReviewCluster[], fraction: number): number {
+  const total = clusters.reduce((n, c) => n + c.count, 0);
+  if (total === 0) return 0;
+  const target = total * fraction;
+  let seen = 0;
+  let used = 0;
+  for (const c of [...clusters].sort((a, b) => b.count - a.count)) {
+    seen += c.count;
+    used += 1;
+    if (seen >= target) break;
+  }
+  return used;
 }
 
 export async function triageReviewQueue(db: Db): Promise<ReviewCluster[]> {
   const res = await db.execute(sql`
     SELECT rv.matched_rule,
       COALESCE(rv.reasons_json->>0, '') AS reason_key,
+      COALESCE(
+        (SELECT array_agg(value::text) FROM jsonb_array_elements_text(rv.reasons_json) AS value),
+        ARRAY[]::text[]
+      ) AS reasons,
       rv.candidate_project_id,
       p.canonical_name AS candidate_name,
       p.county AS candidate_county,
@@ -223,21 +315,29 @@ export async function triageReviewQueue(db: Db): Promise<ReviewCluster[]> {
     JOIN source_records sr ON sr.id = rv.source_record_id
     LEFT JOIN projects p ON p.id = rv.candidate_project_id
     WHERE rv.status = 'pending'
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6
     ORDER BY n DESC, 1, 2`);
-  return (res.rows as Record<string, unknown>[]).map((r) => ({
-    matchedRule: r["matched_rule"] as string,
-    reasonKey: r["reason_key"] as string,
-    candidateProjectId: (r["candidate_project_id"] as string | null) ?? null,
-    candidateName: (r["candidate_name"] as string | null) ?? null,
-    candidateCounty: (r["candidate_county"] as string | null) ?? null,
-    count: Number(r["n"]),
-    minScore: Number(r["min_score"]),
-    maxScore: Number(r["max_score"]),
-    sampleTitles: ((r["samples"] as (string | null)[]) ?? []).filter((s): s is string =>
-      Boolean(s),
-    ),
-  }));
+  return (res.rows as Record<string, unknown>[]).map((r) => {
+    const matchedRule = r["matched_rule"] as string;
+    const reasons = ((r["reasons"] as (string | null)[] | null) ?? []).filter(
+      (s): s is string => typeof s === "string" && s.length > 0,
+    );
+    return {
+      matchedRule,
+      reasonKey: r["reason_key"] as string,
+      reasons,
+      reviewState: classifyResolutionReviewState({ matchedRule, reasons }),
+      candidateProjectId: (r["candidate_project_id"] as string | null) ?? null,
+      candidateName: (r["candidate_name"] as string | null) ?? null,
+      candidateCounty: (r["candidate_county"] as string | null) ?? null,
+      count: Number(r["n"]),
+      minScore: Number(r["min_score"]),
+      maxScore: Number(r["max_score"]),
+      sampleTitles: ((r["samples"] as (string | null)[]) ?? []).filter((s): s is string =>
+        Boolean(s),
+      ),
+    };
+  });
 }
 
 export interface BulkDecisionSummary {
