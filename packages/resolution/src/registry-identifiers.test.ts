@@ -39,7 +39,7 @@ describe("buildRegistryIdentifierIndex", () => {
       row("e1", "phone", "3607344455", true),
       row("e1", "address", "1677 MT BAKER HWY|98226", true),
     ]);
-    expect(index.footprintByEntity.get("e1")).toEqual({ strong: 2, weak: 0 });
+    expect(index.footprintByEntity.get("e1")).toEqual({ strong: 2, weak: 0, crossSourceValues: 0 });
   });
 
   it("splits an entity's identifiers into unique and shared", () => {
@@ -48,7 +48,7 @@ describe("buildRegistryIdentifierIndex", () => {
       row("e1", "address", "522 W RIVERSIDE AVE|99201", false, 14),
       row("e1", "root_domain", "marrsheating.com", true),
     ]);
-    expect(index.footprintByEntity.get("e1")).toEqual({ strong: 2, weak: 1 });
+    expect(index.footprintByEntity.get("e1")).toEqual({ strong: 2, weak: 1, crossSourceValues: 0 });
   });
 
   it("groups every entity sharing a value under one key", () => {
@@ -75,7 +75,11 @@ describe("buildRegistryIdentifierIndex", () => {
 });
 
 describe("gradeIdentifierComponent", () => {
-  const fp = (strong: number, weak: number) => ({ strong, weak });
+  const fp = (strong: number, weak: number, crossSourceValues = 0) => ({
+    strong,
+    weak,
+    crossSourceValues,
+  });
 
   it("scores agreement with a unique identifier as proof", () => {
     expect(gradeIdentifierComponent({ agreement: "strong", footprint: fp(5, 0) })).toBe(

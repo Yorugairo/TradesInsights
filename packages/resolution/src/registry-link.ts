@@ -67,6 +67,13 @@ export interface RegistryIdentityRow {
    * GC-quality signal downstream (spec §12.3); never a match key. */
   googleRating?: number | null;
   googleReviewCount?: number | null;
+  /** The Google Business profile's own display name, from the SAME accepted link
+   * that supplied `googlePhone`. The INDEPENDENT axis: Google's name was never
+   * used to create those links, whereas the phone usually was
+   * (`match_method='hard_identifier'`), which is what makes phone agreement alone
+   * circular. Compared through `crossNameKey`, never raw equality — live data has
+   * `Smith Fire Systems Inc` against `Smith Fire Systems, INC`. */
+  googleName?: string | null;
   /** The entity's authoritative L&I trade codes, primary-first (e.g. ["drywall"]).
    * Drives the score-neutral `trade_match` signal + display; never a match key. */
   tradeCodes?: string[] | null;
@@ -289,6 +296,7 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
   // the jsonb columns: losing it degrades locality to the old binary behaviour
   // for every row, whereas losing `principals` only quiets the family lane.
   const ladder = [
+    ["aliases", "brands", "principals", "registered_county_name", "google_name"],
     ["aliases", "brands", "principals", "registered_county_name"],
     ["aliases", "brands", "registered_county_name"],
     ["aliases", "registered_county_name"],
@@ -325,6 +333,7 @@ export async function fetchRegistryIdentityRows(pool: RegistryPoolLike): Promise
     googlePhone: (r["google_phone"] as string | null) ?? null,
     googleRating: r["google_rating"] == null ? null : Number(r["google_rating"]),
     googleReviewCount: r["google_review_count"] == null ? null : Number(r["google_review_count"]),
+    googleName: (r["google_name"] as string | null) ?? null,
     tradeCodes: (r["trade_codes"] as string[] | null) ?? null,
     aliases: (r["aliases"] as string[] | null) ?? null,
     brands: parseBrands(r["brands"]),

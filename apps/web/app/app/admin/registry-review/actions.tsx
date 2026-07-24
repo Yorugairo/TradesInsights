@@ -61,6 +61,12 @@ export interface ReviewRow {
   suggestion: string;
   evidence: EvidenceView | null;
   components: string;
+  /** WA L&I and Google independently agree on this business's phone AND its
+   * name — two systems that never consulted each other landing on the same
+   * company. The queue's strongest evidence, so it gets its own one-click
+   * grouping. Strictly `phone_and_name`: phone agreement alone is usually just
+   * how the Google link was created, which makes it circular. */
+  googleConfirmed: boolean;
 }
 
 /**
@@ -162,6 +168,11 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
   const [result, setResult] = useState<Record<string, RowState>>({});
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.id)), [rows, selected]);
+
+  // The queue's strongest evidence, grouped for one-click batch review. Kept
+  // separate from the tier buttons because it is a FACT about the entity, not a
+  // score band — a reviewer can verify it by opening the Google listing.
+  const googleConfirmedRows = useMemo(() => rows.filter((r) => r.googleConfirmed), [rows]);
 
   const tierCounts = useMemo(() => {
     const m = new Map<ReviewTier, number>();
@@ -290,6 +301,18 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
               {TIER_BUTTON_LABELS[t]} ({tierCounts.get(t)})
             </button>
           ))}
+        {googleConfirmedRows.length > 0 && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              setSelected(new Set(googleConfirmedRows.map((r) => r.id)))
+            }
+            data-testid="select-google-confirmed"
+            title="WA L&I and Google independently agree on this business's phone AND its name — the strongest evidence in this queue"
+          >
+            L&amp;I + Google confirmed ({googleConfirmedRows.length})
+          </button>
+        )}
         {progress && <small style={{ color: "#555" }}>{progress}</small>}
         <small style={{ color: "#999", marginLeft: "auto" }}>
           keys: <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>x</kbd> select · <kbd>a</kbd>/<kbd>r</kbd> decide

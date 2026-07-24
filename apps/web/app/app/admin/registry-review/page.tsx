@@ -71,6 +71,7 @@ export default async function RegistryReviewPage({
       components: Object.entries(o.trustComponents)
         .map(([k, v]) => `${k} ${Number(v).toFixed(2)}`)
         .join(" · "),
+      googleConfirmed: o.payload["google_confirmation"] === "phone_and_name",
     };
   });
 

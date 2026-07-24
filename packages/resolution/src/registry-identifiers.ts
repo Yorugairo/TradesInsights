@@ -24,6 +24,7 @@
  * rethrows — a permission failure must never masquerade as "no identifiers",
  * which would silently flatten every score back to the neutral fallback.
  */
+import { crossNameKey, nameSimilarity } from "./normalize.js";
 import type { RegistryPoolLike } from "./registry-link.js";
 
 export const REGISTRY_IDENTIFIERS_VIEW = "registry_public.trades_identifiers_v1";
@@ -77,6 +78,13 @@ export interface RegistryIdentifierRow {
 export interface EntityIdentifierFootprint {
   strong: number;
   weak: number;
+  /** Normalized values this entity carries under TWO OR MORE different source
+   * types — e.g. the same 10 digits as both the L&I `phone` and the
+   * `google_phone`. Two independent systems landing on one value is a different
+   * claim from merely holding two identifiers, and until now nothing looked for
+   * it: the graph was built on "independent sources meeting on a shared key" and
+   * then never checked for that meeting INSIDE an entity. */
+  crossSourceValues: number;
 }
 
 const FOOTPRINT_TYPES = new Set<string>([
@@ -86,6 +94,18 @@ const FOOTPRINT_TYPES = new Set<string>([
   "root_domain",
   "google_place_id",
 ]);
+
+/**
+ * Types whose values are directly comparable ACROSS sources, so the same value
+ * appearing under two of them is one fact confirmed twice.
+ *
+ * `phone` and `google_phone` qualify: both normalize to 10 bare digits
+ * (`normalizePhoneUS` ≡ the registry's `normalizePhoneDigits`). `address` does
+ * NOT — the registry keys `STREET|POSTAL5` while Insights folds USPS
+ * abbreviations, so a cross-type address comparison would silently never match
+ * (see CROSS_SYSTEM_IDENTIFIER_TYPES). `google_place_id` has no counterpart.
+ */
+const CROSS_SOURCE_COMPARABLE = new Set<string>(["phone", "google_phone"]);
 
 export interface RegistryIdentifierIndex {
   /** Identifier footprint per entity id. */
@@ -112,6 +132,10 @@ export function buildRegistryIdentifierIndex(
 ): RegistryIdentifierIndex {
   const footprintByEntity = new Map<string, EntityIdentifierFootprint>();
   const byTypedValue = new Map<string, RegistryIdentifierRow[]>();
+  // entityId → value → the comparable source types carrying it. A value seen
+  // under 2+ types is one fact two independent systems agree on.
+  const sourcesByEntityValue = new Map<string, Map<string, Set<string>>>();
+
   for (const row of rows) {
     const key = typedValueKey(row.identifierType, row.valueNormalized);
     const bucket = byTypedValue.get(key);
@@ -119,12 +143,79 @@ export function buildRegistryIdentifierIndex(
     else byTypedValue.set(key, [row]);
 
     if (!FOOTPRINT_TYPES.has(row.identifierType)) continue;
-    const fp = footprintByEntity.get(row.entityId) ?? { strong: 0, weak: 0 };
+    const fp = footprintByEntity.get(row.entityId) ?? { strong: 0, weak: 0, crossSourceValues: 0 };
     if (row.isStrong) fp.strong += 1;
     else fp.weak += 1;
     footprintByEntity.set(row.entityId, fp);
+
+    if (!CROSS_SOURCE_COMPARABLE.has(row.identifierType)) continue;
+    let byValue = sourcesByEntityValue.get(row.entityId);
+    if (!byValue) sourcesByEntityValue.set(row.entityId, (byValue = new Map()));
+    let types = byValue.get(row.valueNormalized);
+    if (!types) byValue.set(row.valueNormalized, (types = new Set()));
+    types.add(row.identifierType);
   }
+
+  for (const [entityId, byValue] of sourcesByEntityValue) {
+    const fp = footprintByEntity.get(entityId);
+    if (!fp) continue;
+    for (const types of byValue.values()) if (types.size >= 2) fp.crossSourceValues += 1;
+  }
+
   return { footprintByEntity, byTypedValue, size: rows.length };
+}
+
+/**
+ * How a Google Business profile corroborates an L&I entity.
+ *
+ * WHY THIS IS NOT JUST THE PHONE (measured 2026-07-24): of 2,980 accepted links
+ * whose phones agree, **2,962 were created by `match_method='hard_identifier'`,
+ * which matched ON that phone**. The agreement restates how the link was made —
+ * it is circular. The proof it cannot stand alone: **384 links have an agreeing
+ * phone and a Google name unrelated to the L&I name** (shared switchboards,
+ * answering services, franchise lines).
+ *
+ * The NAME is the independent axis — it was never used to make those links. So
+ * only `phone_and_name` is real confirmation; `phone_only` is the circular case
+ * and is deliberately reported separately rather than being scored as identity.
+ *
+ * Pure. Names are compared through `crossNameKey`, never raw equality: live data
+ * has L&I `Smith Fire Systems Inc` against Google `Smith Fire Systems, INC`,
+ * which differ by a comma and case and are plainly the same business.
+ */
+export type GoogleConfirmation = "phone_and_name" | "phone_only" | "name_only" | "none";
+
+/** Name similarity at or above which two business names are "the same business"
+ * without being key-identical (`Smith Fire Systems` vs `Smith Fire Systems Co`). */
+export const GOOGLE_NAME_CLOSE_THRESHOLD = 0.85;
+
+const phoneDigits = (raw: string | null | undefined): string | null => {
+  const d = String(raw ?? "").replace(/\D/g, "");
+  const t = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+  return t.length === 10 ? t : null;
+};
+
+export function classifyGoogleConfirmation(input: {
+  lniPhone: string | null | undefined;
+  googlePhone: string | null | undefined;
+  lniName: string | null | undefined;
+  googleName: string | null | undefined;
+}): GoogleConfirmation {
+  const lp = phoneDigits(input.lniPhone);
+  const gp = phoneDigits(input.googlePhone);
+  const phoneAgrees = lp !== null && lp === gp;
+
+  const lniKey = input.lniName ? crossNameKey(input.lniName) : "";
+  const gKey = input.googleName ? crossNameKey(input.googleName) : "";
+  const nameAgrees =
+    lniKey.length > 0 &&
+    gKey.length > 0 &&
+    (lniKey === gKey || nameSimilarity(lniKey, gKey) >= GOOGLE_NAME_CLOSE_THRESHOLD);
+
+  if (phoneAgrees && nameAgrees) return "phone_and_name";
+  if (phoneAgrees) return "phone_only";
+  if (nameAgrees) return "name_only";
+  return "none";
 }
 
 /**
@@ -169,6 +260,18 @@ export const IDENTIFIER_CONTRADICTS = 0;
  * well-attested entity gains a little and a thinly-attested one loses a little,
  * rather than every row scoring identically.
  */
+/**
+ * Two INDEPENDENT systems — WA L&I registration and a Google Business profile —
+ * agreeing on the same phone AND the same business name. The strongest statement
+ * the registry can make about an entity without the org supplying anything.
+ *
+ * Sits ABOVE `WELL_PINNED` (three identifiers is not the same as one fact
+ * confirmed twice) but BELOW `IDENTIFIER_AGREES_WEAK`, deliberately: this is
+ * evidence the ENTITY is real and correctly identified, not evidence that THIS
+ * org is that entity. Ranking it above an actual org-side identifier agreement
+ * would overstate what it proves.
+ */
+export const IDENTIFIER_CROSS_SOURCE_CONFIRMED = 0.7;
 export const IDENTIFIER_ENTITY_WELL_PINNED = 0.6;
 export const IDENTIFIER_ENTITY_TYPICAL = 0.5;
 export const IDENTIFIER_ENTITY_SHARED_ONLY = 0.35;
@@ -188,6 +291,9 @@ export const WELL_PINNED_STRONG_IDS = 3;
 export function gradeIdentifierComponent(input: {
   agreement: IdentifierAgreement;
   footprint: EntityIdentifierFootprint | null;
+  /** Google corroboration of the ENTITY. Only `phone_and_name` counts — see
+   * `classifyGoogleConfirmation` for why `phone_only` is circular. */
+  googleConfirmation?: GoogleConfirmation;
 }): number {
   switch (input.agreement) {
     case "strong":
@@ -200,6 +306,17 @@ export function gradeIdentifierComponent(input: {
       break;
   }
   const fp = input.footprint;
+  // Cross-source confirmation outranks every footprint band: the registry and
+  // Google independently agree on this business's phone AND its name. Requires
+  // BOTH the value-level evidence (two source types on one value) and the name
+  // agreement — either alone is the circular case.
+  if (
+    input.googleConfirmation === "phone_and_name" &&
+    fp !== null &&
+    fp.crossSourceValues > 0
+  ) {
+    return IDENTIFIER_CROSS_SOURCE_CONFIRMED;
+  }
   if (!fp || (fp.strong === 0 && fp.weak === 0)) return IDENTIFIER_ENTITY_UNKNOWN;
   if (fp.strong >= WELL_PINNED_STRONG_IDS) return IDENTIFIER_ENTITY_WELL_PINNED;
   if (fp.strong > 0) return IDENTIFIER_ENTITY_TYPICAL;

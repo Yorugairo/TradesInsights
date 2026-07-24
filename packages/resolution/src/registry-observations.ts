@@ -52,6 +52,7 @@ import {
 import { crossNameKey, nameSimilarity } from "./normalize.js";
 import { identitySnapshot, type RegistryBrand, type RegistryIdentityRow } from "./registry-link.js";
 import {
+  classifyGoogleConfirmation,
   EMPTY_IDENTIFIER_INDEX,
   gradeIdentifierComponent,
   IDENTIFIER_AGREES_STRONG,
@@ -938,9 +939,19 @@ export async function generateRegistryObservations(
       orgLocalities: org.localities,
       orgCounties: org.counties,
     });
+    // Does Google independently corroborate this entity? Only phone AND name
+    // counts — phone alone is how most of those links were made in the first
+    // place (see classifyGoogleConfirmation).
+    const googleConfirmation = classifyGoogleConfirmation({
+      lniPhone: hit.phone,
+      googlePhone: hit.googlePhone,
+      lniName: hit.canonicalName,
+      googleName: hit.googleName,
+    });
     const identifier = gradeIdentifierComponent({
       agreement,
       footprint: identifierIndex.footprintByEntity.get(hit.entityId) ?? null,
+      googleConfirmation,
     });
     const components: TrustComponents = {
       name: nameComponent,
@@ -1033,6 +1044,11 @@ export async function generateRegistryObservations(
         // already computed it, so tiering reuses it rather than re-deriving.
         trade_match: gate.sharedTradeCodes.length > 0,
         shared_trade_codes: gate.sharedTradeCodes,
+        // How Google corroborates the ENTITY, and the values a reviewer checks it
+        // against. `phone_only` is recorded but never scored as identity — it is
+        // usually just how the Google link was made.
+        google_confirmation: googleConfirmation,
+        registry_google_name: hit.googleName ?? null,
         // What the `identifier` component is actually reporting: agreement on a
         // channel, or (when the org has no evidence) the entity's own footprint.
         identifier_agreement: agreement,
@@ -1541,8 +1557,18 @@ export function classifyReviewTier(o: {
   //     electricians" does not distinguish this entity from the other
   //     electrician with the same name. Scoring it like a city match is what
   //     made 67% of the queue tier1 in the first cut of this function.
+  // WA L&I and Google independently agreeing on this business's phone AND its
+  // name is worth the full tier1 bar on its own: two systems that never consulted
+  // each other landed on the same company. Only `phone_and_name` qualifies —
+  // `phone_only` is usually just how the Google link was created.
+  const googleConfirmed = o.payload["google_confirmation"] === "phone_and_name";
+
   let points = 0;
   const corroborators: string[] = [];
+  if (googleConfirmed) {
+    points += 2;
+    corroborators.push("L&I + Google phone agree · Google name matches");
+  }
   if (sameCity) {
     points += 2;
     corroborators.push("same city");
