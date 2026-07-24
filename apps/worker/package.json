@@ -22,6 +22,8 @@
     "assistant:run": "tsx src/cli/assistant-run.ts",
     "first-look": "tsx src/cli/first-look.ts",
     "gate:run": "tsx src/cli/gate-run.ts",
+    "link-evidence:preview": "tsx src/cli/link-evidence.ts",
+    "link-evidence:apply": "tsx src/cli/link-evidence.ts --apply",
     "digest:run": "tsx src/cli/digest-run.ts",
     "feedback:report": "tsx src/cli/feedback-report.ts",
     "match:audit": "tsx src/cli/match-audit.ts",
