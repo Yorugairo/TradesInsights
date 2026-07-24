@@ -15,6 +15,7 @@ export * from "./registry-identifiers.js";
 // Corporate-family tier: principal ↔ person discovery. Deliberately NOT part of
 // the name-match index — see the module header.
 export * from "./principal-person.js";
+export * from "./google-place-scrape.js";
 // Entity↔entity field agreement — "what links these two companies besides the
 // name?". Distinct from corroboration.js, which cross-references SOURCES for one
 // PROJECT.
