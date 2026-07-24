@@ -259,26 +259,27 @@ function ResolutionReviewCard({ summary }: { summary: QueueSummary }) {
 function GooglePlaceCard({ summary }: { summary: QueueSummary }) {
   const g = summary.googlePlace;
   if (!g) {
-    // Live counts require the Phase D registry_public view (Task D2), which is
-    // not built yet. Show the chunk DEFINITIONS + the last hand-measured snapshot,
-    // clearly dated — never present the snapshot as a live number.
+    // Null means the registry seam is unreachable (no pool, or the contract view
+    // is missing mid-deploy) — never a zero. Show the chunk DEFINITIONS only.
     return (
-      <QueueCard n={3} title="Google Place review" count="—" hrefLabel="UI + resolver arrive in Phase D">
+      <QueueCard n={3} title="Google Place review" count="—" hrefLabel="registry seam offline">
         <div>Place ↔ entity matches, split three ways:</div>
         <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", color: "#333" }}>
           <li>human-ready</li>
-          <li>awaiting the (never-built) auto-resolver</li>
+          <li>awaiting the lineage auto-resolver</li>
           <li>awaiting evidence-gathering automation</li>
         </ul>
-        <div style={{ color: "#999", marginTop: "0.25rem" }}>
-          Last manual measurement 2026-07-24: ~272 / 926 / 1,081. Live counts land with the Phase D
-          view.
-        </div>
       </QueueCard>
     );
   }
   return (
-    <QueueCard n={3} title="Google Place review" count={g.actionable.toLocaleString()} hrefLabel="UI arrives in Phase D">
+    <QueueCard
+      n={3}
+      title="Google Place review"
+      count={g.actionable.toLocaleString()}
+      href="/app/admin/google-place-review"
+      hrefLabel="Work the queue →"
+    >
       <div>Place ↔ entity matches:</div>
       <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", color: "#333" }}>
         <li>
