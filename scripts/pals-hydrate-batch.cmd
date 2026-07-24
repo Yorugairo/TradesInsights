@@ -9,8 +9,8 @@ rem   3. ingest the captures (stamps organizations.contractor_registration,
 rem      then registry-link binds contractor_number_exact deterministically)
 rem
 rem Usage:  pals-hydrate-batch.cmd [limit]
-rem   limit defaults to 250 (a ~15 minute browser session at the script's
-rem   built-in 2.5s+jitter pace). Pass a smaller number for a quick test run:
+rem   limit defaults to 250 (~25-35 minutes: a full page load per permit plus
+rem   the script's 2.5s+jitter pace). Pass a smaller number for a quick run:
 rem     scripts\pals-hydrate-batch.cmd 20
 rem
 rem Self-locating: works from any starting directory, including a double-click

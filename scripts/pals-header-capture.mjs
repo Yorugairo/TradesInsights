@@ -17,7 +17,10 @@
  *   `--max-failures` consecutive misses instead of pushing harder.
  * - Run it from the operator's in-region machine (precedent: the 2026-07-19
  *   capture and every other operator-local source). Low and slow: default
- *   2.5s+jitter between permits, default batch 250.
+ *   2.5s+jitter between permits, plus a full page load per permit (~2-4s of
+ *   Angular bootstrap — see the FULL DOCUMENT LOAD note in the loop for why
+ *   that is mandatory, not incidental). Budget ~6-8s/permit: a 250 batch is
+ *   roughly 25-35 minutes.
  * - LOOKUP-CLASS HARD RULE: the input list comes from pals-hydrate-export
  *   (permits we already hold). This script never discovers or crawls.
  *
@@ -47,6 +50,36 @@ function arg(name, fallback = null) {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 const flag = (name) => process.argv.includes(`--${name}`);
+
+/**
+ * Race a promise against a hard deadline, ALWAYS clearing the timer.
+ * An uncleared setTimeout per permit would keep the Node process alive after
+ * the batch finished and, at 250 permits, pile up hundreds of live timers.
+ */
+function withDeadline(promise, ms, label) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}: exceeded ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Accept the Terms-of-Use modal if it is showing, else do nothing.
+ * Safe to call on every page load: absence is the normal case once the session
+ * has accepted it. A modal whose markup has changed is LEFT ALONE rather than
+ * force-clicked — acceptance is owner-authorized for THIS modal, not a blanket
+ * licence to dismiss whatever dialog the site puts up.
+ */
+async function acceptTouIfPresent(page, announce = false) {
+  try {
+    await page.getByRole("button", { name: /^yes$/i }).click({ timeout: 3000 });
+    if (announce) console.log("ToU modal accepted (owner-authorized, 2026-07-19 / scale 2026-07-24).");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function main() {
   const listPath = arg("list");
@@ -105,15 +138,8 @@ async function main() {
       }
     });
     await page.goto(`${BASE}#/permitSearch`, { waitUntil: "domcontentloaded" });
-
-    // ToU modal (buttons Yes/No). Acceptance is under the owner authorization
-    // recorded above; if the modal is absent (already accepted this session /
-    // markup changed), continue — a changed modal must never be force-clicked.
-    try {
-      await page.getByRole("button", { name: /^yes$/i }).click({ timeout: 15000 });
-      console.log("ToU modal accepted (owner-authorized, 2026-07-19 / scale 2026-07-24).");
-    } catch {
-      console.log("No ToU modal within 15s — continuing (may already be accepted).");
+    if (!(await acceptTouIfPresent(page, true))) {
+      console.log("No ToU modal on the landing page — continuing (may already be accepted).");
     }
 
     for (const id of ids) {
@@ -129,33 +155,42 @@ async function main() {
       summary.attempted += 1;
 
       try {
+        const hash = `#/permitSearch/permit/departmentStatus?applPermitId=${id}`;
+        // ── FULL DOCUMENT LOAD PER PERMIT — the crux of this script's reliability.
+        //
+        // A goto() whose URL differs from the current one ONLY in the hash
+        // fragment is a SAME-DOCUMENT navigation: the browser fires hashchange,
+        // the document is never reloaded, and Angular is never re-bootstrapped.
+        // That makes it behave identically to writing `location.hash` directly
+        // (the approach this replaced — the "fix" was not a fix). If the app's
+        // router has drifted into a state where it no longer re-fetches on
+        // hashchange, NOTHING throws: the URL visibly updates while no request
+        // is ever made, and the batch stalls silently. Observed in the field
+        // twice, on different permits, after ~48 successful captures each time.
+        //
+        // Bouncing through about:blank forces every permit to be a genuine
+        // CROSS-document load, so the app re-bootstraps and re-fetches from a
+        // clean state — which is also exactly what a visitor opening a permit
+        // URL fresh produces. Costs ~2-4s of Angular bootstrap per permit.
+        await withDeadline(page.goto("about:blank"), 15000, `permit ${id}: blank`);
+
+        // Registered AFTER the blank bounce (a navigation can abort a waiter
+        // registered before it) but BEFORE the real load, so a fast response
+        // cannot arrive un-awaited.
         const respPromise = page.waitForResponse(
           (r) => r.url().includes(HEADER_API) && r.url().includes(`applPermitId=${id}`),
-          { timeout: 20000 },
+          { timeout: 30000 },
         );
-        const hash = `#/permitSearch/permit/departmentStatus?applPermitId=${id}`;
-        // A real page.goto per permit, not a bare `location.hash` mutation.
-        // Two reasons: (1) writing the hash directly happens OUTSIDE Angular's
-        // digest cycle and is not guaranteed to be noticed by the app's own
-        // router — a missed navigation looks EXACTLY like a hang, since
-        // nothing ever throws, it just silently never fetches; (2) a full page
-        // load per permit is what a genuine visitor actually does (open the
-        // URL), which is the honest shape of this capture's stated posture —
-        // a hash hack is a shortcut no real visitor takes. Slower per permit,
-        // but categorically more reliable, which is the tradeoff that matters
-        // for an unattended-adjacent operator run.
-        //
-        // HARD WATCHDOG: goto() itself has no meaningful timeout guarantee
-        // against an unhandled dialog stalling the underlying CDP call (the
-        // dialog handler above should already prevent this, but this race is
-        // defense in depth — a permit that somehow still hangs is treated as
-        // ONE failure and the loop moves on, instead of the whole batch dying).
-        await Promise.race([
+        await withDeadline(
           page.goto(`${BASE}${hash}`, { waitUntil: "domcontentloaded" }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("goto watchdog: no domcontentloaded within 25s")), 25000),
-          ),
-        ]);
+          30000,
+          `permit ${id}: load`,
+        );
+        // A genuine reload can re-present the ToU modal, and the app will not
+        // fetch until it is dismissed — so this has to run INSIDE the loop, not
+        // once at startup. respPromise is already pending and catches the
+        // response that follows dismissal.
+        await acceptTouIfPresent(page);
         const resp = await respPromise;
         const body = await resp.text();
         const parsed = JSON.parse(body); // verbatim body is what we STORE; parse only to classify
