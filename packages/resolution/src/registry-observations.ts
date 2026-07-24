@@ -1851,6 +1851,13 @@ const PARTNER_OBSERVATION_TYPE: Record<string, string> = {
   alias_export: "alias",
   trade_export: "trade_evidence",
   relationship_export: "relationship",
+  // Google Place phone+name confirmations. The registry-side CHECK on
+  // partner_observations.observation_type had to allow
+  // 'google_place_confirmation' BEFORE this entry existed: the export runs on a
+  // schedule (schedules.ts), so a missing constraint would fail the whole drain,
+  // taking the alias/trade/relationship rows down with it. Widened in registry
+  // migration 20260726020000.
+  google_place_export: "google_place_confirmation",
 };
 
 /**
@@ -1875,7 +1882,7 @@ export async function exportRegistryObservations(
     SELECT id, observation_type, registry_entity_id, rule_key, payload_json, trust_score, decided_by, decided_at, dedupe_key
     FROM registry_observations
     WHERE status = 'accepted' AND exported_at IS NULL
-      AND observation_type IN ('alias_export', 'trade_export', 'relationship_export')
+      AND observation_type IN ('alias_export', 'trade_export', 'relationship_export', 'google_place_export')
     ORDER BY decided_at ASC`);
   for (const r of pendingExport.rows as Record<string, unknown>[]) {
     const observationType = PARTNER_OBSERVATION_TYPE[String(r["observation_type"])];

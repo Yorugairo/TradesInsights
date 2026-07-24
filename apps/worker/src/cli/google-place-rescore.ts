@@ -1,0 +1,100 @@
+import "../load-env.js";
+import { createDb, createPool, createRegistryPool } from "@otn/db";
+import { createLogger } from "@otn/source-sdk";
+import {
+  buildGooglePlaceExports,
+  fetchRegistryIdentityRows,
+  loadGooglePlaceScrapeRows,
+  recordGooglePlaceConfirmations,
+  scoreGooglePlaceObservations,
+} from "@otn/resolution";
+
+// pnpm google-place-rescore:preview   (read-only — prints what WOULD be staged)
+// pnpm google-place-rescore:apply     (stages the observations)
+//
+// Re-judges every Google Place scrape observation against L&I through
+// classifyGoogleConfirmation, and stages the phone+name confirmations for the
+// registry. This is the answer to "a listing rejected for one licence may be the
+// right answer for another licence bridged to the same place" — the verdict is
+// computed per (entity, place), not per place.
+//
+// APPLY STAGES, IT DOES NOT PROMOTE. Rows land in registry_observations and are
+// drained to registry_partner.partner_observations by the scheduled export. The
+// registry's own loader decides what becomes a profile link, because
+// registry_entity_external_profile_links is a governed table with decision_locked
+// and supersession that must not be written from behind the seam.
+//
+// Contested places are staged too, marked, at lower trust. A place several
+// licences all confirm cannot belong to all of them, and dropping the conflict
+// would leave it looking unexamined.
+//
+// Flags:
+//   --apply     stage the observations (default is dry run)
+//   --limit=N   cap rows staged (diagnostic; does not change the scoring)
+function numericArg(name: string): number | undefined {
+  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
+  if (!hit) return undefined;
+  const n = Number(hit.slice(name.length + 3));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+async function main() {
+  const apply = process.argv.includes("--apply");
+  const limit = numericArg("limit");
+  const logger = createLogger({
+    app: apply ? "google-place-rescore-apply" : "google-place-rescore-preview",
+  });
+  const pool = createPool();
+  const db = createDb(pool);
+  const registryPool = createRegistryPool();
+  try {
+    if (!registryPool) {
+      // Mirrors strict-bind: an unset seam is a skip, not a crash.
+      logger.info({ skipped: true }, "no REGISTRY_DATABASE_URL — google place rescore cannot run");
+      return;
+    }
+
+    const observations = await loadGooglePlaceScrapeRows(registryPool);
+    if (observations.length === 0) {
+      // Either the contract view has not been deployed yet (skip-safe read) or
+      // nothing has been scraped. Both are honest zeros, not failures.
+      logger.info({ observations: 0 }, "no google place observations visible on the contract");
+      return;
+    }
+    const identityRows = await fetchRegistryIdentityRows(registryPool);
+    const scored = scoreGooglePlaceObservations(observations, identityRows);
+    const allRows = buildGooglePlaceExports(scored);
+    const rows = limit ? allRows.slice(0, limit) : allRows;
+
+    const staged = await recordGooglePlaceConfirmations(db, rows, { dryRun: !apply });
+
+    logger.info(
+      {
+        mode: apply ? "apply (staged for the registry loader)" : "preview (dry run — no writes)",
+        observations: scored.observations,
+        skippedUnusableStatus: scored.skippedUnusableStatus,
+        skippedUnknownEntity: scored.skippedUnknownEntity,
+        byConfirmation: scored.byConfirmation,
+        // Only phone_and_name is real confirmation; phone_only is circular
+        // because most existing links were made BY matching that phone.
+        confirmed: scored.confirmed.length,
+        contestedPlaceIds: scored.contestedPlaceIds.length,
+        candidates: staged.candidates,
+        uncontested: staged.uncontested,
+        contested: staged.contested,
+        [apply ? "staged" : "wouldStage"]: apply ? staged.inserted : staged.candidates,
+        alreadyPresent: staged.alreadyPresent,
+        truncatedByLimit: limit ? allRows.length - rows.length : 0,
+      },
+      apply ? "google place rescore staged" : "google place rescore preview",
+    );
+  } finally {
+    await pool.end();
+    await registryPool?.end?.();
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

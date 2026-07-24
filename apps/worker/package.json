@@ -39,7 +39,9 @@
     "alerts:run": "tsx src/cli/alerts-run.ts",
     "export:run": "tsx src/cli/export-run.ts",
     "person-shape:report": "tsx src/cli/person-shape-report.ts",
-    "link-evidence:audit": "tsx src/cli/link-evidence.ts --audit"
+    "link-evidence:audit": "tsx src/cli/link-evidence.ts --audit",
+    "google-place-rescore:preview": "tsx src/cli/google-place-rescore.ts",
+    "google-place-rescore:apply": "tsx src/cli/google-place-rescore.ts --apply"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",

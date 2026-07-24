@@ -16,6 +16,7 @@ export * from "./registry-identifiers.js";
 // the name-match index — see the module header.
 export * from "./principal-person.js";
 export * from "./google-place-scrape.js";
+export * from "./google-place-rescore.js";
 // Entity↔entity field agreement — "what links these two companies besides the
 // name?". Distinct from corroboration.js, which cross-references SOURCES for one
 // PROJECT.
