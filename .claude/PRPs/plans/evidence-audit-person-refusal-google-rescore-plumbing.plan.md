@@ -222,7 +222,7 @@ describe("claimTypeForFactPath", () => {
 | `apps/worker/src/cli/link-evidence.ts` | UPDATE | `--audit` flag |
 | `packages/resolution/src/principal-person.ts` | UPDATE | `isPersonShapedOrgName` |
 | `packages/resolution/src/principal-person.test.ts` | UPDATE | Refusal tests |
-| `packages/resolution/src/registry-observations.ts` | UPDATE | Guard the binding loop |
+| `apps/worker/src/cli/person-shape-report.ts` | CREATE | Read-only report; replaces the binding-loop guard |
 | `<registry>/apps/registry/supabase/migrations/20260726010000_google_place_scrape_contract_view.sql` | CREATE | Expose scraped observations |
 | `packages/resolution/src/google-place-scrape.ts` | CREATE | Insights reader + scorer |
 | `packages/resolution/src/google-place-scrape.test.ts` | CREATE | Scorer tests |
@@ -276,9 +276,18 @@ describe("claimTypeForFactPath", () => {
 - **VALIDATE**: `pnpm --filter @otn/worker link-evidence:audit` reports
   6,007 projects checked, 0 failing, and a reconciliation that balances exactly.
 
-### Task C: Refuse person-shaped org names (Task 3.2)
+### Task C: MEASURE person-shaped org names — refuse nothing (Task 3.2, descoped)
+
+> **DESCOPED FROM REFUSAL TO REPORT-ONLY (owner decision, 2026-07-24).** The
+> original task skipped person-shaped orgs in the binding loop. Measurement showed
+> that filter would destroy **12.9% of every available name match** — 33 of 256 —
+> and the safeguard that would have made it safe is structurally unavailable at
+> today's L&I coverage. See "Why this is report-only" below. **Turning refusal on
+> is gated on the full L&I load** (roadmap P6).
+
 - **ACTION**: Export `isPersonShapedOrgName(name, knownSurnames?)` from
-  `principal-person.ts`; skip those orgs in the binding loop with a counter.
+  `principal-person.ts`. Add a read-only `person-shape-report` CLI. **Do NOT
+  modify the binding loop.**
 - **IMPLEMENT**:
   ```ts
   export function isPersonShapedOrgName(
@@ -288,29 +297,68 @@ describe("claimTypeForFactPath", () => {
     return personCoreKey(raw, knownSurnames) !== null;
   }
   ```
-  In `registry-observations.ts`, inside `for (const org of unbound)` (line 751),
-  skip and increment `personShapedRefused` before any name key is built. Surface
-  the counter on the summary the CLI already prints.
-- **MIRROR**: BINDING_LOOP_GUARD_POINT.
+  Plus `apps/worker/src/cli/person-shape-report.ts` — read-only. Classify every
+  unbound org, cross-reference the registry name index, and print: how many are
+  person-shaped, how many of those WOULD have matched a registry entity (the cost
+  of refusing), and the matched names so the denylist gaps are visible.
+- **MIRROR**: PREVIEW_THEN_APPLY (report has no apply); the `strict-bind.ts`
+  registry-pool-null guard.
 - **DEVIATION FROM THE PARENT PLAN**: the parent plan put this in
   `normalize.ts`. It belongs in `principal-person.ts`, where `parsePersonName`,
   `BUSINESS_TOKENS` and `personCoreKey` already live. A wrapper in `normalize.ts`
   would import across for no benefit and split one decision across two modules.
-- **GOTCHA 1 — polarity**: for MATCHING, a denylist miss costs a missed match; for
-  REFUSAL it silently drops a real contractor from the queue. `principal-person.ts`
-  says outright that the denylist "can never be finished" and the surname
-  ALLOWLIST is "what actually makes the gate sound". So **pass `knownSurnames`
-  whenever the caller holds it** — requiring a real L&I principal surname refuses
-  strictly fewer orgs, which is the safe direction here.
-- **GOTCHA 2 — `TENANT: DESTINY SIMPSON`**: `cleanNameChars` strips the colon,
-  yielding `SIMPSON|TENANT` — "TENANT" parsed as the given name. The REFUSAL is
-  still correct (it is a person). Do NOT fix the prefix noise here; that is Task
-  3.3's job and changing the key would move rows in the principal lane.
-- **GOTCHA 3**: `FRANKLIN ROOFING` must stay a business despite the surname —
+
+#### Why this is report-only (measured 2026-07-24 — do not re-derive)
+
+| Measure | Value |
+|---|---|
+| Unbound orgs | 3,777 |
+| Person-shaped | 2,376 (62.9%) |
+| Person-shaped **that match a registry entity by name** | **33** |
+| Non-person-shaped that match | 223 |
+| **Share of all name matches a refusal would destroy** | **12.9%** |
+| Primary contractors refused | 21 of 215 (9.8%) |
+
+The 33 are overwhelmingly real companies — `JOHNSON CONTROLS`, `CINTAS FIRE
+PROTECTION`, `JH KELLY`, `RESCUE ROOTER` (9 projects), `WASHINGTON GENERATORS`
+(7), `APEX TREE EXPERTS` (6). Exactly one (`FERNANDO RAMIREZ`) reads as a person.
+**Seven of the 33 are "X FIRE PROTECTION"** — the same trade as the Patriot/Smith
+Fire case that started this workstream.
+
+Cause: more `BUSINESS_TOKENS` gaps — `PROTECTION`, `GENERATORS`, `ROOTER`,
+`FURNACE`, `CONTROLS`, `EARTHWORK`, `TECHNOLOGIES`, `ALARM`, and `ROOF`
+(singular; `ROOFING` is present). `BUILDINGS` and `SIGN` are missing while
+`BUILDING` and `SIGNS` are present.
+
+**The safeguard is unavailable at today's coverage.** "A registry name match
+proves it is a business" only fires for companies already loaded. L&I is at
+**26,934 / 75,364 = 35.7%**, and the dropped 48,290 were CC:01 generals — the
+registry holds **3,074 general_contractor entities out of ~51,000, roughly 6%**.
+Phase 3's target population IS general contractors, so coverage is thinnest
+exactly where the safeguard is needed most. Extrapolating 33 matches at 35.7%
+coverage implies **~92 real businesses** among the refusals; only 33 are visible
+today, and the GC skew makes the true figure worse than linear.
+
+**The refusal is a standing filter, not a destructive act** — it re-evaluates on
+every run and deletes nothing. But it is also NOT self-healing: it reads the
+*Insights* org name, while Google enrichment improves *registry* entity names, so
+a refused org never reaches the matcher no matter how good the registry gets.
+That is the reason to leave it off rather than "turn it on and fix it later".
+
+- **GOTCHA 1 — `TENANT: DESTINY SIMPSON`**: `cleanNameChars` strips the colon,
+  yielding `SIMPSON|TENANT` — "TENANT" parsed as the given name. Report it; do NOT
+  fix the prefix noise here. That is Task 3.3's job and changing the key would
+  move rows in the principal lane.
+- **GOTCHA 2**: `FRANKLIN ROOFING` must stay a business despite the surname —
   `ROOFING` is in `BUSINESS_TOKENS`. Test it, it is the one people get wrong.
-- **VALIDATE**: `vitest` covers all three parent-plan cases plus the four live
-  names that once slipped the denylist; `strict-bind:preview` still reports
-  **0 auto-binds**; the refusal counter appears in the summary.
+- **GOTCHA 3**: when refusal is eventually enabled, pass `knownSurnames`. The
+  module states the denylist "can never be finished" and the surname ALLOWLIST is
+  "what actually makes the gate sound". It rescues `HEROES`, `CREW`, `BUILDINGS`,
+  `EXTERIORS`, `SPA` — but NOT `PROJECTS BY PIPER`, since Piper is a real surname.
+  It narrows the tail; it does not remove it.
+- **VALIDATE**: `vitest` covers the parent-plan cases plus the live names that
+  slipped the denylist; the report runs read-only; **`registry-observations.ts` is
+  untouched** and `strict-bind:preview` still reports 0 auto-binds.
 
 ### Task D: Google scrape contract view + Insights scorer (item 5)
 - **ACTION**: Registry migration exposing scraped observations; Insights reader
@@ -415,7 +463,7 @@ EXPECT: 6,007 projects checked, 0 failing, reconciliation balances
 ## Acceptance Criteria
 - [ ] Task A: no comment anywhere claims `opp_ix` is redundant
 - [ ] Task B: audit uses the gate's exported checks, not a reimplementation
-- [ ] Task C: refusal is a wrapper over `personCoreKey`, not new parsing logic
+- [ ] Task C: report-only — `registry-observations.ts` is NOT modified, nothing is refused
 - [ ] Task D: every name comparison goes through `classifyGoogleConfirmation`
 - [ ] No re-score executed; no auto-binding widened; no scraper file touched
 - [ ] Types, lint, and tests clean; both repos committed and pushed
@@ -433,7 +481,8 @@ EXPECT: 6,007 projects checked, 0 failing, reconciliation balances
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Refusal drops a real contractor from the queue | Medium | High | Pass `knownSurnames` so refusal requires a real L&I surname; report the counter so the effect is visible |
+| Refusal drops a real contractor from the queue | **Measured: certain** | High | **Eliminated — Task C refuses nothing.** Enabling refusal is gated on the full L&I load (roadmap P6) |
+| Report-only leaves homeowner noise in the queue | High | Low | Accepted. Noise is visible and reviewable; a silent drop is not. 2,343 of the 2,376 match nothing anyway, so they generate no name-lane candidate to be noisy with |
 | Exporting gate internals invites reuse that skips `evaluateGate` | Low | Medium | Export the two checks only; document that `evaluateGate` remains the entry point |
 | Contract view replace silently drops privileges | Medium | High | Re-assert both GRANTs in the same migration; verify as `otn_insights` |
 | SQL name comparison creeps into the scorer | Medium | High | No name logic in SQL; the view ships raw `scraped_name` and TS decides |
@@ -446,7 +495,11 @@ EXPECT: 6,007 projects checked, 0 failing, reconciliation balances
   value is replacing hand-written SQL with the authority, plus the reconciliation
   and regression detection. If that is not worth the build, Task B is the one to cut.
 - **Task C is much smaller than the parent plan implies** — `personCoreKey` already
-  decides every case correctly. Budget accordingly.
+  decides every case correctly, and the task is now report-only. Budget accordingly.
+- **Task C's real output is a backlog argument, not a filter.** It quantifies what
+  the L&I gap costs: at 35.7% coverage (6% for GCs) a name-shape heuristic cannot
+  be made safe, because the evidence that would overrule it is not loaded. That is
+  now roadmap **P6**, and this measurement is its justification.
 - **Task D is the long pole** and the one with real morning value.
 - Recommended order: **A → C → D → B**. A is a correction and cheap; C is small and
   self-contained; D is the long pole and wants the most runway; B is last because

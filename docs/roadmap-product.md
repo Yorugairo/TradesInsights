@@ -102,6 +102,35 @@ checklist; candidates verified live before any build (WEBS likely authenticated 
 excluded unless policy-compatible). Scheduled after P1–P3 unless a customer-named
 agency makes it urgent.
 
+## P6 — Complete the WA L&I contractor load (blocks matching quality broadly)
+
+The registry holds **26,934 of 75,364 WA contractors (35.7%)**. The 48,290 missing are
+the CC:01 generals dropped by `--launch-pools-only` (infra gate OTN-14). By trade the
+gap is lopsided: **3,074 `general_contractor` entities against ~51,000 — about 6%**.
+
+This is not merely "fewer matches". It disables safeguards that depend on the registry
+being able to vouch for a business, and it does so hardest on general contractors — the
+population P1 and the primary-contractor binding work both target.
+
+Measured cost, 2026-07-24 (`person-shape-report`):
+
+- 3,777 unbound orgs; 2,376 are person-shaped by name.
+- 33 of those person-shaped orgs nonetheless match a registry entity — i.e. they are
+  businesses the name heuristic gets wrong: `JOHNSON CONTROLS`, `CINTAS FIRE
+  PROTECTION`, `JH KELLY`, `RESCUE ROOTER`, `WASHINGTON GENERATORS`.
+- Only **256 unbound orgs match any registry entity at all**, so a name-shape filter
+  would destroy **12.9%** of every available match.
+- Extrapolating to full coverage implies **~92** such businesses exist; 59 are simply
+  invisible today because their L&I record was never loaded.
+
+**Consequence, already applied**: the person-shaped refusal in the identity plan is
+descoped to report-only. It cannot be made safe until this load completes, because the
+evidence that would overrule the heuristic — a registry entity to match against — does
+not exist for 64% of contractors.
+
+Owner-gated: needs the reload run and the OTN-14 infra decision. Everything else in the
+matching roadmap gets better for free when it lands.
+
 ## Standing gates & calibration (unchanged, tracked in STATUS)
 
 - **Solis §22 calibration session** (customer): capacity snapshot (S0), priority
@@ -116,6 +145,9 @@ agency makes it urgent.
 
 ## Sequencing
 
-P1 → P2 → P3 → P4 → P5, each with tests/docs in-pass per house rules. P1 and P3.1 are
+P1 → P2 → P3 → P4 → P5, each with tests/docs in-pass per house rules. **P6 is
+off-sequence**: it is owner/infra-gated rather than build-gated, and it raises the
+ceiling on P1 and on all binding work, so it should land whenever the reload is
+authorised rather than waiting its turn. P1 and P3.1 are
 pure derived-data work (no new sources, no migrations beyond `registry_ref`); P2.3 is
 the only new security surface (signed tokens) and gets a security review before merge.
