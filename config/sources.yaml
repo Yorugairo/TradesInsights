@@ -326,7 +326,7 @@ sources:
     cadence: on_demand
     county: Pierce
     permitting_jurisdiction: Pierce County
-    enabled: false
+    enabled: true
     terms_reviewed_at: "2026-07-19"
     robots_reviewed_at: "2026-07-19"
     notes: >-
@@ -334,18 +334,27 @@ sources:
       owner, with phone/contractor-licence identifiers) on Pierce permits already
       held from pierce_permits_arcgis, keyed by the SAME applPermitId. Feeds
       organization_identifiers (migration 0023) so a permit's business phone can
-      be corroborated against the L&I registration phone. Never an alert source
-      on its own. Access reality (fixtures/pierce_pals_contractor/metadata.json):
-      PALS Online is gated by reCAPTCHA Enterprise v3 — the token is minted by
-      the app's own $http interceptor for a genuine visitor; bare/headless
-      fetches get 403. Bulk token minting would be a prohibited bot-control
-      bypass, so this source is genuine-visitor capture-fed and stays disabled;
-      the parser runs over captured header artifacts. Terms of Use: PALS requires
-      accepting a ToU modal citing RCW 42.56.070(8) (no commercial list use) —
-      accepted 2026-07-19 under owner authorization; reconcile commercial-use
-      scope before scaling. contrLicNum is often null (owner-pulled) or
-      **-masked by PALS; the parser drops masked/null licences (never forges a
-      key).
+      be corroborated against the L&I registration phone — and contrLicNum is a
+      STRONG key: identifiers.ts stamps organizations.contractor_registration
+      (NULL-only) and registry-link binds contractor_number_exact
+      deterministically. Never an alert source on its own. Access reality
+      (fixtures/pierce_pals_contractor/metadata.json): PALS Online is gated by
+      reCAPTCHA Enterprise v3 — the token is minted by the app's own $http
+      interceptor for a genuine visitor; bare/headless fetches get 403. Bulk
+      token minting would be a prohibited bot-control bypass, so this source is
+      genuine-visitor CAPTURE-FED: scripts/pals-header-capture.mjs drives the
+      real SPA (app mints its own tokens; failures stop the run, never push the
+      gate), staging $OTN_CAPTURE_DIR/pierce_pals_contractor/<applPermitId>.json
+      for operator-local runs; live fetch() still dead-letters by design. Seed
+      lists come from pals-hydrate-export (permits we already hold — never
+      crawl). Terms of Use: ToU modal citing RCW 42.56.070(8) (no commercial
+      list use) accepted 2026-07-19 under owner authorization; SCALING APPROVED
+      by owner 2026-07-24 — scope reconciled as identity resolution of licensed
+      businesses on held permits, not commercial lists of individuals.
+      contrLicNum is often null (owner-pulled) or **-masked by PALS; the parser
+      drops masked/null licences (never forges a key). ENABLED for
+      operator-triggered capture-fed runs only (cadence on_demand — never
+      auto-scheduled by schedulableSources).
 
   - key: olympia_smartgov_reports
     name: City of Olympia SmartGov reports — Permits Issued + Permit Applications (Last 30 Days)

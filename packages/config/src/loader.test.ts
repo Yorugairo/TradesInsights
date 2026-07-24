@@ -31,6 +31,7 @@ describe("sources.yaml", () => {
       "everett_permits_socrata", // activated 2026-07-23 (Wave3; first genuine Snohomish source, generic SocrataPermitsAdapter, contractor on ~94%)
       "spokane_permits_arcgis", // activated 2026-07-23 (Wave3; eastern-WA demand/stage source, generic ArcgisPermitsAdapter; distance-de-rated for Solis)
       "pierce_permits_arcgis", // activated 2026-07-17 (Batch2 #1, ledger entry)
+      "pierce_pals_contractor", // activated 2026-07-24 — capture-fed hydration, owner-approved scale (queue-cockpit Phase A0)
       "olympia_smartgov_reports", // activated 2026-07-20 (capture-ready Exago PDF; Thurston-metro P1 permit-stage gap; on_demand capture-fed)
       "puyallup_permits_arcgis", // activated 2026-07-17 (suburb-city SFR track, ledger entry)
       "tacoma_permits_arcgis", // activated 2026-07-17 (Batch3 #3, ledger entry)

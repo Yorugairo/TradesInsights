@@ -1,3 +1,5 @@
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 import {
   httpFetchArtifact,
@@ -33,12 +35,21 @@ const HEADER_API = `${BASE}/public/api/webApplPermitStatusHeader?applPermitId=`;
  *
  * ACCESS REALITY (fixtures/pierce_pals_contractor/metadata.json): PALS is
  * gated by reCAPTCHA Enterprise v3. The token is minted by the app's own
- * `$http` interceptor when a genuine visitor clicks Search; bare fetches return
- * 403/empty. Minting tokens at scale would be a prohibited bot-control bypass,
- * so this source is fed by low-volume genuine-visitor capture and stays
- * `enabled: false` — `fetch()` here is contract-complete but will dead-letter
- * (reproducibly) against the live gate. The PARSER is what runs in production,
- * over captured header artifacts.
+ * `$http` interceptor when a genuine visitor loads a permit view; bare fetches
+ * return 403/empty. Minting tokens ourselves would be a prohibited bot-control
+ * bypass, so this source is CAPTURE-FED: the operator stages genuine-browser
+ * captures (scripts/pals-header-capture.mjs drives the REAL SPA, which mints
+ * its own tokens exactly as for any visitor) under
+ * `$OTN_CAPTURE_DIR/pierce_pals_contractor/<applPermitId>.json`, and this
+ * adapter treats each staged file as the fetched artifact — the same
+ * operator-local pattern as tumwater_development_review. Live `fetch()` still
+ * dead-letters by design when no capture is staged.
+ *
+ * SCALE AUTHORIZATION: owner approved scaling this lookup/hydration lane
+ * 2026-07-24 (ToU accepted under owner authorization 2026-07-19; RCW
+ * 42.56.070(8) scope reconciled — identity resolution of licensed BUSINESSES,
+ * not commercial lists of individuals). Low-and-slow batches, operator-run,
+ * in-region, enrich-known-records-only stays the hard rule.
  */
 
 /** One PALS header row. Only the fields we read are typed; the rest pass
@@ -176,11 +187,34 @@ export class PiercePalsContractorAdapter implements SourceAdapter {
    */
   async discover(ctx: RunContext): Promise<DiscoveredArtifact[]> {
     const seed = ctx.checkpoint?.["permitIds"];
-    const ids = Array.isArray(seed)
-      ? [...new Set(seed.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0))]
-      : [];
+    const idSet = new Set<number>(
+      Array.isArray(seed)
+        ? seed.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0)
+        : [],
+    );
+    // Capture-fed scale path (owner-approved 2026-07-24): every staged
+    // `$OTN_CAPTURE_DIR/pierce_pals_contractor/<applPermitId>.json` IS the work
+    // list — the capture script's output alone drives a run, no checkpoint
+    // seeding required. Non-numeric filenames are ignored, never guessed at.
+    const captureDir = process.env["OTN_CAPTURE_DIR"];
+    if (captureDir) {
+      try {
+        // Staged ids are appended AFTER checkpoint ids: the seed list's order is
+        // the operator's priority (pals-hydrate-export emits recent-first), so
+        // it must survive; staged files sort numerically for determinism.
+        const staged: number[] = [];
+        for (const f of await readdir(join(captureDir, this.key))) {
+          const m = /^(\d+)\.json$/.exec(f);
+          if (m) staged.push(Number(m[1]));
+        }
+        for (const id of staged.sort((a, b) => a - b)) idSet.add(id);
+      } catch {
+        // No staged directory — checkpoint-only discovery.
+      }
+    }
+    const ids = [...idSet];
     if (ids.length === 0) {
-      ctx.logger.info("pierce_pals_contractor: no permitIds seeded — nothing to enrich");
+      ctx.logger.info("pierce_pals_contractor: no permitIds seeded and no staged captures — nothing to enrich");
       return [];
     }
     return ids.map((id) => ({
@@ -194,6 +228,29 @@ export class PiercePalsContractorAdapter implements SourceAdapter {
   }
 
   async fetch(item: DiscoveredArtifact, ctx: RunContext): Promise<RawArtifact> {
+    // Capture-fed: a staged genuine-browser capture is THE artifact (mirrors
+    // tumwater_development_review). The golden-fixtures dir is deliberately not
+    // consulted, so tests still exercise the dead-letter path.
+    const captureDir = process.env["OTN_CAPTURE_DIR"];
+    const staged = requestedId(item);
+    if (captureDir && staged !== null) {
+      try {
+        const body = await readFile(join(captureDir, this.key, `${staged}.json`));
+        if (body.byteLength > 0) {
+          return {
+            discovered: item,
+            body,
+            contentType: "application/json",
+            httpStatus: 200,
+            headers: { "content-type": "application/json" },
+            retrievedAt: new Date(),
+          };
+        }
+      } catch {
+        // Capture dir set but this id has no staged file — fall through to the
+        // live fetch, which dead-letters at the gate (visible, reproducible).
+      }
+    }
     const raw = await httpFetchArtifact(item, ctx);
     // Reproduce the reCAPTCHA gate as a dead-letter the run can show, rather
     // than passing an empty/HTML body to the parser as if it were data.
