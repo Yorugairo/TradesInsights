@@ -263,7 +263,33 @@ phone/website fields; unknown = null, never guessed.
 
 ## Step-by-Step Tasks
 
-### PHASE A — Fuel and activate the phone lane (queue 6, owner priority #1)
+### PHASE A — Fuel and activate the phone lane
+
+> **⛔ BACKLOGGED (owner decision, 2026-07-24) — do NOT implement.** After A0
+> shipped (`d22b41c`) the operator ran it and hit two script stalls
+> (`page.evaluate`/hash-only-goto same-document navigation, fixed in `866d44b`)
+> AND, on inspecting the yield, a bigger finding: the whole phone-fuel premise
+> is worth less to Solis than the cockpit itself. **The entire plan's focus is
+> now the QUEUE COCKPIT (Phases B, C, D) — "nail that down before expanding."**
+> A0's shipped code stays in the repo (harmless, disabled behind operator-local
+> + on_demand) but no further batches are run and A1–A6 are NOT built.
+>
+> **The deeper reason A0 is low-value right now — the registry L&I pull is
+> itself incomplete (investigated 2026-07-24, live numbers):** L&I serves
+> **75,364** active contractors; our corpus holds **26,934** (36%). EC 99.7% /
+> PC 99.2% complete, but **CC is 28%** — the gap is **48,290 CC:01 "pure
+> general" contractors deliberately dropped** by the `--launch-pools-only` flag
+> in `ingest-wa-lni-contractors.mjs` (keeps a CC:01 general only if its business
+> NAME contains a trade token). That flag was a workaround for a Postgres 53100
+> "No space left on device" crash on the materialized-view refresh during the
+> 2026-07-04 full load (owner infra gate OTN-14, never lifted). "Southwest
+> Plumbing" (`SOUTHWP807OJ`, CC:01, name "SOUTH WEST PLBG…" — "PLBG" misses the
+> `/plumb/` rule) is one of the 48k. So enriching Insights→registry via PALS
+> licences will keep hitting ~50% registry-coverage misses until the registry
+> itself is fully loaded. **The proper fix is a full-corpus L&I reload
+> (decouple the raw ingest from the disk-heavy public MV refresh; verify current
+> instance sizing) — a SEPARATE owner-gated PRP, not this one.** Recorded for
+> later; not to be started without owner go-ahead.
 
 > **Fuel verdict (verified 2026-07-24, all 18,530 source records):** the phones
 > are NOT being dropped by parsers — they are absent from the feeds. The only
@@ -705,9 +731,13 @@ SELECT count(*) FROM registry_partner.partner_observations;  -- unchanged by B2
 | XL sprawl | High if rushed | High | five phases, one per `/prp-implement` pass, each independently valuable |
 
 ## Notes
-- Implement order **A → B → C → D → E**; C may run earlier if the operator wants
-  the front door sooner. A's pilot scrape batch (A3) can run while B is being
-  built — it is an operator step, not code.
+- Implement order **REVISED 2026-07-24: A is BACKLOGGED (see the Phase A banner);
+  active order is C → B → D.** C (the cockpit shell / front door) is the direct
+  Solis value and now leads; B (family accept → registry export) closes the loop;
+  D (Google Place UI + the 926-row auto-resolver) surfaces the one queue with no
+  UI. E (domain) stays deferred behind the backlogged enrichment. Original
+  A→B→C→D→E ordering assumed phone-fuel came first; owner reprioritized to the
+  cockpit itself.
 - Insights migrations: hand-authored + hand-maintained journal (`when` +1000);
   registry migrations: applied by file, verified by querying the object (no
   ledger). Both established this session and unchanged.
