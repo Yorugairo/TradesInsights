@@ -64,6 +64,37 @@ const CLAIM_PRIORITY: Readonly<Record<ClaimType, number>> = {
   other: 6,
 };
 
+/** Stable key for a linked pair. */
+export function evidenceKey(r: { opportunityId: string; evidenceItemId: string }): string {
+  return `${r.opportunityId}|${r.evidenceItemId}`;
+}
+
+/**
+ * Decide what to write for ONE opportunity.
+ *
+ * ORDER OF OPERATIONS IS THE WHOLE POINT. The cap ranks the FULL candidate set
+ * and only then are already-linked rows subtracted. Doing it the other way round
+ * — filtering first, capping the remainder — makes every rerun cap a shrinking
+ * leftover and insert a fresh `maxPerOpportunity` rows, so an over-cap
+ * opportunity creeps towards its uncapped total one run at a time. That is not
+ * hypothetical: it shipped, and the second apply added 2,792 rows before this
+ * function existed to make the ordering explicit and testable.
+ */
+export function planOpportunityWrites(
+  candidates: readonly CandidateRow[],
+  alreadyLinkedKeys: ReadonlySet<string>,
+  maxPerOpportunity: number,
+): { toWrite: CandidateRow[]; dropped: number; alreadyLinked: number } {
+  const { kept, dropped } = selectCappedEvidence(candidates, maxPerOpportunity);
+  const toWrite: CandidateRow[] = [];
+  let alreadyLinked = 0;
+  for (const c of kept) {
+    if (alreadyLinkedKeys.has(evidenceKey(c))) alreadyLinked += 1;
+    else toWrite.push(c);
+  }
+  return { toWrite, dropped, alreadyLinked };
+}
+
 export interface LinkEvidenceOptions {
   /** Compute everything, write nothing. */
   dryRun?: boolean | undefined;
@@ -289,10 +320,9 @@ export async function linkOpportunityEvidence(
         summary.refusedByReason[verdict.reason] += 1;
         continue;
       }
-      if (existing.has(`${row.opportunityId}|${row.evidenceItemId}`)) {
-        summary.alreadyLinked += 1;
-        continue;
-      }
+      // NOT filtered against `existing` here. The cap must rank the FULL
+      // candidate set; subtracting already-linked rows first would make each
+      // rerun cap a shrinking remainder and insert a fresh 50 every time.
       const list = byOpportunity.get(row.opportunityId);
       const candidate: CandidateRow = {
         opportunityId: row.opportunityId,
@@ -308,12 +338,13 @@ export async function linkOpportunityEvidence(
     const toWrite: CandidateRow[] = [];
     for (const [, candidates] of byOpportunity) {
       summary.opportunitiesWithEvidence += 1;
-      const { kept, dropped } = selectCappedEvidence(candidates, maxPer);
-      if (dropped > 0) {
+      const plan = planOpportunityWrites(candidates, existing, maxPer);
+      if (plan.dropped > 0) {
         summary.opportunitiesOverCap += 1;
-        summary.cappedDropped += dropped;
+        summary.cappedDropped += plan.dropped;
       }
-      for (const c of kept) {
+      summary.alreadyLinked += plan.alreadyLinked;
+      for (const c of plan.toWrite) {
         summary.byClaimType[c.claimType] += 1;
         toWrite.push(c);
       }
