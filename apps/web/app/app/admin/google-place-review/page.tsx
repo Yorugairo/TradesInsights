@@ -1,14 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createRegistryPool } from "@otn/db";
-import {
-  fetchGooglePlaceBlockedSummary,
-  fetchGooglePlaceReviewRows,
-  type GooglePlaceReviewRow,
-} from "@otn/resolution";
+import { fetchGooglePlaceBlockedSummary, fetchGooglePlaceReviewRows } from "@otn/resolution";
 import { currentSession } from "../../../../lib/auth.js";
 import { Badge, cell, table } from "../../../../lib/ui.js";
-import { DecideButtons } from "./actions.js";
+import { PlaceReviewTable } from "./batch-table.js";
 
 export const dynamic = "force-dynamic";
 
@@ -75,28 +71,14 @@ export default async function GooglePlaceReviewPage({
         ))}
       </div>
 
-      <table style={table} data-testid="google-place-table">
-        <thead>
-          <tr>
-            <th style={cell}>L&amp;I contractor</th>
-            <th style={cell}>Google listing</th>
-            <th style={cell}>Why it&apos;s here</th>
-            <th style={cell}>Decision</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <ReviewRow key={r.reviewId} row={r} />
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td style={cell} colSpan={4}>
-                No actionable rows. {blockedTotal > 0 && `${blockedTotal.toLocaleString()} pending rows are not human decisions yet — see below.`}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      {/* Rows render client-side so one selection can span many of them; a
+          server-rendered table cannot hold shared checkbox state. */}
+      <PlaceReviewTable rows={rows} />
+      {rows.length === 0 && blockedTotal > 0 && (
+        <p style={{ color: "#666" }}>
+          {blockedTotal.toLocaleString()} pending rows are not human decisions yet — see below.
+        </p>
+      )}
 
       <h2>Not human decisions yet — {blockedTotal.toLocaleString()} pending</h2>
       <p style={{ color: "#666", marginTop: 0 }}>
@@ -168,82 +150,5 @@ function Orientation() {
         </p>
       </div>
     </details>
-  );
-}
-
-function ReviewRow({ row }: { row: GooglePlaceReviewRow }) {
-  const sameAddress =
-    row.lni.address && row.google.address
-      ? row.google.address.toLowerCase().includes(row.lni.address.toLowerCase())
-      : false;
-  return (
-    <tr>
-      <td style={cell}>
-        <strong>{row.lni.businessName ?? row.entityName ?? "—"}</strong>
-        <br />
-        <small style={{ color: "#666" }}>
-          {row.lni.licenseNumber ?? "no licence"}
-          {row.lni.licenseType ? ` · ${row.lni.licenseType}` : ""}
-          {row.ubi ? ` · UBI ${row.ubi}` : ""}
-        </small>
-        <br />
-        <small>
-          {row.lni.address ?? "—"}
-          {row.lni.city ? `, ${row.lni.city}` : ""} {row.lni.zip ?? ""}
-        </small>
-        <br />
-        <small style={{ color: "#666" }}>{row.lni.phone ?? "no phone"}</small>
-      </td>
-      <td style={cell}>
-        <strong>{row.google.name ?? "—"}</strong>
-        {row.google.rating !== null && (
-          <small style={{ color: "#666" }}>
-            {" "}
-            ★ {row.google.rating}
-            {row.google.reviewCount !== null ? ` (${row.google.reviewCount.toLocaleString()})` : ""}
-          </small>
-        )}
-        <br />
-        <small style={{ color: sameAddress ? "#137333" : "#a00" }}>
-          {row.google.address ?? "—"} {sameAddress ? "✓ same address" : ""}
-        </small>
-        <br />
-        <small style={{ color: "#666" }}>{row.google.phone ?? "no phone"}</small>
-        {row.google.category ? <small style={{ color: "#666" }}> · {row.google.category}</small> : null}
-        <br />
-        <small>
-          {row.google.mapsUrl && (
-            <a href={row.google.mapsUrl} target="_blank" rel="noreferrer noopener">
-              maps ↗
-            </a>
-          )}
-          {row.google.website && (
-            <>
-              {row.google.mapsUrl ? " · " : ""}
-              <a href={row.google.website} target="_blank" rel="noreferrer noopener">
-                website ↗
-              </a>
-            </>
-          )}
-        </small>
-      </td>
-      <td style={cell}>
-        <Badge tone="amber">{row.reason}</Badge>
-        <br />
-        <small style={{ color: "#666" }}>
-          {row.match.status ?? "?"}
-          {row.match.confidence !== null ? ` · confidence ${row.match.confidence}` : ""}
-        </small>
-        {row.match.conflictFlags.length > 0 && (
-          <>
-            <br />
-            <small style={{ color: "#a00" }}>{row.match.conflictFlags.join(", ")}</small>
-          </>
-        )}
-      </td>
-      <td style={cell}>
-        <DecideButtons reviewId={row.reviewId} />
-      </td>
-    </tr>
   );
 }
