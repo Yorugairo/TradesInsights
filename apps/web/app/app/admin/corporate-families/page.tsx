@@ -4,12 +4,14 @@ import { createRegistryPool } from "@otn/db";
 import {
   buildFamilies,
   corporateFamilyRollup,
+  loadBoundOrgIdsByEntity,
   loadPersonCandidates,
   type CorporateFamilyRollupRow,
   type FamilyGroup,
 } from "@otn/intelligence";
 import {
   buildPrincipalPersonIndex,
+  corroborateEntities,
   fetchRegistryIdentityRows,
   lniVerifyUrl,
   matchPrincipalsToPeople,
@@ -21,6 +23,7 @@ import {
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { Badge, cell, fmtDate, fmtMoney, table } from "../../../../lib/ui.js";
+import { ConfirmRelationshipButton, type RelationshipClaim } from "./actions.js";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +71,14 @@ export default async function CorporateFamiliesPage({
   const strongPairs = newPairs.filter((p) => p.verdict === "strong" || p.verdict === "corroborated");
   const weakPairs = newPairs.filter((p) => p.verdict === "name_only" || p.verdict === "contradicted");
   const shownPairs = (showWeak ? newPairs : strongPairs).slice(0, limit);
+
+  // Accept-action support: PROVENANCE anchor org per registry entity (a bound
+  // Insights org, else the confirm button is disabled), and a row index so the
+  // principal↔person lane can corroborate the two ENTITIES a shared person links.
+  const shownFamilies = families.slice(0, limit);
+  const anchorEntityIds = [...new Set(shownFamilies.flatMap((f) => f.entityIds))];
+  const anchorByEntity = await loadBoundOrgIdsByEntity(db(), anchorEntityIds);
+  const byId = new Map(rows.map((r) => [r.entityId, r] as const));
 
   return (
     <main style={{ padding: "1rem", maxWidth: 1150 }}>
@@ -125,8 +136,14 @@ export default async function CorporateFamiliesPage({
           </tr>
         </thead>
         <tbody>
-          {families.slice(0, limit).map((f) => (
-            <FamilyRow key={f.familyId} family={f} rollup={rollupById.get(f.familyId)} rows={rows} />
+          {shownFamilies.map((f) => (
+            <FamilyRow
+              key={f.familyId}
+              family={f}
+              rollup={rollupById.get(f.familyId)}
+              rows={rows}
+              anchorByEntity={anchorByEntity}
+            />
           ))}
           {families.length === 0 && (
             <tr>
@@ -171,7 +188,7 @@ export default async function CorporateFamiliesPage({
         </thead>
         <tbody>
           {shownPairs.map((p, i) => (
-            <PairRow key={`${p.candidate.organizationId}-${p.entity.entityId}-${i}`} pair={p} />
+            <PairRow key={`${p.candidate.organizationId}-${p.entity.entityId}-${i}`} pair={p} byId={byId} />
           ))}
           {shownPairs.length === 0 && (
             <tr>
@@ -272,10 +289,12 @@ function FamilyRow({
   family,
   rollup,
   rows,
+  anchorByEntity,
 }: {
   family: FamilyGroup;
   rollup: CorporateFamilyRollupRow | undefined;
   rows: RegistryIdentityRow[];
+  anchorByEntity: Map<string, string>;
 }) {
   const byId = new Map(rows.map((r) => [r.entityId, r]));
   return (
@@ -309,17 +328,39 @@ function FamilyRow({
             <summary style={{ cursor: "pointer" }}>
               <small>{family.pairs.length} pair(s)</small>
             </summary>
-            {family.pairs.map((p) => (
-              <div key={`${p.entityAId}-${p.entityBId}`} style={{ marginTop: "0.35rem" }}>
-                <small>
-                  <em>
-                    {p.entityAName} ↔ {p.entityBName}
-                  </em>
-                </small>
-                <Signals signals={p.corroboration.signals} />
-                <small style={{ color: "#555" }}>{p.corroboration.explanation}</small>
-              </div>
-            ))}
+            {family.pairs.map((p) => {
+              // Anchor on entity A's bound Insights org, else B's, else null
+              // (button disabled — nothing to record the observation against).
+              const anchor = anchorByEntity.get(p.entityAId) ?? anchorByEntity.get(p.entityBId) ?? null;
+              return (
+                <div key={`${p.entityAId}-${p.entityBId}`} style={{ marginTop: "0.35rem" }}>
+                  <small>
+                    <em>
+                      {p.entityAName} ↔ {p.entityBName}
+                    </em>
+                  </small>
+                  <Signals signals={p.corroboration.signals} />
+                  <small style={{ color: "#555" }}>{p.corroboration.explanation}</small>
+                  {/* No confirm on a contradicted pair — one click must not
+                      override a middle-initial conflict L&I itself records. */}
+                  {p.corroboration.verdict !== "contradicted" && (
+                    <div style={{ marginTop: "0.2rem" }}>
+                      <ConfirmRelationshipButton
+                        claim={{
+                          organizationId: anchor,
+                          registryEntityIdA: p.entityAId,
+                          registryEntityIdB: p.entityBId,
+                          principalKey: family.familyId,
+                          corroboration: p.corroboration,
+                          labelA: p.entityAName ?? p.entityAId,
+                          labelB: p.entityBName ?? p.entityBId,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </details>
         )}
       </td>
@@ -349,8 +390,30 @@ function FamilyRow({
   );
 }
 
-function PairRow({ pair }: { pair: PrincipalPersonPair }) {
+function PairRow({ pair, byId }: { pair: PrincipalPersonPair; byId: Map<string, RegistryIdentityRow> }) {
   const c = pair.candidate;
+  // A principal↔person match is a person↔entity claim; it becomes an entity↔entity
+  // relationship only when the person's OWN org is bound to a DIFFERENT registry
+  // entity — then this person links two companies. We corroborate THOSE TWO
+  // entities (not the person) and only offer the button when they don't contradict.
+  const otherEntityId = c.registryRef;
+  const otherRow = otherEntityId ? byId.get(otherEntityId) : undefined;
+  const relCorroboration =
+    otherEntityId && otherEntityId !== pair.entity.entityId && otherRow
+      ? corroborateEntities(pair.entity.row, otherRow, pair.entity.principalKey, null)
+      : null;
+  const relClaim: RelationshipClaim | null =
+    relCorroboration && otherEntityId && otherRow && relCorroboration.verdict !== "contradicted"
+      ? {
+          organizationId: c.organizationId,
+          registryEntityIdA: pair.entity.entityId,
+          registryEntityIdB: otherEntityId,
+          principalKey: pair.entity.principalKey,
+          corroboration: relCorroboration,
+          labelA: pair.entity.entityName ?? pair.entity.entityId,
+          labelB: otherRow.canonicalName ?? otherEntityId,
+        }
+      : null;
   return (
     <tr>
       <td style={cell}>
@@ -401,6 +464,14 @@ function PairRow({ pair }: { pair: PrincipalPersonPair }) {
       <td style={cell}>
         <Signals signals={pair.signals} />
         <small style={{ color: "#555" }}>{pair.explanation}</small>
+        {relClaim && (
+          <div style={{ marginTop: "0.3rem" }}>
+            <small style={{ color: "#666" }}>
+              links to <strong>{relClaim.labelB}</strong>:{" "}
+            </small>
+            <ConfirmRelationshipButton claim={relClaim} />
+          </div>
+        )}
       </td>
     </tr>
   );

@@ -57,9 +57,15 @@ import {
   type TradeMatcher,
   type TradeTaxonomyRow,
 } from "./trade-taxonomy.js";
+import type { EntityCorroboration } from "./entity-corroboration.js";
 
 export const OBSERVATION_TYPES = [
   "binding_name_match", "phone_adoption", "alias_export", "trade_export",
+  // Accept action on the corporate-family / principal-person lanes: an
+  // entity↔entity `principal_shared` relationship, exported (as a 'relationship'
+  // partner_observation) for the registry loader to adjudicate. Never binds
+  // identity — it teaches the registry which companies share common control.
+  "relationship_export",
 ] as const;
 export type ObservationType = (typeof OBSERVATION_TYPES)[number];
 
@@ -1450,6 +1456,81 @@ export async function decideRegistryObservation(
   return { status: "accepted", applied };
 }
 
+/**
+ * Canonical dedupe key for an entity↔entity relationship. The pair is ordered
+ * (A < B) so the key is identical whichever company the reviewer clicked from,
+ * and it matches the registry table's `entity_id_a < entity_id_b` CHECK (Task B1).
+ */
+export function relationshipDedupeKey(entityIdA: string, entityIdB: string): string {
+  const [a, b] = entityIdA < entityIdB ? [entityIdA, entityIdB] : [entityIdB, entityIdA];
+  return `relationship:${a}:${b}`;
+}
+
+export interface RecordRelationshipInput {
+  /** PROVENANCE anchor — "who confirmed it". registry_observations.organization_id
+   * is NOT NULL; the CLAIM is the payload's entity_id_a/entity_id_b, not this org. */
+  organizationId: string;
+  entityIdA: string;
+  entityIdB: string;
+  /** The shared L&I principal key, when known (nullable — provenance, not the key). */
+  principalKey?: string | null;
+  /** Entity↔entity corroboration (points + signals) — confidence and evidence. */
+  corroboration: EntityCorroboration;
+  decidedBy: string;
+}
+
+/**
+ * Record an ACCEPTED entity↔entity relationship for export — the write path for
+ * the corporate-family / principal-person accept action (Phase B).
+ *
+ * Unlike generated observations there is no prior `pending` row: the human click
+ * and the observation's creation are the same event, so this inserts a row that
+ * is already `accepted` with `applied_at` NULL, and the nightly
+ * `exportRegistryObservations` drains it to `registry_partner.partner_observations`
+ * as a `relationship` row for the registry loader (Task B3) to adjudicate into
+ * `registry_entity_relationships`. Nothing here binds identity or writes the
+ * registry directly — it is review-gated, one click per claim.
+ */
+export async function recordRelationshipAcceptance(
+  db: Db,
+  args: RecordRelationshipInput,
+): Promise<{ id: string | null; alreadyExisted: boolean }> {
+  if (args.entityIdA === args.entityIdB) {
+    throw new Error("relationship requires two distinct entities");
+  }
+  const [entityA, entityB] =
+    args.entityIdA < args.entityIdB ? [args.entityIdA, args.entityIdB] : [args.entityIdB, args.entityIdA];
+  const dedupeKey = relationshipDedupeKey(entityA, entityB);
+  const points = args.corroboration.points;
+  const payload = {
+    entity_id_a: entityA,
+    entity_id_b: entityB,
+    relationship_type: "principal_shared",
+    principal_key: args.principalKey ?? null,
+    confidence: points,
+    evidence: args.corroboration,
+  };
+  // registry_entity_id anchors on entity A (the canonically smaller); the loader
+  // reads the pair from the payload and re-sorts, so it never assumes A here.
+  const res = await db.execute(sql`
+    INSERT INTO registry_observations
+      (observation_type, organization_id, registry_entity_id, rule_key, payload_json,
+       trust_score, trust_components_json, dedupe_key, status, decided_by, decided_at)
+    VALUES
+      ('relationship_export', ${args.organizationId}, ${entityA}, 'relationship_principal_shared',
+       ${JSON.stringify(payload)}::jsonb, ${Math.min(1, points / 3)},
+       ${JSON.stringify({ points })}::jsonb, ${dedupeKey}, 'accepted', ${args.decidedBy}, now())
+    ON CONFLICT (dedupe_key) DO NOTHING
+    RETURNING id`);
+  if (res.rows.length > 0) {
+    return { id: String((res.rows[0] as { id: string }).id), alreadyExisted: false };
+  }
+  // Already recorded (a prior click, either direction) — no duplicate written.
+  const existing = await db.execute(sql`SELECT id FROM registry_observations WHERE dedupe_key = ${dedupeKey}`);
+  const id = existing.rows[0] ? String((existing.rows[0] as { id: string }).id) : null;
+  return { id, alreadyExisted: true };
+}
+
 export interface ExportSummary {
   skipped: boolean;
   observationsExported: number;
@@ -1462,6 +1543,18 @@ export interface RegistryWriterLike {
 }
 
 const SOURCE_SYSTEM = "otn_insights";
+
+/**
+ * Insights export observation_type → registry_partner.partner_observations
+ * observation_type. The partner CHECK is `IN ('alias','trade_evidence',
+ * 'relationship')` (Task B2); an unmapped type is skipped rather than exported
+ * under a wrong label.
+ */
+const PARTNER_OBSERVATION_TYPE: Record<string, string> = {
+  alias_export: "alias",
+  trade_export: "trade_evidence",
+  relationship_export: "relationship",
+};
 
 /**
  * Push accepted export-type observations into registry_partner staging, and
@@ -1485,10 +1578,11 @@ export async function exportRegistryObservations(
     SELECT id, observation_type, registry_entity_id, rule_key, payload_json, trust_score, decided_by, decided_at, dedupe_key
     FROM registry_observations
     WHERE status = 'accepted' AND exported_at IS NULL
-      AND observation_type IN ('alias_export', 'trade_export')
+      AND observation_type IN ('alias_export', 'trade_export', 'relationship_export')
     ORDER BY decided_at ASC`);
   for (const r of pendingExport.rows as Record<string, unknown>[]) {
-    const observationType = r["observation_type"] === "alias_export" ? "alias" : "trade_evidence";
+    const observationType = PARTNER_OBSERVATION_TYPE[String(r["observation_type"])];
+    if (!observationType) continue;
     await writer.query(
       `INSERT INTO registry_partner.partner_observations
          (source_system, entity_id, observation_type, payload, trust_score, reviewed_by, reviewed_at, dedupe_key)

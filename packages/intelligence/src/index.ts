@@ -44,3 +44,4 @@ export * from "./enterprise-rollup.js";
 export * from "./corporate-family.js";
 // Queue cockpit: one canonical count per identity/enrichment review lane (Phase C).
 export * from "./cockpit-summary.js";
+export * from "./family-anchors.js";
