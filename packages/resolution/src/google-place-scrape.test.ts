@@ -88,7 +88,7 @@ describe("scoreGooglePlaceObservations", () => {
     expect(s.confirmed).toHaveLength(0);
   });
 
-  it("flags a place id confirmed by more than one licence as contested", () => {
+  it("flags a place id confirmed by more than one ENTITY as contested", () => {
     // The owner's case: one listing bridged to several contractors. A listing
     // cannot belong to two companies, so two confirmations is a contradiction.
     const s = scoreGooglePlaceObservations(
@@ -105,6 +105,26 @@ describe("scoreGooglePlaceObservations", () => {
     );
     expect(s.confirmed).toHaveLength(2);
     expect(s.contestedPlaceIds).toEqual(["place-1"]);
+  });
+
+  it("does NOT contest one company holding several licences on its own listing", () => {
+    // THE LIVE DEFECT (2026-07-25). Keying the contested set by licence made
+    // this look like two rival claimants; it is one company with two L&I
+    // licences on its own Google listing. 139 of 143 flagged conflicts were
+    // this shape, and every one was withheld from the public surface as
+    // `not_public_pending_review` over a conflict that did not exist.
+    // Live example: Anderson Drilling LLC / ANDERDL789CQ + ANDERDL789TQ.
+    const s = scoreGooglePlaceObservations(
+      [
+        obs({ entityId: "e1", lniLicenseNumber: "ANDERDL789CQ", sharedLicenceCount: 3 }),
+        obs({ entityId: "e1", lniLicenseNumber: "ANDERDL789TQ", sharedLicenceCount: 3 }),
+      ],
+      [identity({ entityId: "e1" })],
+    );
+    // Both licences still confirm — the per-licence verdict is unchanged.
+    expect(s.confirmed).toHaveLength(2);
+    // But one company cannot contest itself.
+    expect(s.contestedPlaceIds).toEqual([]);
   });
 
   it("does not flag a place id confirmed by exactly one licence", () => {

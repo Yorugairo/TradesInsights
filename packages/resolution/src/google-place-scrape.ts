@@ -120,9 +120,17 @@ export interface GooglePlaceScoreSummary {
   byConfirmation: Record<GoogleConfirmation, number>;
   /** `phone_and_name` only — the rows worth putting in front of a human. */
   confirmed: ScoredGooglePlaceObservation[];
-  /** Place ids where MORE THAN ONE licence reaches `phone_and_name`. A listing
-   * cannot belong to two companies, so these are contradictions to resolve, not
-   * confirmations to accept. */
+  /** Place ids where MORE THAN ONE DISTINCT ENTITY reaches `phone_and_name`. A
+   * listing cannot belong to two companies, so these are contradictions to
+   * resolve, not confirmations to accept.
+   *
+   * KEYED BY ENTITY, NOT BY LICENCE — this was a live defect. Keying by licence
+   * made one company holding several L&I licences look like several rival
+   * claimants on its own listing: 139 of 143 flagged conflicts were a single
+   * company, and each was withheld from the public surface as
+   * `not_public_pending_review` for a conflict that did not exist. Anderson
+   * Drilling LLC holding ANDERDL789CQ and ANDERDL789TQ is one company with two
+   * licences, not two companies fighting over a listing. */
   contestedPlaceIds: string[];
 }
 
@@ -150,7 +158,7 @@ export function scoreGooglePlaceObservations(
     confirmed: [],
     contestedPlaceIds: [],
   };
-  const confirmedLicencesByPlace = new Map<string, Set<string>>();
+  const confirmedEntitiesByPlace = new Map<string, Set<string>>();
 
   for (const row of rows) {
     // A blocked or errored scrape has no observation to judge. Skipping it is
@@ -186,14 +194,17 @@ export function scoreGooglePlaceObservations(
         sharedLicenceCount: row.sharedLicenceCount,
         confirmation,
       });
-      const licences = confirmedLicencesByPlace.get(row.googlePlaceId) ?? new Set<string>();
-      licences.add(row.lniLicenseNumber ?? row.entityId);
-      confirmedLicencesByPlace.set(row.googlePlaceId, licences);
+      // Entity id, never the licence number: the question is "do two different
+      // COMPANIES claim this listing", and one company's second licence is not
+      // a rival claimant.
+      const entities = confirmedEntitiesByPlace.get(row.googlePlaceId) ?? new Set<string>();
+      entities.add(row.entityId);
+      confirmedEntitiesByPlace.set(row.googlePlaceId, entities);
     }
   }
 
-  for (const [placeId, licences] of confirmedLicencesByPlace) {
-    if (licences.size > 1) summary.contestedPlaceIds.push(placeId);
+  for (const [placeId, entities] of confirmedEntitiesByPlace) {
+    if (entities.size > 1) summary.contestedPlaceIds.push(placeId);
   }
   summary.contestedPlaceIds.sort();
   return summary;
