@@ -131,7 +131,25 @@ is MV-bound.
   Without this, a failed run is unmeasurable and Task 2 is guesswork.
 - **VALIDATE**: one deliberate failing run leaves a committed per-phase record.
 
-### Task 2: Convert the dominant source MV to an incrementally maintained table
+### Task 2: ~~Convert the dominant source MV to an incrementally maintained table~~
+> **SUPERSEDED 2026-07-25** by
+> `.claude/PRPs/plans/gym-market-comparator-windowed-peers.plan.md`.
+>
+> Task 1's profiling disproved this task's premise. The dominant MV is
+> `registry_gym_market_comparators_v1`, and its cost is a **quadratic correlated
+> LATERAL** in the view definition (plan cost 172,969,298; 5.76 billion row
+> visits) — not the refresh mechanism. Converting it to an incrementally
+> maintained table would carry that quadratic build into the delta path and
+> inherit it on every bulk-ingest day, which is the only day writes happen.
+>
+> The replacement plan rewrites the peer selection as a bounded windowed
+> pre-pass, which stays in the SKIN and needs no change to the shared refresh
+> function. The one skeleton change still worth making — one transaction per MV,
+> justified on correctness rather than speed — is carried forward as Task 5 of
+> that plan.
+>
+> Original text preserved below for provenance.
+
 - **ACTION**: Replace `REFRESH MATERIALIZED VIEW` with delete+insert scoped to
   tenants whose `updated_at` exceeds a stored high-water mark.
 - **MIRROR**: the transactional drop/recreate + `SET LOCAL statement_timeout`
