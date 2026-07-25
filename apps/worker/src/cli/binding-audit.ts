@@ -1,5 +1,6 @@
 import "../load-env.js";
-import { createDb, createPool, createRegistryPool } from "@otn/db";
+import { randomUUID } from "node:crypto";
+import { createDb, createPool, createRegistryPool, orgBindingGap } from "@otn/db";
 import { sql } from "drizzle-orm";
 import { createLogger } from "@otn/source-sdk";
 import {
@@ -13,6 +14,7 @@ import {
 // pnpm binding-audit                 (all unbound orgs — the strategic view)
 // pnpm binding-audit --scope=primary (just primary contractors)
 // pnpm binding-audit --samples=20
+// pnpm binding-audit --persist       (also write the buckets to org_binding_gap)
 //
 // WHY THIS EXISTS: 20 of 3,797 organizations are bound to a registry entity —
 // 0.5%. The registry side is rich (100% licence, 99.9% phone), the ingestion side
@@ -32,6 +34,22 @@ import {
 // data load", and it is the one number the strategy turns on.
 //
 // READ-ONLY. No --apply, deliberately: nothing here should be able to bind.
+//
+// --persist DOES NOT CHANGE THAT. It writes one row per explained organization
+// to `org_binding_gap` (migration 0034) — a measurement log nothing reads to
+// make a decision. Without it these buckets exist only in a log line, so the gap
+// is recomputable on demand but invisible between runs: it could grow, shrink or
+// change shape and no one would know. `run_id` makes each run a point in a
+// series rather than a replacement for the last one.
+//
+// THE PERSISTED ROWS COME FROM THE SAME SINGLE CLASSIFICATION PASS as the log.
+// Each org is classified once into a `GapRow`, and the log line and the table
+// row are two renderings of that one object. A second classifier that drifts
+// from this one would be worse than not persisting at all.
+//
+// --persist REFUSES A SCOPED RUN. `--scope=primary` is a legitimate view, but a
+// subset snapshot is not a point on a whole-population trend line, and the table
+// has no way to say which population a run covered. Full runs only.
 //
 // DO NOT FRAME ANY BUCKET AS ENRICHMENT-ADDRESSABLE. `google_name` is NOT a
 // match key — the binding index is built from canonicalName, aliases and brands
@@ -96,7 +114,12 @@ async function main() {
   const samples = numericArg("samples", 10);
   const scope = stringArg("scope", "all");
   const primaryOnly = scope === "primary";
+  const persist = process.argv.includes("--persist");
   const logger = createLogger({ app: "binding-audit" });
+  if (persist && scope !== "all") {
+    console.error(`--persist requires the full population; --scope=${scope} would store a subset`);
+    process.exit(1);
+  }
   const pool = createPool();
   const db = createDb(pool);
   const registryPool = createRegistryPool();
@@ -179,12 +202,35 @@ async function main() {
       }
     }
 
-    const buckets = new Map<Bucket, string[]>();
-    const put = (b: Bucket, s: string) => {
+    /** One classified organization. The audit classifies ONCE; the sample line
+     * and the persisted row are two renderings of this, so no second classifier
+     * can drift away from the first. */
+    interface GapRow {
+      org: Org;
+      /** Entities that could PLAUSIBLY BIND — nothing weaker. Empty for buckets
+       * that short-circuit before the index lookup, and for absent_from_registry
+       * where the best near-miss sits below the similarity floor (that one goes
+       * in `detail`). This count sizes the ambiguous fan-out cap, so padding it
+       * with things nothing would ever bind to would size that cap off noise. */
+      candidates: { entityId: string; name: string }[];
+      /** The trailing context the sample lines have always carried. */
+      detail: string;
+    }
+    const buckets = new Map<Bucket, GapRow[]>();
+    const put = (b: Bucket, row: GapRow) => {
       const hit = buckets.get(b);
-      if (hit) hit.push(s);
-      else buckets.set(b, [s]);
+      if (hit) hit.push(row);
+      else buckets.set(b, [row]);
     };
+    /** No candidates, no detail — the org's own name is the whole finding. */
+    const plain = (b: Bucket, org: Org) => put(b, { org, candidates: [], detail: "" });
+    /** Sorted so re-runs produce identical rows, and so a later capped fan-out
+     * always keeps the SAME first N rather than an arbitrary N. */
+    const candidatesOf = (entities: Set<string>) =>
+      [...entities]
+        .sort()
+        .map((entityId) => ({ entityId, name: nameByEntity.get(entityId) ?? "" }));
+    const label = (r: GapRow) => (r.detail ? `${r.org.name}  ${r.detail}` : r.org.name);
     // Per-role tallies — the numbers Phase 1 is sized on.
     const fixableByRole: Record<string, number> = {};
     const absentByRole: Record<string, number> = {};
@@ -193,14 +239,17 @@ async function main() {
     for (const org of target) {
       // Most-specific reason first: a name can satisfy several tests, and the
       // FIRST one is the actionable defect.
-      if (isPrefixNoise(org.name)) { put("prefix_noise", org.name); continue; }
-      if (isPersonShapedOrgName(org.name)) { put("person_shaped", org.name); continue; }
-      if (isGenericName(org.name)) { put("generic", org.name); continue; }
+      if (isPrefixNoise(org.name)) { plain("prefix_noise", org); continue; }
+      if (isPersonShapedOrgName(org.name)) { plain("person_shaped", org); continue; }
+      if (isGenericName(org.name)) { plain("generic", org); continue; }
 
       const entities = byKey.get(crossNameKey(org.name));
-      if (entities && entities.size > 1) { put("exact_match_ambiguous", org.name); continue; }
+      if (entities && entities.size > 1) {
+        put("exact_match_ambiguous", { org, candidates: candidatesOf(entities), detail: "" });
+        continue;
+      }
       if (entities && entities.size === 1) {
-        put("exact_match_no_candidate", org.name);
+        put("exact_match_no_candidate", { org, candidates: candidatesOf(entities), detail: "" });
         exactByRole[org.role] = (exactByRole[org.role] ?? 0) + 1;
         continue;
       }
@@ -215,20 +264,28 @@ async function main() {
       }
       let best = 0;
       let bestName = "";
+      let bestEntity = "";
       for (const e of shortlist) {
         const rn = nameByEntity.get(e);
         if (!rn) continue;
         const s = nameSimilarity(org.name, rn);
-        if (s > best) { best = s; bestName = rn; }
+        if (s > best) { best = s; bestName = rn; bestEntity = e; }
       }
       if (best >= NEAR_MATCH_FLOOR) {
-        put("near_match_fixable", `${org.name}  ~${best.toFixed(2)}~  ${bestName}`);
+        put("near_match_fixable", {
+          org,
+          candidates: [{ entityId: bestEntity, name: bestName }],
+          detail: `~${best.toFixed(2)}~  ${bestName}`,
+        });
         fixableByRole[org.role] = (fixableByRole[org.role] ?? 0) + 1;
       } else {
-        put(
-          "absent_from_registry",
-          bestName ? `${org.name}  (best ${best.toFixed(2)}: ${bestName})` : org.name,
-        );
+        // Below the floor: the near-miss is context, NOT a candidate. It is
+        // recorded in `detail` and deliberately left out of `candidates`.
+        put("absent_from_registry", {
+          org,
+          candidates: [],
+          detail: bestName ? `(best ${best.toFixed(2)}: ${bestName})` : "",
+        });
         absentByRole[org.role] = (absentByRole[org.role] ?? 0) + 1;
       }
     }
@@ -265,8 +322,36 @@ async function main() {
       "fixable vs absent, split by role",
     );
 
-    for (const [b, names] of [...buckets.entries()].sort((a, b2) => b2[1].length - a[1].length)) {
-      logger.info({ bucket: b, count: names.length, samples: names.slice(0, samples) }, `bucket ${b}`);
+    for (const [b, rows] of [...buckets.entries()].sort((a, b2) => b2[1].length - a[1].length)) {
+      logger.info(
+        { bucket: b, count: rows.length, samples: rows.slice(0, samples).map(label) },
+        `bucket ${b}`,
+      );
+    }
+
+    if (persist) {
+      // One run_id for the whole snapshot: these rows are a single observation
+      // of the population, and a query that asks "the latest run" must get all
+      // of it or none of it.
+      const runId = randomUUID();
+      const rows = [...buckets.entries()].flatMap(([reason, gaps]) =>
+        gaps.map((g) => ({
+          runId,
+          organizationId: g.org.id,
+          reason,
+          organizationName: g.org.name,
+          candidateCount: g.candidates.length,
+          candidatesJson: g.candidates,
+          detail: g.detail || null,
+        })),
+      );
+      // Chunked because a single INSERT of ~4k rows x 7 columns runs into the
+      // driver's bind-parameter ceiling.
+      const CHUNK = 500;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        await db.insert(orgBindingGap).values(rows.slice(i, i + CHUNK));
+      }
+      logger.info({ runId, persisted: rows.length, bucketed }, "binding gap persisted");
     }
   } finally {
     await pool.end();

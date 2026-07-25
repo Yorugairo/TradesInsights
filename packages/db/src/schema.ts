@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -1040,6 +1041,51 @@ export const registryObservations = pgTable(
   (t) => [
     uniqueIndex("registry_observations_dedupe_ux").on(t.dedupeKey),
     index("registry_observations_org_ix").on(t.organizationId),
+  ],
+);
+
+/**
+ * Append-only snapshot of WHY each unbound organization has no registry
+ * candidate — one row per organization per `binding-audit --persist` run.
+ *
+ * MEASUREMENT ONLY. Nothing binds, merges or accepts off this table. It records
+ * what the audit already computes and used to only log, so the gap becomes
+ * countable instead of recomputable-on-demand-and-otherwise-invisible.
+ *
+ * `runId` LEADS THE PRIMARY KEY on purpose. A current-state row per
+ * organization would answer "what is wrong today" and destroy the answer to "is
+ * it getting better", which is the reason this exists.
+ *
+ * `candidatesJson` carries names as well as ids — `[{entityId, name}]` — because
+ * the registry sits behind a role this database cannot read (`registry_internal`
+ * denies the Insights role with 42501). An id stored here can never be resolved
+ * to a name later, so the name is captured at write time or it is lost.
+ *
+ * Migration 0034 is authoritative for DDL (this repo hand-writes migrations
+ * rather than running drizzle-kit generate); it orders both indexes
+ * `computed_at DESC`.
+ */
+export const orgBindingGap = pgTable(
+  "org_binding_gap",
+  {
+    runId: uuid("run_id").notNull(),
+    organizationId: uuid("organization_id").notNull(),
+    /**
+     * prefix_noise | person_shaped | generic | exact_match_ambiguous |
+     * exact_match_no_candidate | near_match_fixable | absent_from_registry
+     */
+    reason: text("reason").notNull(),
+    organizationName: text("organization_name").notNull().default(""),
+    /** Entities that could plausibly bind. 0 for buckets that never looked. */
+    candidateCount: integer("candidate_count").notNull().default(0),
+    candidatesJson: jsonb("candidates_json").notNull().default(sql`'[]'::jsonb`),
+    detail: text("detail"),
+    computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.runId, t.organizationId] }),
+    index("org_binding_gap_reason_idx").on(t.reason, t.computedAt),
+    index("org_binding_gap_org_idx").on(t.organizationId, t.computedAt),
   ],
 );
 
