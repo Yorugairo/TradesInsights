@@ -156,26 +156,51 @@ correction: `google_name` is not a match key.
 | `packages/delivery/src/roi.ts` | UPDATE — metric semantics |
 | `<registry>/…/20260727010000_google_place_contested_view.sql` | CREATE — contract view |
 
+## Follow-on work completed (owner-authorised, same session)
+
+**The 139-row remediation — DONE.** Migration
+`20260727020000_remediate_google_place_false_contested.sql`, applied live.
+
+Safety was measured, not assumed. `evidence->'competing_entity_ids'` was
+**always** entity-based even in the buggy run — only the contested *flag* was
+licence-keyed — so `jsonb_array_length(...) = 0` is exactly the corrected test.
+Cross-checked by running the fixed scorer against live data and comparing its
+uncontested-confirmed `(entity, place)` set row by row against the predicate
+across all 143 links:
+
+| Check | Result |
+|---|---|
+| Agree — safe to flip | **139** |
+| Stale says clean / scorer says contested | **0** |
+| Stale says conflict / scorer says clean | **0** |
+| No longer confirming at all | **0** |
+| Carrying `decision_locked` | **0** |
+
+| Measure | Before | After |
+|---|---|---|
+| `accepted` / `direct` / `profile_enrichment_ready` | 1,699 | **1,838** |
+| Contested links | 143 | **4** (2 listings, all genuine) |
+| `trades_identity_v1.google_name` coverage | 5,280 | **5,340** |
+
+139 links = **138 distinct entities**; 78 already surfaced via another accepted
+link, **60 newly surface** — which is exactly the +60 coverage delta. Re-running
+the predicate touches **0 rows** (idempotent). Rollback is precise because the
+remediation stamps `decision_provenance.remediation`.
+
+The contested view is now 100% signal: every remaining row has `rival_count > 0`.
+
+**Branch hygiene — DONE.** Both migrations are on `release/trades-staging`
+(`09387efb`, `659a2143`), and `codex/otn-app-extraction` was reconciled with the
+trunk (`8f2dc622`), clearing the duplicate uncommitted copy of `e3522867`.
+
 ## Open Items — owner decisions
 
-1. **The 139 mislabelled links are still held back.** The scorer fix does not
-   heal rows already written: re-scoring dedupes on `(entity, place)` and will
-   not update them. Healing means flipping `relationship_type` → `direct`,
-   `link_status` → `accepted`, `public_surface_policy` → `profile_enrichment_ready`
-   on those rows. **Not executed** — it makes 139 business profiles surface Google
-   data publicly, which is outward-facing and reversible only by hand. The UI
-   counts them separately in the meantime.
-2. **The registry migration is not on the trades trunk.** `a4f20124` is on
-   `codex/otn-app-extraction` (pushed as a new remote branch) per the plan's
-   explicit instruction. Its two sibling migrations (`f3597a38`, `216870d1`) are
-   on `origin/release/trades-staging`. The view is already applied live, so
-   nothing is broken, but the file should be cherry-picked to the trunk.
-3. **`unique_key_no_candidate`** — 3 orgs match a unique registry key and produce
+1. **`unique_key_no_candidate`** — 3 orgs match a unique registry key and produce
    no candidate. Small, but it is the only bucket that looks like a live bug.
 4. **Roadmap P6** (full WA L&I load) still gates the person-shape refusal, and
    the `person_shaped` overcount above is fresh evidence for why.
 
 ## Next Steps
-- [ ] Owner decision on the 139-row remediation
-- [ ] Cherry-pick `a4f20124` onto `release/trades-staging`
+- [x] Owner decision on the 139-row remediation — DONE, applied live
+- [x] Both migrations on `release/trades-staging` (`09387efb`, `659a2143`)
 - [ ] `/code-review` before merge
