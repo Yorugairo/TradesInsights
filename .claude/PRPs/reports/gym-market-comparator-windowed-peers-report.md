@@ -102,6 +102,52 @@ performance one**, so it is flagged rather than taken. Worth noting the plan's o
 instinct to drop CONCURRENTLY was not worthless; it simply was not the *build* fix, and
 the build had to be fixed first for the question to even be reachable.
 
+## Task 6 gate: passed on the letter, blocked on the spirit
+
+Two runs, both green:
+
+| Run | Path | Result |
+|---|---|---|
+| Probe harness (per-MV transactions) | `profile-source-mv-refresh.mjs --apply` | **10/10 success, 549.0s**, max single-MV spill 2,697 MB |
+| Production function (single transaction) | `refresh_registry_read_models('source_mvs')` | **success, 545.5s**, `failures: []`, all ten refreshed, 3,910 MB spilled, net DB growth −37.5 MB |
+
+Audit id **82** is committed with `status = 'success'` and phase `refresh_source_mvs`
+= `success`. This is the first `source_mvs` run on record that actually completed.
+
+**Job 1 nevertheless remains PAUSED, and I recommend it stay paused until one more
+fix lands.** See below.
+
+## Correction to the Task 1 report
+
+The Task 1 report stated that both `source_mvs` failures "left no trace" and that
+`registry_read_model_refresh_audit` held "80 rows and not one with
+`refresh_scope = 'source_mvs'`." **That was wrong.** It was inferred from an
+`ORDER BY id DESC LIMIT 12` query that happened to return only recent `state:WA`
+rows, and stated as fact. Three `source_mvs` rows exist: ids 1, 18, 82.
+
+The truth is more interesting, and worse:
+
+**Audit id 18 (2026-07-05) recorded the failure — as a success.** Its phase row is
+`failed` and carries the real per-MV errors (`registry_region_comparators_v1`,
+`registry_program_region_comparators_v1`, `registry_gym_market_comparators_v1`, all
+`No space left on device`). Its *parent* row says `status = 'success'`.
+
+That is structural, not a glitch. In `refresh_registry_read_models` the `source_only`
+branch builds its result with a hardcoded `'ok', true` and runs
+`UPDATE ... SET status = 'success'` **without consulting `source_result`**. Because the
+inner loop catches per-MV errors and continues, the function returns normally and the
+parent row is stamped success regardless of what failed.
+
+So the two failures failed differently: 2026-07-05 **mis-reported** (parent success,
+phase failed), and 2026-07-25 **under-reported** (whole transaction aborted, audit rolled
+away, no row). My original claim collapsed both into "no trace".
+
+**Consequence for Task 6:** re-enabling the weekly cron today means a future partial
+failure gets written to the audit table as a success. The gate condition — "a committed
+`source_mvs` audit row with status `success`" — is now satisfiable by a run that failed.
+The gate is weaker than it reads. Fix the hardcoded status first; it belongs with Task 5,
+which is already opening that function.
+
 ## Honest gaps
 
 - **Task 5 not attempted.** The per-MV transaction change to the shared refresh function
@@ -131,7 +177,11 @@ Registry `35f7ce31` on `codex/otn-app-extraction`; cherry-picked to `release/tra
 
 ## Next steps
 
-- [ ] Task 6: complete the full ten-MV gate run; re-enable job 1 only on all-ten success
+- [x] Task 6 gate run — **both paths green**; audit id 82 committed `success`
+- [ ] **Fix the hardcoded `status = 'success'` in the `source_only` branch** — blocks a
+      meaningful re-enable of job 1, because today a partial failure reports success
 - [ ] Task 5: decide caller-driven vs function-driven per-MV commit, then implement
+      (same function, same edit window as the fix above)
+- [ ] Re-enable job 1 only after the audit status reflects reality
 - [ ] Decide CONCURRENTLY vs plain refresh for this MV (locking trade-off, owner call)
 - [ ] Confirm pages render comparison panels after the next `state:WA` cycle
