@@ -1,4 +1,4 @@
-# Plan: Surface ambiguous name matches (Option A)
+# Plan: Surface unbindable orgs — Phase B (measure) then Phase A (queue)
 
 Self-contained spec. Everything below was measured or read from source on 2026-07-25;
 nothing here needs re-deriving after a compact.
@@ -6,8 +6,84 @@ nothing here needs re-deriving after a compact.
 ## Summary
 
 An org whose name matches several registry entities produces **no record of any kind** —
-it is not bound, not queued, not counted. Emit one review-only observation per candidate
-so the ambiguity becomes visible in the existing queue.
+it is not bound, not queued, not counted. Fix in two phases:
+
+- **Phase B — measure.** Persist the binding-audit buckets so the gap is countable and
+  trendable. No decision surface, no governed path touched, zero risk.
+- **Phase A — queue.** Emit one review-only observation per candidate so a human can
+  actually resolve the ambiguity.
+
+## Why B before A
+
+1. **B is zero-risk and immediate.** It writes to a new table nothing else reads. A
+   touches `registry-observations.ts`, the code that decides what auto-binds.
+2. **B sizes A.** A needs a fan-out cap, and the right cap depends on the real
+   distribution of candidate counts — which today is known only for one example
+   (FASTSIGNS = 16). B measures the whole population first, so the cap is chosen from
+   data rather than from the worst anecdote.
+3. **B is the safety net for A.** With B in place, A's effect is measurable: the
+   ambiguous bucket should shrink as rows get resolved. Without it, A ships blind.
+4. **B keeps working if A stalls.** The gap stops being invisible either way.
+
+---
+
+# Phase B — persist the binding gap
+
+## Task B1: the measurement table
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.org_binding_gap (
+  run_id          uuid        NOT NULL,
+  organization_id uuid        NOT NULL,
+  reason          text        NOT NULL,   -- ambiguous_name | absent_from_registry |
+                                          -- person_shaped | generic | near_match_fixable | ...
+  candidate_count integer     NOT NULL DEFAULT 0,
+  candidates_json jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  detail          text,
+  computed_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (run_id, organization_id)
+);
+CREATE INDEX IF NOT EXISTS org_binding_gap_reason_idx ON insights.org_binding_gap (reason, computed_at DESC);
+CREATE INDEX IF NOT EXISTS org_binding_gap_org_idx    ON insights.org_binding_gap (organization_id, computed_at DESC);
+```
+
+- **SNAPSHOT PER RUN, NOT CURRENT-STATE.** `run_id` in the PK is the point: the complaint
+  is that drift between manual audits is undetectable. One row per org per run makes the
+  trend visible; a single current-state row would not.
+- **NOT A DECISION SURFACE.** Nothing reads this to bind anything. It records what the
+  audit already computes and currently throws away. Keep it that way — the moment
+  something binds off this table it needs the governed path's guarantees.
+
+## Task B2: persist from the existing audit
+
+- `apps/worker/src/cli/binding-audit.ts` already computes the buckets
+  (prefix_noise / person_shaped / generic / exact_match_ambiguous /
+  exact_match_no_candidate / near_match_fixable / absent_from_registry).
+- Add a `--persist` flag that writes one row per unbound org with its bucket as `reason`,
+  its candidate entity ids in `candidates_json`, and a single `run_id` for the run.
+- **GOTCHA**: do not recompute the buckets in a second place. Persist what the audit
+  already produces — a divergent second classifier is worse than no persistence.
+- **VALIDATE**: `--persist` twice yields two distinct `run_id`s and identical bucket
+  counts; the three known orgs appear with `reason='exact_match_ambiguous'`.
+
+## Task B3: read the distribution (this feeds Phase A)
+
+```sql
+SELECT reason, count(*) AS orgs,
+       round(avg(candidate_count),1) AS avg_candidates,
+       max(candidate_count) AS worst,
+       percentile_disc(0.95) WITHIN GROUP (ORDER BY candidate_count) AS p95
+FROM insights.org_binding_gap
+WHERE run_id = (SELECT run_id FROM insights.org_binding_gap ORDER BY computed_at DESC LIMIT 1)
+GROUP BY reason ORDER BY orgs DESC;
+```
+
+**Use `p95` to choose Phase A's fan-out cap.** The cap of 5 proposed below is a placeholder
+derived from a single example; replace it with a number this query justifies.
+
+---
+
+# Phase A — review-only observations for ambiguous matches
 
 ## The defect — exact location
 
@@ -59,9 +135,13 @@ with **zero rows** in `insights.registry_observations`.
 - **GOTCHA**: the surrounding loop assumes ONE `hit` per org and pushes one observation
   (~:1093). Emitting N requires restructuring that push into a loop over candidates —
   this is the real work of the task, not the rule key.
-- **CAP**: emit at most 5 candidates, ordered deterministically (e.g. by entity_id) so
-  re-runs are stable. Record the true `candidate_count` in `payload_json` so a capped
-  row never reads as "only 5 matched". Log what was dropped.
+- **CAP**: emit at most N candidates, ordered deterministically (e.g. by entity_id) so
+  re-runs are stable. Record the true `candidate_count` in `payload_json` so a capped row
+  never reads as "only N matched". Log what was dropped.
+  **N comes from Task B3's p95, not from a guess.** FASTSIGNS' 16 is the worst case I
+  happened to look at, not the distribution — if p95 is 3, a cap of 5 is already generous;
+  if p95 is 12, a cap of 5 silently hides the majority of most orgs' candidates. Run B
+  first and read the number.
 - `dedupeKey` needs no change — `bind:${org.id}:${entityId}` is already unique per pair.
 
 ### Task 3: scoring and tier
