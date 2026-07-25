@@ -91,10 +91,26 @@ export async function roiScorecard(
     SELECT COALESCE(SUM(minutes_saved_estimate), 0) AS m FROM research_time_entries
     WHERE account_profile_id = ${accountProfileId} AND created_at >= ${start} AND created_at < ${end}`);
 
-  // Unsupported facts on the account's delivered opportunities (gate keeps this 0).
+  // Opportunities carrying evidence but NO confirmed row — genuinely unsupported.
+  //
+  // WAS COUNTING `oe.confirmed = false`, WHICH IS NOT AN UNSUPPORTED FACT.
+  // `confirmed = false` is what `classifyClaim` returns for a B- or C-grade
+  // source: real, linked, cited corroboration that simply is not an official
+  // record. Counting it as unsupported would make legitimate corroboration look
+  // like a quality failure — and because the gate requires an A-grade source for
+  // the CORE event, an opportunity can be perfectly well supported while
+  // carrying many `confirmed = false` rows.
+  //
+  // Latent, not live: every evidence row is grade A today, so both forms read 0.
+  // It breaks the first time a B/C source lands, and the failure mode is a
+  // quality metric that alarms on healthy data.
   const unsupported = await db.execute(sql`
-    SELECT count(*) AS n FROM opportunity_evidence oe JOIN opportunities o ON o.id = oe.opportunity_id
-    WHERE o.account_profile_id = ${accountProfileId} AND oe.confirmed = false`);
+    SELECT count(*) AS n FROM opportunities o
+    WHERE o.account_profile_id = ${accountProfileId}
+      AND EXISTS (SELECT 1 FROM opportunity_evidence oe WHERE oe.opportunity_id = o.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM opportunity_evidence oe
+        WHERE oe.opportunity_id = o.id AND oe.confirmed = true)`);
 
   const quality = await deliveryQualityMetrics(db, { accountProfileId });
 
