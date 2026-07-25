@@ -38,6 +38,13 @@ describe("googlePlaceDedupeKey", () => {
     // Must NOT collapse: a shared place legitimately produces one row per entity.
     expect(googlePlaceDedupeKey("e1", "place-1")).not.toBe(googlePlaceDedupeKey("e2", "place-1"));
   });
+
+  it("is namespaced under the registry loader's source_system constant", () => {
+    // Matches the convention every other export type on partner_observations
+    // uses (${SOURCE_SYSTEM}:${...}) — and 'otn_insights' specifically must
+    // match, because the loader's pending-row query filters on that literal.
+    expect(googlePlaceDedupeKey("e1", "place-1")).toContain("otn_insights");
+  });
 });
 
 describe("buildGooglePlaceExports", () => {

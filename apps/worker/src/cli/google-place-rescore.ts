@@ -1,5 +1,5 @@
 import "../load-env.js";
-import { createDb, createPool, createRegistryPool } from "@otn/db";
+import { createRegistryPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
 import {
   buildGooglePlaceExports,
@@ -18,11 +18,18 @@ import {
 // right answer for another licence bridged to the same place" — the verdict is
 // computed per (entity, place), not per place.
 //
-// APPLY STAGES, IT DOES NOT PROMOTE. Rows land in registry_observations and are
-// drained to registry_partner.partner_observations by the scheduled export. The
-// registry's own loader decides what becomes a profile link, because
-// registry_entity_external_profile_links is a governed table with decision_locked
-// and supersession that must not be written from behind the seam.
+// APPLY STAGES DIRECTLY TO registry_partner.partner_observations — no Insights
+// connection is opened at all. The first version staged through
+// registry_observations, but that table anchors every row to an Insights
+// organizations.id and this lane has no Insights org in it (it is a registry
+// entity confirmed against Google data), which failed on
+// organization_id NOT NULL the first time it ran live. See
+// google-place-rescore.ts for the full explanation.
+//
+// APPLY STAGES, IT DOES NOT PROMOTE. The registry's own loader decides what
+// becomes a profile link, because registry_entity_external_profile_links is a
+// governed table with decision_locked and supersession that must not be written
+// from behind the seam.
 //
 // Contested places are staged too, marked, at lower trust. A place several
 // licences all confirm cannot belong to all of them, and dropping the conflict
@@ -44,8 +51,6 @@ async function main() {
   const logger = createLogger({
     app: apply ? "google-place-rescore-apply" : "google-place-rescore-preview",
   });
-  const pool = createPool();
-  const db = createDb(pool);
   const registryPool = createRegistryPool();
   try {
     if (!registryPool) {
@@ -66,7 +71,7 @@ async function main() {
     const allRows = buildGooglePlaceExports(scored);
     const rows = limit ? allRows.slice(0, limit) : allRows;
 
-    const staged = await recordGooglePlaceConfirmations(db, rows, { dryRun: !apply });
+    const staged = await recordGooglePlaceConfirmations(registryPool, rows, { dryRun: !apply });
 
     logger.info(
       {
@@ -89,7 +94,6 @@ async function main() {
       apply ? "google place rescore staged" : "google place rescore preview",
     );
   } finally {
-    await pool.end();
     await registryPool?.end?.();
   }
 }

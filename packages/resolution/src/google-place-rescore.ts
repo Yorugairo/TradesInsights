@@ -1,5 +1,5 @@
 /**
- * Turn Google Place confirmations into export observations for the registry.
+ * Turn Google Place confirmations into staged observations for the registry.
  *
  * The scorer (`google-place-scrape.ts`) decides WHAT is confirmed. This decides
  * what gets SENT, and it deliberately sends contested confirmations too — marked
@@ -7,28 +7,40 @@
  * confirm is information the registry needs in order to resolve the conflict; a
  * silent drop would leave it looking unexamined forever.
  *
- * NOTHING HERE WRITES THE REGISTRY. It appends to `registry_observations`, which
- * `exportRegistryObservations` drains into `registry_partner.partner_observations`
- * for the registry's own loader to adjudicate. The registry keeps the last word
- * on its own tables — the same seam rule the alias, trade and relationship lanes
- * follow.
+ * WRITES `registry_partner.partner_observations` DIRECTLY — NOT through
+ * `registry_observations`. That was the first design and it was wrong: EVERY row
+ * in `registry_observations` (even machine-generated alias/trade rows) anchors to
+ * a real Insights `organizations.id`, because the table's shape is "an Insights
+ * org proposes something about a registry entity." This lane has no Insights org
+ * in it at all — it is a registry entity confirmed against Google data the
+ * registry itself scraped. The live INSERT failed on
+ * `organization_id NOT NULL` the first time this ran, which is what surfaced the
+ * mismatch. `exportRegistryObservations` already has the matching precedent: its
+ * per-entity project-facts block writes straight to `registry_partner.*` for
+ * exactly this reason — no per-org review state to stage.
  *
- * WHY OBSERVATIONS RATHER THAN A DIRECT PROMOTION: `registry_entity_external_
- * profile_links` is a governed decision table with `decision_locked`,
- * supersession, and a phone-write policy pinned by CHECK. 595 trades links are
- * already locked. Writing it from behind the seam would mean reimplementing that
- * policy in a second place and risking a locked human decision being
- * overwritten. The loader owns it.
+ * NOTHING HERE WRITES REGISTRY IDENTITY. `registry_entity_external_profile_links`
+ * is a governed decision table with `decision_locked`, supersession, and a
+ * phone-write policy pinned by CHECK. 595 trades links are already locked.
+ * Writing it from behind the seam would mean reimplementing that policy in a
+ * second place and risking a locked human decision being overwritten. The
+ * registry's own loader adjudicates `partner_observations` into that table — the
+ * same seam rule the alias, trade and relationship lanes follow.
+ *
+ * `source_system` MUST be exactly `'otn_insights'` — the registry loader's
+ * pending-row query filters on that literal constant, so any other value is
+ * simply never picked up.
  */
-import type { Db } from "@otn/db";
-import { sql } from "drizzle-orm";
 import type { GooglePlaceScoreSummary, ScoredGooglePlaceObservation } from "./google-place-scrape.js";
+import type { RegistryWriterLike } from "./registry-observations.js";
 
-/** Insights-side observation type; drained by `exportRegistryObservations`. */
-export const GOOGLE_PLACE_OBSERVATION_TYPE = "google_place_export";
+/** `partner_observations.observation_type`; must match the registry CHECK
+ * widened in migration 20260726020000. */
+export const GOOGLE_PLACE_OBSERVATION_TYPE = "google_place_confirmation";
 
-/** Rule key recorded on every row, so the lane is filterable in the queue. */
-export const GOOGLE_PLACE_RULE_KEY = "google_place_phone_and_name";
+/** Must equal the registry loader's SOURCE_SYSTEM constant exactly, or the
+ * loader's `WHERE source_system = $1` never selects these rows. */
+const SOURCE_SYSTEM = "otn_insights";
 
 /**
  * Trust for a phone AND name agreement.
@@ -66,9 +78,13 @@ export interface GooglePlaceExportRow {
   dedupeKey: string;
 }
 
-/** Stable across runs so a re-export is a no-op rather than a duplicate. */
+/** Stable across runs so a re-export is a no-op rather than a duplicate.
+ * Prefixed with SOURCE_SYSTEM to match the convention every other export type
+ * uses on this table (`${SOURCE_SYSTEM}:${...}`), even though the
+ * `google_place:` namespace already can't collide with `alias:`/`relationship:`
+ * shaped keys on its own. */
 export function googlePlaceDedupeKey(entityId: string, googlePlaceId: string): string {
-  return `google_place:${entityId}:${googlePlaceId}`;
+  return `${SOURCE_SYSTEM}:google_place:${entityId}:${googlePlaceId}`;
 }
 
 /**
@@ -120,18 +136,18 @@ export interface RecordGooglePlaceSummary {
 }
 
 /**
- * Append the export rows to `registry_observations`.
+ * Write the export rows straight to `registry_partner.partner_observations`.
  *
- * Rows are written already `accepted` with `exported_at` NULL — the same shape
- * `recordRelationshipAcceptance` uses — because there is no prior pending row to
- * decide: the scorer's verdict and the observation's creation are one event. The
- * registry loader is the reviewer, not this side.
+ * `writer` is a registry-side connection (`createRegistryPool()`), not the
+ * Insights db — there is no Insights-side row for this lane at all. A `null`
+ * writer is a skip, mirroring `exportRegistryObservations`'s handling of an
+ * unset `REGISTRY_DATABASE_URL`.
  *
  * Idempotent on `dedupe_key`, so re-running after more of the scrape lands adds
  * only what is genuinely new.
  */
 export async function recordGooglePlaceConfirmations(
-  db: Db,
+  writer: RegistryWriterLike | null,
   rows: readonly GooglePlaceExportRow[],
   opts: { dryRun?: boolean | undefined } = {},
 ): Promise<RecordGooglePlaceSummary> {
@@ -144,7 +160,7 @@ export async function recordGooglePlaceConfirmations(
     inserted: 0,
     alreadyPresent: 0,
   };
-  if (dryRun || rows.length === 0) return summary;
+  if (dryRun || rows.length === 0 || writer === null) return summary;
 
   for (const row of rows) {
     const payload = {
@@ -159,17 +175,24 @@ export async function recordGooglePlaceConfirmations(
       competing_entity_ids: row.competingEntityIds,
       verdict: "phone_and_name",
     };
-    const res = await db.execute(sql`
-      INSERT INTO registry_observations
-        (observation_type, registry_entity_id, rule_key, payload_json, trust_score,
-         status, decided_by, decided_at, dedupe_key, created_at, updated_at)
-      VALUES
-        (${GOOGLE_PLACE_OBSERVATION_TYPE}, ${row.entityId}, ${GOOGLE_PLACE_RULE_KEY},
-         ${JSON.stringify(payload)}::jsonb, ${row.trustScore},
-         'accepted', ${GOOGLE_PLACE_DECIDED_BY}, now(), ${row.dedupeKey}, now(), now())
-      ON CONFLICT (dedupe_key) DO NOTHING
-      RETURNING id`);
-    if ((res.rows as unknown[]).length > 0) summary.inserted += 1;
+    const res = await writer.query(
+      `INSERT INTO registry_partner.partner_observations
+         (source_system, entity_id, observation_type, payload, trust_score,
+          reviewed_by, reviewed_at, dedupe_key)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, now(), $7)
+       ON CONFLICT (dedupe_key) DO NOTHING
+       RETURNING observation_id`,
+      [
+        SOURCE_SYSTEM,
+        row.entityId,
+        GOOGLE_PLACE_OBSERVATION_TYPE,
+        JSON.stringify(payload),
+        row.trustScore,
+        GOOGLE_PLACE_DECIDED_BY,
+        row.dedupeKey,
+      ],
+    );
+    if (res.rows.length > 0) summary.inserted += 1;
     else summary.alreadyPresent += 1;
   }
   return summary;
