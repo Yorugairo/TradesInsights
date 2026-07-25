@@ -373,8 +373,26 @@ actively misleading.
 - **NOTE**: 5b is no longer urgent. With the quadratic fixed, the full run completes in
   545s, so the "one failure discards nine successes" scenario is not currently firing.
   It remains correct to do, and cheap insurance against the next regression.
-- **SHAPE DECISION, STILL OPEN — READ BEFORE CODING.** Three options, and the plan does
-  NOT pick one because the third changes a shared interface:
+- **SHAPE DECISION — RESOLVED BY EVIDENCE 2026-07-25. Option 3 is IMPOSSIBLE here.**
+  A procedure containing COMMIT cannot be invoked from any context that already owns a
+  transaction, and both entry points do:
+    * Supavisor pooler -> `2D000 invalid transaction termination`
+    * **pg_cron runs each job inside a transaction** -> same error, observed in
+      `cron.job_run_details`: `CONTEXT: PL/pgSQL function refresh_registry_source_mvs(text) line 27 at COMMIT`
+  A function also cannot CALL such a procedure, and
+  `process_registry_read_model_refresh_queue` IS a function — so converting the shared
+  entry point would have broken job 3, the daily path. The procedure was built, tested,
+  dropped, and its test cron job unscheduled.
+  **Therefore per-MV commits must be driven from OUTSIDE the database.** That is now the
+  only remaining shape, and it already exists and is proven:
+  `scripts/profile-source-mv-refresh.mjs` ran 10/10 MVs in 549s and kept nine successes
+  committed when the tenth was forced to fail. The open question is no longer "what
+  shape" but "what schedules it" — pg_cron cannot, so job 1 either stays single-transaction
+  (fine at 545s today) or moves to an external runner (needed at multi-state scale, where
+  retries/backpressure/observability matter anyway). `dblink` remains a third path: it
+  would give autonomous transactions from inside pg_cron, at the cost of an extension and
+  per-MV connection overhead.
+  *Superseded options, kept for provenance:*
   1. *Caller drives the loop* (what `profile-source-mv-refresh.mjs` already does). No DB
      change, but pg_cron would have to call something other than the function, so the
      cron and the manual path diverge — the exact drift this workstream keeps paying for.
