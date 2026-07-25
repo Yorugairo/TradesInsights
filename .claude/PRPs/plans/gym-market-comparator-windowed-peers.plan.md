@@ -337,7 +337,10 @@ Two edits to `registry_internal.refresh_registry_read_models` /
 same function in the same window, and because doing either alone leaves the other
 actively misleading.
 
-**5a — Stop recording failed runs as successes.** *(highest value, smallest edit)*
+**5a — Stop recording failed runs as successes.** — **SHIPPED 2026-07-25** (registry
+`88669d94`, cherry-picked to trades-staging as `c1b13646`). Applied by splice via
+`scripts/fix-source-mvs-audit-status.mjs`; migration
+`20260728030000_source_mvs_audit_status_truth.sql` dumps the patched function verbatim.
 - **ACTION**: In the `source_only` branch, derive the audit status from `source_result`
   instead of hardcoding it.
 - **WHY**: The branch currently builds its result with a literal `'ok', true` and runs
