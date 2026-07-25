@@ -252,7 +252,21 @@ if (!APPLY) { console.log('\n--- new definition (dry run, nothing changed) ---')
 - **Incremental/table conversion of this MV.** Superseded — the build is the cost, and a
   delta path would inherit the quadratic join on every ingest day.
 - **Any change to the other nine source MVs.** They complete in 302s combined.
-- **Dropping CONCURRENTLY.** Measured as not the cause.
+- **Dropping CONCURRENTLY — DECIDED AGAINST 2026-07-25, not merely deferred.**
+  Measured as not the cause of the failure, and the system is healthy without it: the
+  production function now completes in 545.5s with `failures: []`. Switching this MV to a
+  plain refresh would buy ~2.6 GB of spill and ~50s per weekly run — an optimization, not
+  a repair.
+  It is declined because the refresh function is SHARED SKELETON, so the flip would reach
+  BJJ, where it fails the skeleton test outright: BJJ's comparators total ~165 MB (nothing
+  to fix), it is a live public directory with real traffic, and `AccessExclusiveLock`
+  blocks readers — a user-facing stall with zero compensating benefit. "Better for BJJ as
+  well" is false here; it is strictly worse.
+  IF it is ever revisited, it must be a per-MV opt-in (e.g. a `plain_refresh_mvs text[]`
+  parameter), never a blanket change, so the trades/BJJ distinction cannot be lost by a
+  one-line edit. Note also `temp_file_limit = -1` on this instance: there is no per-session
+  spill guard, so the only backstop is the physical volume — which is what gave way on
+  2026-07-05.
 - **Porting anything to BJJ.** At ~4,000 gyms nationally the quadratic join is ~16M row
   visits and finishes fine. Same code, different density.
 - **Trades-native pSEO read models** (old plan Task 3) — still pending, unchanged, out of
@@ -316,30 +330,61 @@ if (!APPLY) { console.log('\n--- new definition (dry run, nothing changed) ---')
   `public.tenants` and `registry_gym_profile_metrics_v1`); a directory page and a profile
   page render with a populated comparison panel for a contractor that previously had none.
 
-### Task 5 (separate, correctness): one transaction per MV in the shared refresh
-- **ACTION**: Change `registry_internal.refresh_registry_source_materialized_views()` so
-  each MV refresh commits independently rather than sharing the caller's transaction.
+### Task 5 (correctness): make the shared refresh tell the truth, and bank partial work
+
+Two edits to `registry_internal.refresh_registry_read_models` /
+`refresh_registry_source_materialized_views`. They are grouped because they touch the
+same function in the same window, and because doing either alone leaves the other
+actively misleading.
+
+**5a — Stop recording failed runs as successes.** *(highest value, smallest edit)*
+- **ACTION**: In the `source_only` branch, derive the audit status from `source_result`
+  instead of hardcoding it.
+- **WHY**: The branch currently builds its result with a literal `'ok', true` and runs
+  `UPDATE ... SET status = 'success'` without consulting `source_result`. Because the
+  inner loop catches per-MV errors and continues, the function returns normally and the
+  parent row is stamped success no matter what failed. This is not hypothetical: audit
+  id 18 (2026-07-05) reads `status = 'success'` at the parent while its phase row is
+  `failed` and lists three `No space left on device` errors. A monitored cron that
+  reports success while failing is worse than one that reports nothing.
+- **GOTCHA**: `source_result->>'ok'` is already correct in the payload — only the parent
+  UPDATE and the hardcoded `'ok', true` in the `result` object are wrong. Do not "fix"
+  the inner loop's catch-and-continue; partial progress is the desired behaviour.
+- **VALIDATE**: force one MV to fail; the parent audit row must read `failed`.
+
+**5b — One transaction per MV.**
+- **ACTION**: Make each MV refresh commit independently rather than sharing the caller's
+  transaction.
 - **WHY**: On 2026-07-25 MV 10's failure discarded the nine successful rebuilds ahead of
-  it — which is why `gym_profile_metrics` stayed at 26,934 despite refreshing correctly in
-  17 seconds on both attempts. Driving one transaction per MV is what finally banked them.
-- **SKELETON JUSTIFICATION**: Passes the plan's bar on correctness, not speed — "a late
-  failure should not discard earlier successes" is equally true for BJJ. Implement once in
-  the shared function; do NOT fork per vertical.
+  it — which is why `gym_profile_metrics` stayed at 26,934 despite refreshing correctly
+  in 17 seconds on both attempts. Driving one transaction per MV is what finally banked
+  them.
+- **SKELETON JUSTIFICATION**: Passes the bar on correctness, not speed — "a late failure
+  should not discard earlier successes" is equally true for BJJ. Implement once in the
+  shared function; do NOT fork per vertical.
 - **GOTCHA**: The function is `SECURITY DEFINER` and holds an advisory lock
-  (`hashtext('registry_source_mv_refresh')`). Committing mid-function requires the
-  autonomous-transaction shape, which plpgsql lacks — so this likely means the *caller*
-  drives the loop (as the probe script does) rather than the function committing
-  internally. Decide that shape explicitly before writing code; do not assume plpgsql can
-  COMMIT inside a function invoked via `SELECT`.
+  (`hashtext('registry_source_mv_refresh')`). plpgsql cannot COMMIT inside a function
+  invoked via `SELECT`, so this likely means the *caller* drives the loop (as
+  `profile-source-mv-refresh.mjs` does) rather than the function committing internally.
+  Decide that shape explicitly before writing code.
+- **NOTE**: 5b is no longer urgent. With the quadratic fixed, the full run completes in
+  545s, so the "one failure discards nine successes" scenario is not currently firing.
+  It remains correct to do, and cheap insurance against the next regression.
 - **VALIDATE**: a forced failure on one MV leaves the earlier MVs refreshed and committed.
 
 ### Task 6: Re-enable job 1 behind evidence
-- **ACTION**: Re-enable the weekly `source_mvs` cron only after a full manual run
-  completes with committed telemetry.
+- **ACTION**: Re-enable the weekly `source_mvs` cron.
+- **PRECONDITION (new)**: Task 5a must land first. As of 2026-07-25 the gate below is
+  satisfiable by a run that FAILED — see 5a. Re-enabling before that fix means the first
+  partial failure is written to the audit table as a success and is discovered from stale
+  pages instead of from monitoring.
 - **GOTCHA**: Do NOT re-enable on the strength of `state:WA` succeeding, or of nine of ten
   MVs succeeding. Both inferences were made in this workstream and both were wrong.
+- **STATUS 2026-07-25**: the run evidence now exists — probe harness 10/10 in 549.0s, and
+  the production function green in 545.5s with a committed `success` audit row (id 82).
+  Job 1 remains paused solely on the 5a precondition.
 - **VALIDATE**: all ten probe rows `success` in one run; a committed `source_mvs` audit
-  row with status `success`.
+  row with status `success` **produced by a function that can also report `failed`**.
 
 ---
 
