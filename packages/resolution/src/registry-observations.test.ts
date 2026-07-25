@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ADDRESS_SHARED_MIN_NAME_SIMILARITY,
+  AMBIGUOUS_FANOUT_CAP,
+  AMBIGUOUS_NAME_RULE,
   AUTO_ACCEPT_MIN_RATE,
+  buildAmbiguousCandidates,
   buildRegistryAddressIndex,
   buildRegistryDomainIndex,
   buildRegistryGooglePhoneIndex,
@@ -142,6 +145,23 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
     expect(r.strict).toBe(false);
   });
 
+  it("NEVER auto-binds an ambiguous name match, even when every other gate passes", () => {
+    // Governance-critical, and the reason `binding_name_ambiguous` is a separate
+    // rule key at all. An ambiguous match means the name reached SEVERAL
+    // entities: one candidate is right and the rest are wrong by construction,
+    // so auto-binding one of them would be a coin flip written to the identity
+    // graph. This gate's allow-list names only the two unique-name rules, which
+    // makes that impossible rather than merely disallowed.
+    //
+    // Deliberately passes `nameComponent: 1` — the STRONGEST possible input for
+    // every other gate condition — so the refusal is proven to come from the
+    // rule key and not from a low score that a future re-scoring could raise.
+    const r = evaluateStrictBind({ ...base, ruleKey: AMBIGUOUS_NAME_RULE });
+    expect(r.strict).toBe(false);
+    // If this ever fails, someone added AMBIGUOUS_NAME_RULE to evaluateStrictBind.
+    expect(r.sharedTradeCodes).toEqual(["electrical"]);
+  });
+
   it("refuses without a shared trade (registry codes GC, permits say roofing → stays in review)", () => {
     const r = evaluateStrictBind({
       ...base,
@@ -208,6 +228,57 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
   });
 });
 
+describe("buildAmbiguousCandidates (the lane that used to emit nothing)", () => {
+  const strongAgreement = () => "strong" as const;
+  const rows = (...specs: [string, string | null][]) =>
+    specs.map(([entityId, phone]) => regRow({ entityId, phone, canonicalName: "FASTSIGNS" }));
+
+  it("returns nothing for an empty hit list (so the caller's `continue` still fires)", () => {
+    expect(buildAmbiguousCandidates([], new Set(), strongAgreement)).toEqual([]);
+  });
+
+  it("emits one candidate per entity, all on the ambiguous rule key", () => {
+    const out = buildAmbiguousCandidates(rows(["e2", null], ["e1", null]), new Set(), strongAgreement);
+    expect(out).toHaveLength(2);
+    expect(out.every((c) => c.ruleKey === AMBIGUOUS_NAME_RULE)).toBe(true);
+    expect(out.map((c) => c.hit.entityId)).toEqual(["e1", "e2"]); // deterministic, id-sorted
+  });
+
+  it("scores name as 1/n — an ambiguous key does not identify, and the number says so", () => {
+    const out = buildAmbiguousCandidates(rows(["a", null], ["b", null], ["c", null], ["d", null]), new Set(), strongAgreement);
+    expect(out.every((c) => c.nameComponent === 0.25)).toBe(true);
+    // Below the exact-name test in classifyReviewTier, by construction.
+    expect(out[0]!.nameComponent).toBeLessThan(1);
+  });
+
+  it("sorts phone-agreeing candidates first, so a cap would drop the weakest", () => {
+    const out = buildAmbiguousCandidates(
+      rows(["aaa", "5550000"], ["bbb", "5551111"], ["ccc", "5551111"]),
+      new Set(["5551111"]),
+      strongAgreement,
+    );
+    expect(out.map((c) => c.hit.entityId)).toEqual(["bbb", "ccc", "aaa"]);
+    expect(out[0]!.agreement).toBe("strong");
+    // The org HAS a phone and this candidate's differs — that is evidence
+    // against it, not absence of evidence.
+    expect(out[2]!.agreement).toBe("contradicts");
+  });
+
+  it("reports agreement 'none' — not 'contradicts' — when the org has no phone at all", () => {
+    const out = buildAmbiguousCandidates(rows(["a", "5550000"]), new Set(), strongAgreement);
+    expect(out[0]!.agreement).toBe("none");
+  });
+
+  it("caps the fan-out but records the TRUE count, so a capped row cannot read as the whole set", () => {
+    const many = Array.from({ length: AMBIGUOUS_FANOUT_CAP + 5 }, (_, i) =>
+      regRow({ entityId: `e${String(i).padStart(2, "0")}`, canonicalName: "SAME NAME" }),
+    );
+    const out = buildAmbiguousCandidates(many, new Set(), strongAgreement);
+    expect(out).toHaveLength(AMBIGUOUS_FANOUT_CAP);
+    expect(out.every((c) => c.ambiguousCandidateCount === AMBIGUOUS_FANOUT_CAP + 5)).toBe(true);
+  });
+});
+
 describe("classifyReviewTier (confidence grouping for batch review)", () => {
   const bind = (over: Partial<Parameters<typeof classifyReviewTier>[0]>) =>
     classifyReviewTier({
@@ -235,6 +306,29 @@ describe("classifyReviewTier (confidence grouping for batch review)", () => {
     // 254 of the 278 pending rows are exact-name matches, so an exact name with
     // nothing corroborating it is the case a reviewer must actually look at.
     expect(bind({ trustComponents: { name: 1, locality: 0.3 } }).tier).toBe("tier3");
+  });
+
+  it("caps an ambiguous name at tier2 — never tier1, however much corroborates it", () => {
+    // Same corroboration that earns an exact name tier1 above (same city +
+    // agreeing phone). An ambiguous key must not reach the top of the queue:
+    // one of its candidates is wrong by construction.
+    const r = bind({
+      ruleKey: AMBIGUOUS_NAME_RULE,
+      trustComponents: { name: 0.5, locality: 1 },
+      payload: { phone_agrees: true, ambiguous_candidate_count: 2 },
+    });
+    expect(r.tier).toBe("tier2");
+    expect(r.reason).toContain("1 of 2 same-name entities");
+  });
+
+  it("tier3 — an ambiguous name with nothing corroborating it", () => {
+    const r = bind({
+      ruleKey: AMBIGUOUS_NAME_RULE,
+      trustComponents: { name: 0.25, locality: 0.3 },
+      payload: { ambiguous_candidate_count: 4 },
+    });
+    expect(r.tier).toBe("tier3");
+    expect(r.reason).toContain("nothing corroborates it");
   });
 
   it("tier2 — a unique identifier match with a plausible name", () => {

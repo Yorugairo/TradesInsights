@@ -89,6 +89,101 @@ export const MIN_QUEUE_TRUST = 0.55;
  * matches the two multi-token rules and never this one — and so per-rule accept
  * rate scores one-word matches on their own evidence. */
 export const SINGLE_TOKEN_NAME_RULE = "binding_name_exact_single_token";
+
+/** An exact name key reaching SEVERAL registry entities, which the org's own
+ * phone could not narrow to one. Every candidate becomes its own review row, so
+ * a human resolves the ambiguity instead of the pipeline silently dropping it.
+ *
+ * Its own rule key for the same reason single-token names have one: weakness of
+ * a match TYPE is expressed by the rule (strict-ineligibility + independent
+ * accept-rate learning), never by fudging the name component down. The name
+ * really did match exactly here — what is missing is UNIQUENESS, and that is not
+ * what `name` measures.
+ *
+ * NEVER ADD THIS TO `evaluateStrictBind`. Its absence from that list is the
+ * safety property: auto-binding an ambiguous match is impossible by
+ * construction, not merely disallowed by policy. `registry-observations.test.ts`
+ * asserts it. */
+export const AMBIGUOUS_NAME_RULE = "binding_name_ambiguous";
+
+/** Ceiling on review rows one ambiguous org may produce.
+ *
+ * MEASURED, NOT GUESSED (org_binding_gap run 2026-07-25, whole population):
+ * 15 ambiguous orgs, mean 2.4 candidates, p95 = 4, WORST = 4. So this is
+ * headroom against a future pathological name, not a filter — it does not fire
+ * on any org that exists today. The earlier "FASTSIGNS matches 16" figure was
+ * measured with a SQL LIKE rather than the binder's `crossNameKey`; by the real
+ * key it matches 4.
+ *
+ * When it does fire, the TRUE count is recorded in the payload so a capped row
+ * can never be misread as "only N matched", and the drop is logged. */
+export const AMBIGUOUS_FANOUT_CAP = 10;
+
+/** One row the binding loop is about to emit. Every rule but the ambiguous lane
+ * produces exactly one of these per organization. */
+export interface EmissionCandidate {
+  hit: RegistryIdentityRow;
+  ruleKey: string;
+  agreement: IdentifierAgreement;
+  nameComponent: number;
+  /** How many entities the ambiguous key actually reached — BEFORE the cap.
+   * Null for every other rule. Recorded so a capped row can never be misread as
+   * "only these N matched". */
+  ambiguousCandidateCount: number | null;
+}
+
+/**
+ * Turn an ambiguous name key's entities into review candidates — one per entity,
+ * strongest evidence first.
+ *
+ * ORDER IS DETERMINISTIC AND MEANINGFUL. Candidates whose registry phone the org
+ * also carries sort ahead of those that do not, then by entity id. Determinism
+ * means a re-run produces the same rows rather than a reshuffled set; the
+ * evidence ordering means that if the cap ever fires it drops the WEAKEST
+ * candidates instead of an arbitrary tail.
+ *
+ * Note `phones` reaching here can only be empty or ambiguous: the caller already
+ * routed the "exactly one phone agrees" case to `binding_name_phone`. Two or
+ * more agreeing phones is itself a finding, and each such candidate keeps its
+ * real agreement band so the reviewer sees which ones corroborate.
+ */
+export function buildAmbiguousCandidates(
+  hits: RegistryIdentityRow[],
+  phones: Set<string>,
+  agreementFor: (type: string, value: string) => IdentifierAgreement,
+): EmissionCandidate[] {
+  if (hits.length === 0) return [];
+  return hits
+    .map((hit) => {
+      const phoneAgrees = hit.phone !== null && phones.has(hit.phone);
+      const agreement: IdentifierAgreement =
+        phones.size === 0 ? "none" : phoneAgrees ? agreementFor("phone", hit.phone!) : "contradicts";
+      return { hit, phoneAgrees, agreement };
+    })
+    .sort((a, b) =>
+      a.phoneAgrees === b.phoneAgrees
+        ? a.hit.entityId.localeCompare(b.hit.entityId)
+        : a.phoneAgrees
+          ? -1
+          : 1,
+    )
+    .slice(0, AMBIGUOUS_FANOUT_CAP)
+    .map((r) => ({
+      hit: r.hit,
+      ruleKey: AMBIGUOUS_NAME_RULE,
+      agreement: r.agreement,
+      // 1/n, NOT 1. The component is documented as "1.0 for a UNIQUE exact
+      // cross-key name match" (see StrictBindGateInput) — uniqueness is part of
+      // what it means, so 1.0 here would misstate a measured number a reviewer
+      // reads. 1/n is the honest reading: given only the name, this is the
+      // chance that this candidate of n is the right one. It also falls
+      // naturally as the ambiguity widens, and it keeps this rule outside
+      // `classifyReviewTier`'s `(c.name ?? 0) >= 1` exact-name test even if a
+      // future edit adds the rule key to that list.
+      nameComponent: 1 / hits.length,
+      ambiguousCandidateCount: hits.length,
+    }));
+}
 /** A rule earns auto-accept (non-binding types only) at ≥N reviewed decisions… */
 export const AUTO_ACCEPT_MIN_DECISIONS = 10;
 /** …with an accept rate at or above this. */
@@ -778,6 +873,10 @@ export async function generateRegistryObservations(
     const singleTokenName = keyTokens === 1;
 
     let hit: RegistryIdentityRow | undefined;
+    /** Set ONLY by the ambiguous-name branch, and only as a last resort — see
+     * there. Emitted per candidate at the bottom of the loop when no other rule
+     * produced a `hit`. */
+    let ambiguousHits: RegistryIdentityRow[] = [];
     let ruleKey = "";
     let nameComponent = 1;
     // How the org's OWN identifier evidence relates to the matched entity. "none"
@@ -799,13 +898,30 @@ export async function generateRegistryObservations(
         : phoneAgrees
           ? "binding_name_phone"
           : "binding_name_exact";
-    } else if (nameHits && nameHits.length > 1 && phones.size > 0) {
-      // Ambiguous name key — the L&I phone may disambiguate to exactly one.
-      const agreeing = nameHits.filter((h) => h.phone !== null && phones.has(h.phone));
+    } else if (nameHits && nameHits.length > 1) {
+      // Ambiguous name key — the L&I phone may disambiguate to exactly one, and
+      // when it does this stays an ordinary unique-name candidate.
+      //
+      // THE PHONE GATE USED TO SIT ON THE BRANCH ITSELF (`&& phones.size > 0`),
+      // so a phone-less ambiguous org never even reached this code. Both paths —
+      // no phone at all, and a phone that narrows to 0 or 2+ — then left `hit`
+      // undefined and `ruleKey` empty, and the org fell out of the loop emitting
+      // NOTHING. Not bound, not queued, not counted: invisible.
+      const agreeing =
+        phones.size > 0 ? nameHits.filter((h) => h.phone !== null && phones.has(h.phone)) : [];
       if (agreeing.length === 1) {
         hit = agreeing[0]!;
         agreement = agreementFor("phone", hit.phone!);
         ruleKey = "binding_name_phone";
+      } else {
+        // Held, NOT assigned to `hit`. Every rule below this chain is guarded on
+        // `!hit`, so claiming the org here would steal it from the address,
+        // domain and alias rules — each of which is a UNIQUE identifier match
+        // and therefore strictly better evidence than an N-way name tie. These
+        // candidates are emitted only if nothing else matches, which makes this
+        // lane purely ADDITIVE: it fires exactly where the loop used to emit
+        // nothing, and cannot change a single existing observation.
+        ambiguousHits = nameHits;
       }
     } else if (phones.size > 0) {
       // No name match — phone-exact against a UNIQUE registry phone, gated on
@@ -929,171 +1045,207 @@ export async function generateRegistryObservations(
         }
       }
     }
-    if (!hit || !ruleKey) continue;
+    // NORMALLY EXACTLY ONE CANDIDATE — every rule above resolves to a single
+    // `hit`. The ambiguous-name lane is the one exception: it contributes N,
+    // and since `registry_observations.registry_entity_id` is NOT NULL, "N
+    // candidates" cannot be expressed as one row. So each candidate becomes its
+    // own review row — which is also the shape the queue already understands:
+    // "org X might be entity Y", and a human accepts one.
+    //
+    // The ambiguous fallback is reached ONLY when no rule produced a `hit`, so
+    // this lane cannot displace an address / domain / alias match.
+    const candidates: EmissionCandidate[] =
+      hit && ruleKey
+        ? [{ hit, ruleKey, agreement, nameComponent, ambiguousCandidateCount: null }]
+        : buildAmbiguousCandidates(ambiguousHits, phones, agreementFor);
+    if (candidates.length === 0) continue;
+    if (ambiguousHits.length > AMBIGUOUS_FANOUT_CAP) {
+      // Never drop silently: a capped org is the one case where the queue does
+      // not hold the whole truth, and the log is where that is admitted.
+      opts.logger?.info(
+        { org: org.canonical_name, candidates: ambiguousHits.length, emitted: candidates.length },
+        "ambiguous name fan-out capped",
+      );
+    }
+    for (const candidate of candidates) {
+      // Shadows the per-org bindings above so the emission body below reads
+      // identically for a single-hit rule and for one ambiguous candidate.
+      const { hit, ruleKey, agreement, nameComponent, ambiguousCandidateCount } = candidate;
 
-    // The EFFECTIVE key that produced this match. binding_name_exact/
-    // binding_name_phone matched via `key` (byNameKey, which holds the
-    // registry canonical AND its aliases); binding_alias_exact matched via the
-    // ORG'S OWN alias key (`matchedAlias`) — NOT `key`, which is the org's
-    // canonical and (by construction of the alias_exact branch above) never
-    // matched anything on this entity. Every other rule (phone/address/domain
-    // match) is a similarity match, not an exact-key one, so it has no single
-    // "effective key" — left null, which correctly disables brand attribution
-    // for those rules (a phone/address hit identifies the enterprise, not a
-    // specific brand within it).
-    const effectiveMatchKey =
-      ruleKey === "binding_alias_exact"
-        ? matchedAlias
-        : ruleKey === "binding_name_exact" ||
-            ruleKey === "binding_name_phone" ||
-            // Matched through byNameKey by the same route, so brand attribution
-            // works identically — only the auto-bind eligibility differs.
-            ruleKey === SINGLE_TOKEN_NAME_RULE
-          ? key
-          : null;
+      // The EFFECTIVE key that produced this match. binding_name_exact/
+      // binding_name_phone matched via `key` (byNameKey, which holds the
+      // registry canonical AND its aliases); binding_alias_exact matched via the
+      // ORG'S OWN alias key (`matchedAlias`) — NOT `key`, which is the org's
+      // canonical and (by construction of the alias_exact branch above) never
+      // matched anything on this entity. Every other rule (phone/address/domain
+      // match) is a similarity match, not an exact-key one, so it has no single
+      // "effective key" — left null, which correctly disables brand attribution
+      // for those rules (a phone/address hit identifies the enterprise, not a
+      // specific brand within it).
+      const effectiveMatchKey =
+        ruleKey === "binding_alias_exact"
+          ? matchedAlias
+          : ruleKey === "binding_name_exact" ||
+              ruleKey === "binding_name_phone" ||
+              // Matched through byNameKey by the same route, so brand attribution
+              // works identically — only the auto-bind eligibility differs.
+              ruleKey === SINGLE_TOKEN_NAME_RULE ||
+              // Same route again: the ambiguity is about WHICH entity the key
+              // reaches, not about how it reached them. Each candidate still
+              // deserves its brand shown — often the brand IS what distinguishes
+              // the same-named entities a reviewer is being asked to choose from.
+              ruleKey === AMBIGUOUS_NAME_RULE
+            ? key
+            : null;
 
-    // Which operating brand did this match land on? Looked up by the EFFECTIVE
-    // key (not always `key` — see above), so an alias_exact match can find its
-    // brand too, not just the direct byNameKey path.
-    const matchedBrand = effectiveMatchKey
-      ? (brandByEntityKey.get(hit.entityId)?.get(effectiveMatchKey) ?? null)
-      : null;
-    // The registry-side NAME STRING that actually matched — what
-    // name_similarity below compares against, instead of always the entity's
-    // canonical name (see resolveMatchedRegistryName doc for the bug this
-    // closes). Non-name-keyed rules keep comparing to canonical, matching
-    // their pre-existing (correct) behavior.
-    const matchedRegistryName = effectiveMatchKey
-      ? resolveMatchedRegistryName(hit, effectiveMatchKey, matchedBrand)
-      : (hit.canonicalName ?? "");
-    const locality = gradeLocality({
-      entityCity: hit.cityToken,
-      entityCounty: hit.registeredCountyName,
-      orgLocalities: org.localities,
-      orgCounties: org.counties,
-    });
-    // Does Google independently corroborate this entity? Only phone AND name
-    // counts — phone alone is how most of those links were made in the first
-    // place (see classifyGoogleConfirmation).
-    const googleConfirmation = classifyGoogleConfirmation({
-      lniPhone: hit.phone,
-      googlePhone: hit.googlePhone,
-      lniName: hit.canonicalName,
-      googleName: hit.googleName,
-    });
-    const identifier = gradeIdentifierComponent({
-      agreement,
-      footprint: identifierIndex.footprintByEntity.get(hit.entityId) ?? null,
-      googleConfirmation,
-    });
-    const components: TrustComponents = {
-      name: nameComponent,
-      identifier,
-      locality,
-      role: org.role_weight,
-      // A.4 — lift by the registry's own corroboration of the entity (bounded;
-      // absent on hand-built rows / unpopulated view ⇒ unchanged).
-      corroboration: Math.min(
-        1,
-        org.record_count / 3 + registryCorroborationBonus(hit.recordCount),
-      ),
-      ruleHistory: rate(ruleKey),
-    };
-    // Strict auto-bind gate — exact name + same city + shared authoritative trade.
-    const registryTradeCodes = new Set((hit.tradeCodes ?? []).map((c) => c.toLowerCase()));
-    const gate = evaluateStrictBind({
-      ruleKey,
-      nameComponent,
-      orgNameKey: key,
-      registryNormalizedKey: hit.canonicalNameNormalized ? crossNameKey(hit.canonicalNameNormalized) : null,
-      // The org's key matched this entity, but NOT via its canonical name ⇒ it
-      // came in through a registry DBA alias. Checked structurally rather than
-      // relying on the canonical_name_normalized equality above, which is
-      // skipped when the contract leaves that column null.
-      viaRegistryAlias:
-        hit.canonicalName !== null && hit.canonicalName !== undefined
-          ? crossNameKey(hit.canonicalName) !== key
-          : false,
-      locality,
-      orgTradeCodes: orgPermitTrades.get(org.id) ?? new Set<string>(),
-      registryTradeCodes,
-    });
-    inserts.push({
-      observationType: "binding_name_match",
-      organizationId: org.id,
-      registryEntityId: hit.entityId,
-      ruleKey,
-      payload: {
-        org_name: org.canonical_name,
-        registry_name: hit.canonicalName,
-        // Compared against the name that ACTUALLY matched (matchedRegistryName)
-        // — not always the canonical. See resolveMatchedRegistryName's doc for
-        // the bug this closes: a near-perfect alias/brand match used to display
-        // as a near-zero similarity because it was always diffed against the
-        // entity's unrelated canonical name.
-        name_similarity: nameSimilarity(org.canonical_name, matchedRegistryName),
-        // Only populated when the matched name differs from the canonical —
-        // null means "matched the canonical itself, nothing extra to show".
-        matched_registry_name:
-          matchedRegistryName.length > 0 && matchedRegistryName !== (hit.canonicalName ?? "")
-            ? matchedRegistryName
-            : null,
-        phone_evidence: phones.size > 0 ? [...phones] : [],
-        registry_phone: hit.phone,
-        phone_agrees: hit.phone !== null && phones.has(hit.phone),
-        address_evidence: addresses.size > 0 ? [...addresses] : [],
-        registry_address:
-          ruleKey === "binding_address_match"
-            ? [hit.registeredAddress, hit.registeredPostalCode].filter(Boolean).join(" ")
-            : null,
-        // 4B.3: a shared-address match tells the reviewer HOW shared the key
-        // was (1 = unique; ≥2 = dominance-disambiguated suite block).
-        shared_address_bucket_size: addressBucketSize,
-        // 4B.2 / Phase 4 domain rule: the matched secondary-channel value.
-        registry_google_phone: matchedGooglePhone,
-        domain_evidence: domains.size > 0 ? [...domains] : [],
-        registry_root_domain: matchedDomain,
-        // The org name-variant that matched (migration 0031); null for every
-        // other rule, so a reviewer always sees WHICH name earned an alias hit.
-        matched_alias: matchedAlias,
-        // The operating brand this candidate binds to, and its own licence —
-        // what the accept stamps instead of the entity's whole licence array.
-        matched_brand_name: matchedBrand?.name ?? null,
-        matched_brand_licence: matchedBrand?.licence ?? null,
-        // The BRAND's own phone (its own L&I record) — distinct from
-        // `registry_phone` above, which is always the ENTITY's primary-record
-        // phone. Conflating the two is exactly the Rescue Rooter bug: a
-        // reviewer saw the parent's number displayed for a sibling brand that
-        // has its own, different number on file.
-        matched_brand_phone: matchedBrand?.phone ?? null,
-        registry_city: hit.cityToken,
-        org_localities: org.localities.slice(0, 8),
-        // The geography behind the graded `locality` component, so a reviewer can
-        // check the band rather than trust the number.
-        registry_county: hit.registeredCountyName ?? null,
-        org_counties: org.counties.slice(0, 8),
-        // Authoritative L&I trade codes the org's permits also point at. A
-        // corroborating FACT for the tier, not a score input — the strict gate
-        // already computed it, so tiering reuses it rather than re-deriving.
-        trade_match: gate.sharedTradeCodes.length > 0,
-        shared_trade_codes: gate.sharedTradeCodes,
-        // How Google corroborates the ENTITY, and the values a reviewer checks it
-        // against. `phone_only` is recorded but never scored as identity — it is
-        // usually just how the Google link was made.
-        google_confirmation: googleConfirmation,
-        registry_google_name: hit.googleName ?? null,
-        // What the `identifier` component is actually reporting: agreement on a
-        // channel, or (when the org has no evidence) the entity's own footprint.
-        identifier_agreement: agreement,
-        role_records: org.record_count,
-        snapshot: identitySnapshot(hit, matchedBrand),
-      },
-      components,
-      // One suggestion per org+entity pair regardless of which rule found it.
-      dedupeKey: `bind:${org.id}:${hit.entityId}`,
-      strictAutoBind: gate.strict,
-      strictSharedTrades: gate.sharedTradeCodes,
-    });
+      // Which operating brand did this match land on? Looked up by the EFFECTIVE
+      // key (not always `key` — see above), so an alias_exact match can find its
+      // brand too, not just the direct byNameKey path.
+      const matchedBrand = effectiveMatchKey
+        ? (brandByEntityKey.get(hit.entityId)?.get(effectiveMatchKey) ?? null)
+        : null;
+      // The registry-side NAME STRING that actually matched — what
+      // name_similarity below compares against, instead of always the entity's
+      // canonical name (see resolveMatchedRegistryName doc for the bug this
+      // closes). Non-name-keyed rules keep comparing to canonical, matching
+      // their pre-existing (correct) behavior.
+      const matchedRegistryName = effectiveMatchKey
+        ? resolveMatchedRegistryName(hit, effectiveMatchKey, matchedBrand)
+        : (hit.canonicalName ?? "");
+      const locality = gradeLocality({
+        entityCity: hit.cityToken,
+        entityCounty: hit.registeredCountyName,
+        orgLocalities: org.localities,
+        orgCounties: org.counties,
+      });
+      // Does Google independently corroborate this entity? Only phone AND name
+      // counts — phone alone is how most of those links were made in the first
+      // place (see classifyGoogleConfirmation).
+      const googleConfirmation = classifyGoogleConfirmation({
+        lniPhone: hit.phone,
+        googlePhone: hit.googlePhone,
+        lniName: hit.canonicalName,
+        googleName: hit.googleName,
+      });
+      const identifier = gradeIdentifierComponent({
+        agreement,
+        footprint: identifierIndex.footprintByEntity.get(hit.entityId) ?? null,
+        googleConfirmation,
+      });
+      const components: TrustComponents = {
+        name: nameComponent,
+        identifier,
+        locality,
+        role: org.role_weight,
+        // A.4 — lift by the registry's own corroboration of the entity (bounded;
+        // absent on hand-built rows / unpopulated view ⇒ unchanged).
+        corroboration: Math.min(
+          1,
+          org.record_count / 3 + registryCorroborationBonus(hit.recordCount),
+        ),
+        ruleHistory: rate(ruleKey),
+      };
+      // Strict auto-bind gate — exact name + same city + shared authoritative trade.
+      const registryTradeCodes = new Set((hit.tradeCodes ?? []).map((c) => c.toLowerCase()));
+      const gate = evaluateStrictBind({
+        ruleKey,
+        nameComponent,
+        orgNameKey: key,
+        registryNormalizedKey: hit.canonicalNameNormalized ? crossNameKey(hit.canonicalNameNormalized) : null,
+        // The org's key matched this entity, but NOT via its canonical name ⇒ it
+        // came in through a registry DBA alias. Checked structurally rather than
+        // relying on the canonical_name_normalized equality above, which is
+        // skipped when the contract leaves that column null.
+        viaRegistryAlias:
+          hit.canonicalName !== null && hit.canonicalName !== undefined
+            ? crossNameKey(hit.canonicalName) !== key
+            : false,
+        locality,
+        orgTradeCodes: orgPermitTrades.get(org.id) ?? new Set<string>(),
+        registryTradeCodes,
+      });
+      inserts.push({
+        observationType: "binding_name_match",
+        organizationId: org.id,
+        registryEntityId: hit.entityId,
+        ruleKey,
+        payload: {
+          org_name: org.canonical_name,
+          registry_name: hit.canonicalName,
+          // Compared against the name that ACTUALLY matched (matchedRegistryName)
+          // — not always the canonical. See resolveMatchedRegistryName's doc for
+          // the bug this closes: a near-perfect alias/brand match used to display
+          // as a near-zero similarity because it was always diffed against the
+          // entity's unrelated canonical name.
+          name_similarity: nameSimilarity(org.canonical_name, matchedRegistryName),
+          // Only populated when the matched name differs from the canonical —
+          // null means "matched the canonical itself, nothing extra to show".
+          matched_registry_name:
+            matchedRegistryName.length > 0 && matchedRegistryName !== (hit.canonicalName ?? "")
+              ? matchedRegistryName
+              : null,
+          // How many entities this org's name key reached, BEFORE any cap. Null
+          // for every rule but the ambiguous lane. The reviewer needs it to read
+          // the row correctly: "1 of 4 candidates" is a different decision from
+          // "the match", and a capped row must never look like the whole set.
+          ambiguous_candidate_count: ambiguousCandidateCount,
+          phone_evidence: phones.size > 0 ? [...phones] : [],
+          registry_phone: hit.phone,
+          phone_agrees: hit.phone !== null && phones.has(hit.phone),
+          address_evidence: addresses.size > 0 ? [...addresses] : [],
+          registry_address:
+            ruleKey === "binding_address_match"
+              ? [hit.registeredAddress, hit.registeredPostalCode].filter(Boolean).join(" ")
+              : null,
+          // 4B.3: a shared-address match tells the reviewer HOW shared the key
+          // was (1 = unique; ≥2 = dominance-disambiguated suite block).
+          shared_address_bucket_size: addressBucketSize,
+          // 4B.2 / Phase 4 domain rule: the matched secondary-channel value.
+          registry_google_phone: matchedGooglePhone,
+          domain_evidence: domains.size > 0 ? [...domains] : [],
+          registry_root_domain: matchedDomain,
+          // The org name-variant that matched (migration 0031); null for every
+          // other rule, so a reviewer always sees WHICH name earned an alias hit.
+          matched_alias: matchedAlias,
+          // The operating brand this candidate binds to, and its own licence —
+          // what the accept stamps instead of the entity's whole licence array.
+          matched_brand_name: matchedBrand?.name ?? null,
+          matched_brand_licence: matchedBrand?.licence ?? null,
+          // The BRAND's own phone (its own L&I record) — distinct from
+          // `registry_phone` above, which is always the ENTITY's primary-record
+          // phone. Conflating the two is exactly the Rescue Rooter bug: a
+          // reviewer saw the parent's number displayed for a sibling brand that
+          // has its own, different number on file.
+          matched_brand_phone: matchedBrand?.phone ?? null,
+          registry_city: hit.cityToken,
+          org_localities: org.localities.slice(0, 8),
+          // The geography behind the graded `locality` component, so a reviewer can
+          // check the band rather than trust the number.
+          registry_county: hit.registeredCountyName ?? null,
+          org_counties: org.counties.slice(0, 8),
+          // Authoritative L&I trade codes the org's permits also point at. A
+          // corroborating FACT for the tier, not a score input — the strict gate
+          // already computed it, so tiering reuses it rather than re-deriving.
+          trade_match: gate.sharedTradeCodes.length > 0,
+          shared_trade_codes: gate.sharedTradeCodes,
+          // How Google corroborates the ENTITY, and the values a reviewer checks it
+          // against. `phone_only` is recorded but never scored as identity — it is
+          // usually just how the Google link was made.
+          google_confirmation: googleConfirmation,
+          registry_google_name: hit.googleName ?? null,
+          // What the `identifier` component is actually reporting: agreement on a
+          // channel, or (when the org has no evidence) the entity's own footprint.
+          identifier_agreement: agreement,
+          role_records: org.record_count,
+          snapshot: identitySnapshot(hit, matchedBrand),
+        },
+        components,
+        // One suggestion per org+entity pair regardless of which rule found it.
+        dedupeKey: `bind:${org.id}:${hit.entityId}`,
+        strictAutoBind: gate.strict,
+        strictSharedTrades: gate.sharedTradeCodes,
+      });
+    }
   }
 
   // ── bound orgs: phone adoption + alias/trade export ──
@@ -1335,9 +1487,34 @@ export async function generateRegistryObservations(
     for (const r of res.rows as { dedupe_key: string }[]) existingDedupeKeys.add(r.dedupe_key);
   }
 
+  // THE FLOOR IS PER-ORG FOR THE AMBIGUOUS LANE, PER-ROW FOR EVERY OTHER RULE.
+  //
+  // `MIN_QUEUE_TRUST` asks "is this worth operator time?". For a normal rule
+  // that is a question about the row. For an ambiguous name it is a question
+  // about the ORG: the reviewer's job is to CHOOSE among same-named entities,
+  // and a partial set makes that impossible — a lone surviving row labelled
+  // "1 of 4" with the other three silently deleted is worse than emitting
+  // nothing, because it looks like an answer.
+  //
+  // Candidates of one org legitimately score differently (one is in the right
+  // city, another's phone agrees), so a per-row floor WILL split sets: measured
+  // on the live population it kept 11 of 39 rows. So the set stands or falls
+  // together, on its best member. This does not weaken the floor — an org whose
+  // best candidate is below it still contributes nothing — and the orgs it
+  // excludes remain countable in `org_binding_gap` rather than invisible.
+  const ambiguousOrgClears = new Set<string>();
+  for (const ins of inserts) {
+    if (ins.ruleKey !== AMBIGUOUS_NAME_RULE) continue;
+    if (computeTrust(ins.components) >= MIN_QUEUE_TRUST) ambiguousOrgClears.add(ins.organizationId);
+  }
+
   for (const ins of inserts) {
     const trust = computeTrust(ins.components);
-    if (trust < MIN_QUEUE_TRUST) {
+    const clearsFloor =
+      ins.ruleKey === AMBIGUOUS_NAME_RULE
+        ? ambiguousOrgClears.has(ins.organizationId)
+        : trust >= MIN_QUEUE_TRUST;
+    if (!clearsFloor) {
       summary.belowFloor += 1;
       continue;
     }
@@ -1620,6 +1797,26 @@ export function classifyReviewTier(o: {
   if (sharedTrade) {
     points += 1;
     corroborators.push("shared trade");
+  }
+
+  // An exact name key reaching SEVERAL entities. One of these rows is right and
+  // the rest are wrong BY CONSTRUCTION, so the name cannot carry a row the way a
+  // unique match does — capped a full tier below `nameExact` and never tier1.
+  //
+  // The corroborators still ORDER them, which is the entire value: the reviewer
+  // should open the same-city candidate whose phone agrees first, not all n. A
+  // flat tier3 for the whole set would be honest about the ambiguity and useless
+  // for resolving it.
+  if (o.ruleKey === AMBIGUOUS_NAME_RULE) {
+    const n =
+      typeof o.payload["ambiguous_candidate_count"] === "number"
+        ? (o.payload["ambiguous_candidate_count"] as number)
+        : 0;
+    const which = n > 1 ? `1 of ${n} same-name entities` : "ambiguous name";
+    const facts = corroborators.join(" + ");
+    if (points >= 2) return info("tier2", `${which} + ${facts}`);
+    if (points === 1) return info("tier3", `${which} + ${facts}`);
+    return info("tier3", `${which} · nothing corroborates it`);
   }
 
   if (nameExact) {
