@@ -9,6 +9,7 @@ import {
   computeTrust,
   crossNameKey,
   evaluateStrictBind,
+  SINGLE_TOKEN_NAME_RULE,
   GOOGLE_PHONE_IDENTIFIER_COMPONENT,
   laplaceAcceptRate,
   matchOrgByAddress,
@@ -122,6 +123,23 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
     const r = evaluateStrictBind(base);
     expect(r.strict).toBe(true);
     expect(r.sharedTradeCodes).toEqual(["electrical"]);
+  });
+
+  it("NEVER auto-binds a single-token name match, even when every other gate passes", () => {
+    // Governance-critical. One-word company names (MCKINSTRY, ADT, RESICON) are
+    // now looked up — they were silently skipped before, making them unbindable —
+    // but they route to their own rule key precisely so this gate refuses them.
+    // A one-word key is a smaller piece of evidence than a multi-word one, so it
+    // earns a review, never an automatic bind. If this test ever goes green by
+    // returning true, one-word matches have gained auto-bind rights nobody
+    // granted them.
+    const r = evaluateStrictBind({
+      ...base,
+      ruleKey: SINGLE_TOKEN_NAME_RULE,
+      orgNameKey: "MCKINSTRY",
+      registryNormalizedKey: "MCKINSTRY",
+    });
+    expect(r.strict).toBe(false);
   });
 
   it("refuses without a shared trade (registry codes GC, permits say roofing → stays in review)", () => {

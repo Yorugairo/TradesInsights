@@ -83,6 +83,12 @@ export type ObservationType = (typeof OBSERVATION_TYPES)[number];
 
 /** Queue floor: candidates scoring below this are not worth operator time. */
 export const MIN_QUEUE_TRUST = 0.55;
+
+/** Exact, UNIQUE name match on a one-word company name ("MCKINSTRY", "ADT").
+ * Its own rule so it is review-only by construction — `evaluateStrictBind`
+ * matches the two multi-token rules and never this one — and so per-rule accept
+ * rate scores one-word matches on their own evidence. */
+export const SINGLE_TOKEN_NAME_RULE = "binding_name_exact_single_token";
 /** A rule earns auto-accept (non-binding types only) at ≥N reviewed decisions… */
 export const AUTO_ACCEPT_MIN_DECISIONS = 10;
 /** …with an accept rate at or above this. */
@@ -753,7 +759,23 @@ export async function generateRegistryObservations(
     const addresses = orgAddresses.get(org.id) ?? new Set<string>();
     const domains = orgDomains.get(org.id) ?? new Set<string>();
     const key = crossNameKey(org.canonical_name);
-    const nameHits = key && key.split(" ").length >= 2 ? byNameKey.get(key) : undefined;
+    const keyTokens = key ? key.split(" ").filter(Boolean).length : 0;
+    // SINGLE-TOKEN NAMES ARE LOOKED UP TOO. They used to be skipped outright
+    // (`length >= 2`), which silently made every one-word company unbindable no
+    // matter how clean the match: MCKINSTRY, RESICON, COCHRAN, ADT, TREEWALKER,
+    // AIRX, ENTEK, GROUNDWORKS all key to a single token and all have an EXACT,
+    // UNIQUE registry match that never became a candidate. McKinstry is one of
+    // the largest mechanical contractors in the state.
+    //
+    // The original guard was guessing at ambiguity, but ambiguity is already
+    // measured: `nameHits.length === 1` means the key reaches exactly one entity,
+    // and a unique one-word key is strong, not weak. What stays different is the
+    // RULE KEY — single-token matches get their own, so (a) `evaluateStrictBind`
+    // cannot auto-bind them (its `nameRule` check lists only the two multi-token
+    // rules) and (b) per-rule accept-rate learning scores them independently, so
+    // if they do turn out noisy the queue floor corrects itself on evidence.
+    const nameHits = keyTokens >= 1 ? byNameKey.get(key) : undefined;
+    const singleTokenName = keyTokens === 1;
 
     let hit: RegistryIdentityRow | undefined;
     let ruleKey = "";
@@ -769,7 +791,14 @@ export async function generateRegistryObservations(
       const phoneAgrees = hit.phone !== null && phones.has(hit.phone);
       agreement =
         phones.size === 0 ? "none" : phoneAgrees ? agreementFor("phone", hit.phone!) : "contradicts";
-      ruleKey = phoneAgrees ? "binding_name_phone" : "binding_name_exact";
+      // Single-token routes to its own rule EVEN WHEN THE PHONE AGREES, so this
+      // change cannot add a single auto-bind: `binding_name_phone` is strict-tier
+      // eligible and this deliberately never becomes it.
+      ruleKey = singleTokenName
+        ? SINGLE_TOKEN_NAME_RULE
+        : phoneAgrees
+          ? "binding_name_phone"
+          : "binding_name_exact";
     } else if (nameHits && nameHits.length > 1 && phones.size > 0) {
       // Ambiguous name key — the L&I phone may disambiguate to exactly one.
       const agreeing = nameHits.filter((h) => h.phone !== null && phones.has(h.phone));
@@ -915,7 +944,11 @@ export async function generateRegistryObservations(
     const effectiveMatchKey =
       ruleKey === "binding_alias_exact"
         ? matchedAlias
-        : ruleKey === "binding_name_exact" || ruleKey === "binding_name_phone"
+        : ruleKey === "binding_name_exact" ||
+            ruleKey === "binding_name_phone" ||
+            // Matched through byNameKey by the same route, so brand attribution
+            // works identically — only the auto-bind eligibility differs.
+            ruleKey === SINGLE_TOKEN_NAME_RULE
           ? key
           : null;
 
@@ -1501,7 +1534,11 @@ export function classifyReviewTier(o: {
   const nameExact =
     (o.ruleKey === "binding_name_exact" ||
       o.ruleKey === "binding_name_phone" ||
-      o.ruleKey === "binding_alias_exact") &&
+      o.ruleKey === "binding_alias_exact" ||
+      // A UNIQUE one-word key is an exact name hit and tiers as one. The reason
+      // it is a separate rule is auto-bind eligibility, not evidence quality,
+      // and a reviewer still reads the name before accepting.
+      o.ruleKey === SINGLE_TOKEN_NAME_RULE) &&
     (c["name"] ?? 0) >= 1;
   const nameSim =
     typeof o.payload["name_similarity"] === "number"
