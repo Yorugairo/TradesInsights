@@ -12,12 +12,14 @@ import { sql } from "drizzle-orm";
 import type pg from "pg";
 import { accountProfiles, organizations, projects, rawArtifacts, sourceRecords, sourceRuns, type Db } from "@otn/db";
 import {
+  AMBIGUOUS_NAME_RULE,
   AUTO_ACCEPT_MIN_DECISIONS,
   classifyReviewTier,
   crossNameKey,
   decideRegistryObservation,
   exportRegistryObservations,
   generateRegistryObservations,
+  IDENTIFIER_AGREES_WEAK,
   listRegistryObservations,
   persistOrganizationAlias,
   persistOrganizationIdentifiers,
@@ -333,7 +335,14 @@ describe("registry observation loop", () => {
       (o) => o.organizationId === org2Id && o.observationType === "binding_name_match",
     )!;
     expect(cand.ruleKey).toBe("binding_phone_match");
-    expect(cand.trustComponents["identifier"]).toBe(1); // phone agrees with L&I
+    // WEAK, not 1, and that is correct — this assertion had gone stale. It was
+    // written 2026-07-19 expecting 1; the confidence-band rewire (2026-07-23)
+    // made `agreementFor` return "weak" whenever the identifier graph holds no
+    // entry for the value, because an ungraphed phone cannot be vouched for as
+    // unique. This test passes NO identifierIndex, so "weak" is the honest grade.
+    // Production does pass one (strict-bind loads it), where a phone unique to
+    // the entity still grades strong.
+    expect(cand.trustComponents["identifier"]).toBe(IDENTIFIER_AGREES_WEAK);
     expect(cand.trustComponents["name"]).toBeGreaterThanOrEqual(0.3); // similarity floor
     expect(cand.trustComponents["name"]).toBeLessThan(1); // not a name-key match
     expect(cand.payload["phone_agrees"]).toBe(true);
@@ -881,10 +890,20 @@ describe("registry-side DBA aliases (contract column `aliases`) as match keys", 
     expect(pending.filter((o) => o.organizationId === aOrgId)).toHaveLength(1);
   });
 
-  it("fails closed when a DBA collides with ANOTHER entity's canonical name", async () => {
+  it("queues BOTH candidates when a DBA collides with another entity's canonical name", async () => {
+    // BEHAVIOUR CHANGED DELIBERATELY. This used to assert that a DBA/canonical
+    // collision produced NOTHING — "no single reviewable suggestion". It failed
+    // closed in the sense that nothing bound, but it also failed SILENT: the org
+    // vanished with no record anywhere, which is the defect binding_name_ambiguous
+    // exists to fix. There is no single suggestion, but there are two, and two
+    // reviewable candidates beat zero records.
+    //
+    // What still has to hold is the part that actually protects identity: both
+    // rows are review-only, neither can auto-bind, and the org stays unbound. A
+    // human picks, or nobody does.
     await adb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${aOrgId}`);
-    // Entity 2's canonical IS entity 1's alias — no single reviewable suggestion.
-    await generateRegistryObservations(adb, [
+    // Entity 2's canonical IS entity 1's alias.
+    const summary = await generateRegistryObservations(adb, [
       dbaRow(),
       dbaRow({
         entityId: randomUUID(),
@@ -894,8 +913,22 @@ describe("registry-side DBA aliases (contract column `aliases`) as match keys", 
         aliases: null,
       }),
     ]);
-    const pending = await listRegistryObservations(adb, { status: "pending", limit: 200 });
-    expect(pending.find((o) => o.organizationId === aOrgId)).toBeUndefined();
+    const mine = (await listRegistryObservations(adb, { status: "pending", limit: 200 })).filter(
+      (o) => o.organizationId === aOrgId,
+    );
+    expect(mine).toHaveLength(2);
+    expect(mine.every((o) => o.ruleKey === AMBIGUOUS_NAME_RULE)).toBe(true);
+    // Distinct entities, and each row admits how many candidates there really are.
+    expect(new Set(mine.map((o) => o.registryEntityId)).size).toBe(2);
+    expect(mine.every((o) => o.payload["ambiguous_candidate_count"] === 2)).toBe(true);
+    // The governance property, unchanged: nothing auto-binds, org stays unbound.
+    expect(summary.strictAutoBound).toBe(0);
+    expect(summary.strictCandidates).toHaveLength(0);
+    const [org] = (await adb.execute(sql`
+      SELECT registry_ref FROM organizations WHERE id = ${aOrgId}`)).rows as {
+      registry_ref: string | null;
+    }[];
+    expect(org?.registry_ref).toBeNull();
   });
 
   it("degrades to canonical-only when the contract has no aliases column", async () => {
