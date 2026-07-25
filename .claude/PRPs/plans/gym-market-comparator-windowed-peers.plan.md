@@ -373,9 +373,38 @@ actively misleading.
 - **NOTE**: 5b is no longer urgent. With the quadratic fixed, the full run completes in
   545s, so the "one failure discards nine successes" scenario is not currently firing.
   It remains correct to do, and cheap insurance against the next regression.
+- **SHAPE DECISION, STILL OPEN — READ BEFORE CODING.** Three options, and the plan does
+  NOT pick one because the third changes a shared interface:
+  1. *Caller drives the loop* (what `profile-source-mv-refresh.mjs` already does). No DB
+     change, but pg_cron would have to call something other than the function, so the
+     cron and the manual path diverge — the exact drift this workstream keeps paying for.
+  2. *Leave as-is.* Defensible now that a full run takes 545s and the audit no longer
+     lies. Costs nothing, banks nothing.
+  3. *Convert to a PROCEDURE.* plpgsql PROCEDUREs **can** COMMIT (PG11+), and pg_cron can
+     `CALL` them, so this is the only option that puts per-MV commits inside the shared
+     path where both verticals get them. But it changes the object type of a shared
+     skeleton entry point, which BJJ also calls — so it needs the same "better for BJJ
+     too" justification as any skeleton change, plus a check of every caller.
+  Evidence for option 3 being genuinely better: on 2026-07-25 audit id 84 refreshed nine
+  MVs successfully and, because they shared one transaction, **all nine were rolled back**
+  when the tenth failed. That is the cost, measured, in the current design.
 - **VALIDATE**: a forced failure on one MV leaves the earlier MVs refreshed and committed.
 
-### Task 6: Re-enable job 1 behind evidence
+### Task 6: Re-enable job 1 behind evidence — **SHIPPED 2026-07-25**
+Job 1 (`registry-read-model-source-refresh-weekly`, `20 2 * * 0`) is **active** again,
+for the first time since 2026-07-05. Evidence that cleared the gate:
+
+| audit | parent status | phase status | run |
+|---|---|---|---|
+| 82 | `success` | success | genuine full success, 545.4s |
+| 84 | **`failed`** | failed | 9 refreshed + 1 forced failure |
+
+Id 84 is the one that matters: before 5a it would have read `success`. The gate now
+means something because the function can report both outcomes.
+
+Timing checked: 02:20 Sunday + ~545s finishes ~02:29, clear of job 2 at 02:35. If they
+ever did overlap, the advisory lock makes the later one skip rather than collide.
+
 - **ACTION**: Re-enable the weekly `source_mvs` cron.
 - **PRECONDITION (new)**: Task 5a must land first. As of 2026-07-25 the gate below is
   satisfiable by a run that FAILED — see 5a. Re-enabling before that fix means the first
