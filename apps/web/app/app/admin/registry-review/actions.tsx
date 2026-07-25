@@ -67,6 +67,13 @@ export interface ReviewRow {
    * grouping. Strictly `phone_and_name`: phone agreement alone is usually just
    * how the Google link was created, which makes it circular. */
   googleConfirmed: boolean;
+  /** This org holds a `primary_contractor` role on at least one project — it is
+   * the party that actually pulled the permit, not an applicant or an
+   * incidental mention. Binding one of these is worth more than binding several
+   * peripheral orgs, so it gets its own one-click grouping. Computed server-side
+   * at render time; see `loadPrimaryContractorOrgIds` for why it is not stamped
+   * into the payload. */
+  primaryContractor: boolean;
 }
 
 /**
@@ -173,6 +180,11 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
   // separate from the tier buttons because it is a FACT about the entity, not a
   // score band — a reviewer can verify it by opening the Google listing.
   const googleConfirmedRows = useMemo(() => rows.filter((r) => r.googleConfirmed), [rows]);
+
+  // Permit-holding orgs. Orthogonal to the Google grouping above (an org can be
+  // both), and to tier — this is about how much the binding is WORTH, not how
+  // confident we are in it.
+  const primaryContractorRows = useMemo(() => rows.filter((r) => r.primaryContractor), [rows]);
 
   const tierCounts = useMemo(() => {
     const m = new Map<ReviewTier, number>();
@@ -311,6 +323,18 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
             title="WA L&I and Google independently agree on this business's phone AND its name — the strongest evidence in this queue"
           >
             L&amp;I + Google confirmed ({googleConfirmedRows.length})
+          </button>
+        )}
+        {primaryContractorRows.length > 0 && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              setSelected(new Set(primaryContractorRows.map((r) => r.id)))
+            }
+            data-testid="select-primary-contractor"
+            title="Holds a primary_contractor role on at least one project — the party that actually pulled the permit, so the binding is worth more"
+          >
+            Primary contractor ({primaryContractorRows.length})
           </button>
         )}
         {progress && <small style={{ color: "#555" }}>{progress}</small>}

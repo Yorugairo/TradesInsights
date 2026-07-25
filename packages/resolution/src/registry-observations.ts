@@ -1654,6 +1654,26 @@ export async function listRegistryObservations(
   }));
 }
 
+/**
+ * Org IDs holding a `primary_contractor` role on any project.
+ *
+ * These are the organizations whose identity is worth the most: the party that
+ * actually holds the permit, rather than an applicant or an incidental mention.
+ * Binding one is worth more than binding several peripheral orgs, so the review
+ * queue groups them for one-click batch review.
+ *
+ * READ AT RENDER TIME, DELIBERATELY NOT STAMPED INTO THE PAYLOAD. A role is
+ * assigned when a permit is parsed, which can happen long after an observation
+ * was generated — a copy frozen into `payload_json` would silently go stale,
+ * while this query cannot. The payload's `role_records` count is a different
+ * thing (how many role rows the org has), not a primary-contractor flag.
+ */
+export async function loadPrimaryContractorOrgIds(db: Db): Promise<Set<string>> {
+  const res = await db.execute(sql`
+    SELECT DISTINCT organization_id FROM project_roles WHERE role = 'primary_contractor'`);
+  return new Set((res.rows as Record<string, unknown>[]).map((r) => r["organization_id"] as string));
+}
+
 export interface DecisionOutcome {
   status: "accepted" | "rejected";
   /** What the accept applied locally, if anything. */

@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { classifyReviewTier, listRegistryObservations, type ReviewTier } from "@otn/resolution";
+import {
+  classifyReviewTier,
+  listRegistryObservations,
+  loadPrimaryContractorOrgIds,
+  type ReviewTier,
+} from "@otn/resolution";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { cell, table } from "../../../../lib/ui.js";
@@ -38,6 +43,9 @@ export default async function RegistryReviewPage({
 
   const fetched = await listRegistryObservations(db(), { status: "pending", limit });
   const recent = await listRegistryObservations(db(), { status: "accepted", limit: 8 });
+  // Fetched here rather than read off the payload: a role can be assigned after
+  // an observation was generated, so a stamped copy would go stale.
+  const primaryContractorOrgIds = await loadPrimaryContractorOrgIds(db());
 
   // Per-rule counts over the fetched window (honest label: "of N shown", not a
   // full-queue total — the window caps at 200).
@@ -72,6 +80,7 @@ export default async function RegistryReviewPage({
         .map(([k, v]) => `${k} ${Number(v).toFixed(2)}`)
         .join(" · "),
       googleConfirmed: o.payload["google_confirmation"] === "phone_and_name",
+      primaryContractor: primaryContractorOrgIds.has(o.organizationId),
     };
   });
 
