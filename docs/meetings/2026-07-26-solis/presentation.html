@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solis Interiors — Calibration Session</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800;900&family=Nunito:wght@400;600;700&family=Archivo+Narrow:wght@600&display=swap" rel="stylesheet">
+<style>
+/* ===========================================
+   VIEWPORT FITTING: MANDATORY BASE
+   =========================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; overflow-x: hidden; margin: 0; }
+/* The snap + smooth behaviour MUST live on the element that actually scrolls.
+   With `height:100%` on both html and body, body's content overflows body and
+   `overflow-x:hidden` stops that overflow propagating up — so body is the
+   scroll container while `document.scrollingElement` still reports html. Put
+   scroll-snap-type on html and it is silently inert: slides stop snapping and a
+   wheel gesture strands you mid-slide. Verified by measurement, not by eye. */
+html { scroll-behavior: smooth; }
+body { overflow-y: auto; scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+
+.slide {
+  width: 100vw; height: 100vh; height: 100dvh;
+  overflow: hidden; scroll-snap-align: start;
+  display: flex; flex-direction: column; position: relative;
+}
+.slide-content {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  max-height: 100%; overflow: hidden; padding: var(--slide-padding);
+  position: relative; z-index: 2;
+}
+
+:root {
+  --title-size: clamp(1.5rem, 5vw, 4rem);
+  --h2-size:    clamp(1.25rem, 3.5vw, 2.5rem);
+  --h3-size:    clamp(1rem, 2.5vw, 1.75rem);
+  --body-size:  clamp(0.75rem, 1.5vw, 1.125rem);
+  --small-size: clamp(0.65rem, 1vw, 0.875rem);
+  --slide-padding: clamp(1rem, 4vw, 4rem);
+  --content-gap:   clamp(0.5rem, 2vw, 2rem);
+  --element-gap:   clamp(0.25rem, 1vw, 1rem);
+
+  /* Swiss Modern palette — white field, black type, one signal red. */
+  --ink:    #111112;
+  --paper:  #fbfbf9;
+  --signal: #d6203c;
+  --rule:   #d9d9d4;
+  --muted:  #6b6b66;
+  --wash:   #f2f2ee;
+}
+
+body {
+  font-family: 'Nunito', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  color: var(--ink); background: var(--paper);
+  font-size: var(--body-size); line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .num, .kicker {
+  font-family: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  font-weight: 800; letter-spacing: -0.02em; margin: 0;
+}
+h1 { font-size: var(--title-size); line-height: 1.02; }
+h2 { font-size: var(--h2-size);  line-height: 1.05; }
+h3 { font-size: var(--h3-size);  line-height: 1.15; }
+
+/* --- Drafting grid: the visual identity. Abstract geometry, no illustration. */
+.slide::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(17,17,18,.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(17,17,18,.045) 1px, transparent 1px);
+  background-size: clamp(36px, 5vw, 72px) clamp(36px, 5vw, 72px);
+}
+.slide.dark { background: var(--ink); color: var(--paper); }
+.slide.dark::before {
+  background-image:
+    linear-gradient(to right, rgba(251,251,249,.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(251,251,249,.07) 1px, transparent 1px);
+}
+.slide.dark .muted, .slide.dark .lede { color: #a9a9a4; }
+.slide.dark .rule-line { background: rgba(251,251,249,.22); }
+
+/* --- Slide furniture --- */
+.kicker {
+  font-family: 'Archivo Narrow', 'Archivo', sans-serif; font-weight: 600;
+  font-size: var(--small-size); letter-spacing: .18em; text-transform: uppercase;
+  color: var(--signal); display: flex; align-items: center; gap: .6em;
+}
+.kicker::after { content: ''; height: 1px; flex: 1; background: currentColor; opacity: .35; }
+.rule-line { height: 1px; background: var(--rule); width: 100%; }
+.lede { color: var(--muted); font-size: var(--body-size); max-width: 62ch; }
+.muted { color: var(--muted); }
+.sig { color: var(--signal); }
+.stack { display: flex; flex-direction: column; gap: var(--content-gap); }
+.tight { gap: var(--element-gap); }
+
+.slide-no {
+  position: absolute; bottom: clamp(.6rem, 2vh, 1.4rem); right: var(--slide-padding);
+  font-family: 'Archivo Narrow', sans-serif; font-size: var(--small-size);
+  letter-spacing: .16em; color: var(--muted); z-index: 3;
+}
+
+/* --- Data display --- */
+.statline { display: flex; flex-wrap: wrap; gap: clamp(1rem, 4vw, 3.5rem); }
+.stat .num {
+  font-size: clamp(2rem, 7vw, 5.5rem); font-weight: 900; line-height: .92;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.04em;
+}
+.stat .lbl {
+  font-size: var(--small-size); text-transform: uppercase; letter-spacing: .12em;
+  color: var(--muted); margin-top: .4em; max-width: 22ch;
+}
+.stat.hot .num { color: var(--signal); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: clamp(0.5rem, 1.5vw, 1rem); }
+.card {
+  border: 1px solid var(--rule); background: #fff; padding: clamp(.7rem, 1.6vw, 1.15rem);
+  display: flex; flex-direction: column; gap: .35em;
+}
+.slide.dark .card { background: #1b1b1d; border-color: rgba(251,251,249,.16); }
+.card .ct { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: var(--body-size); }
+.card .cd { font-size: var(--small-size); color: var(--muted); line-height: 1.45; }
+.card.flag { border-left: 3px solid var(--signal); }
+
+/* Horizontal bar chart — data viz as part of the system, not an afterthought. */
+.bars { display: flex; flex-direction: column; gap: clamp(.4rem, 1.4vh, .9rem); }
+.bar-row { display: grid; grid-template-columns: clamp(4.5rem,9vw,8rem) 1fr auto; align-items: center; gap: clamp(.5rem,1.5vw,1rem); }
+.bar-row .bn { font-family: 'Archivo Narrow', sans-serif; font-size: var(--small-size); letter-spacing: .08em; text-transform: uppercase; }
+.bar-track { height: clamp(14px, 2.4vh, 26px); background: var(--wash); position: relative; overflow: hidden; }
+.slide.dark .bar-track { background: #232326; }
+.bar-fill { height: 100%; background: var(--ink); width: 0; transition: width 900ms cubic-bezier(.16,1,.3,1); }
+.slide.dark .bar-fill { background: var(--paper); }
+.bar-fill.hot { background: var(--signal); }
+.bar-row .bv { font-family: 'Archivo', sans-serif; font-weight: 800; font-variant-numeric: tabular-nums; font-size: var(--body-size); min-width: 3.2ch; text-align: right; }
+.is-visible .bar-fill { width: var(--w); }
+
+/* Lists */
+ul.bullet-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: clamp(0.4rem, 1vh, 1rem); }
+ul.bullet-list li { font-size: var(--body-size); line-height: 1.4; padding-left: 1.4em; position: relative; }
+ul.bullet-list li::before {
+  content: ''; position: absolute; left: 0; top: .55em;
+  width: .55em; height: .55em; background: var(--signal);
+}
+ul.checks li::before { background: none; content: '?'; color: var(--signal); font-weight: 800; top: 0; font-family: 'Archivo', sans-serif; }
+
+.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: clamp(1rem, 3vw, 2.5rem); align-items: start; }
+
+.tag {
+  display: inline-block; font-family: 'Archivo Narrow', sans-serif; font-size: var(--small-size);
+  letter-spacing: .1em; text-transform: uppercase; border: 1px solid currentColor;
+  padding: .18em .6em; color: var(--signal);
+}
+.note {
+  border-left: 3px solid var(--signal); padding: .5em 0 .5em .9em;
+  font-size: var(--small-size); color: var(--muted); max-width: 70ch;
+}
+.inference { font-size: var(--small-size); color: var(--muted); font-style: italic; }
+
+/* Reveal animation */
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
+.is-visible .reveal { opacity: 1; transform: none; }
+.is-visible .reveal:nth-child(2) { transition-delay: .07s; }
+.is-visible .reveal:nth-child(3) { transition-delay: .14s; }
+.is-visible .reveal:nth-child(4) { transition-delay: .21s; }
+.is-visible .reveal:nth-child(5) { transition-delay: .28s; }
+
+/* Progress + nav */
+.progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--signal); width: 0; z-index: 50; transition: width .25s ease; }
+.deck-nav {
+  position: fixed; bottom: clamp(.6rem, 2vh, 1.4rem); left: var(--slide-padding);
+  display: flex; gap: .45em; z-index: 50;
+}
+.deck-nav button {
+  width: 9px; height: 9px; padding: 0; border: 1px solid var(--muted); background: transparent;
+  cursor: pointer; border-radius: 0;
+}
+.deck-nav button[aria-current="true"] { background: var(--signal); border-color: var(--signal); }
+
+@media (max-height: 700px) {
+  :root { --slide-padding: clamp(0.75rem, 3vw, 2rem); --content-gap: clamp(0.4rem, 1.5vw, 1rem);
+          --title-size: clamp(1.25rem, 4.5vw, 2.5rem); --h2-size: clamp(1rem, 3vw, 1.75rem); }
+}
+@media (max-height: 600px) {
+  :root { --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem); --content-gap: clamp(0.3rem, 1vw, 0.75rem);
+          --title-size: clamp(1.1rem, 4vw, 2rem); --body-size: clamp(0.7rem, 1.2vw, 0.95rem); }
+  .deck-nav, .slide-no { display: none; }
+  .stat .num { font-size: clamp(1.6rem, 5vw, 3rem); }
+}
+@media (max-height: 500px) {
+  :root { --slide-padding: clamp(0.4rem, 2vw, 1rem); --title-size: clamp(1rem, 3.5vw, 1.5rem);
+          --h2-size: clamp(0.9rem, 2.5vw, 1.25rem); --body-size: clamp(0.65rem, 1vw, 0.85rem); }
+}
+@media (max-width: 600px) {
+  :root { --title-size: clamp(1.25rem, 7vw, 2.5rem); }
+  .grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .2s !important; }
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; }
+}
+@media print { .slide { page-break-after: always; height: auto; } .deck-nav, .progress { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress" role="presentation"></div>
+
+<main>
+
+<!-- 1 — TITLE -->
+<section class="slide" aria-labelledby="s1">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Calibration session &middot; 26 July 2026</div>
+    <h1 id="s1" class="reveal">Solis Interiors<br><span class="sig">&times;</span> One Trade Network</h1>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal">Interior work in your metro, found before the GC picks its subs &mdash;
+      scored, timed, and traceable to the public record it came from.</p>
+    <p class="lede reveal" style="max-width:58ch">
+      Today is a <strong>confirm-or-correct</strong> pass. We have been running with settings we
+      set on your behalf. You have never been asked. That is what we are here to fix.</p>
+  </div>
+  <div class="slide-no">01</div>
+</section>
+
+<!-- 2 — THE PROBLEM -->
+<section class="slide dark" aria-labelledby="s2">
+  <div class="slide-content stack">
+    <div class="kicker reveal">The problem</div>
+    <h2 id="s2" class="reveal">By the time a permit is public,<br>the GC has already picked its subs.</h2>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal" style="max-width:64ch">
+      Everyone can buy the issued-permit list. It is the same list, at the same time, for every
+      sub in the state. On commercial work the buyout happens during plan review &mdash;
+      <strong>months before issuance</strong>. A lead that arrives at issuance is not early.
+      It is late, and it looks like everyone else's.</p>
+    <p class="inference reveal">Timing statements throughout this deck are inferences from a
+      domain model over public dates &mdash; not facts asserted by the permit office.</p>
+  </div>
+  <div class="slide-no">02</div>
+</section>
+
+<!-- 3 — THE NUMBER -->
+<section class="slide" aria-labelledby="s3">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Measured, not asserted</div>
+    <h2 id="s3" class="reveal">Nearly half of what scores well<br>is already past bidding.</h2>
+    <div class="statline reveal">
+      <div class="stat hot"><div class="num">217</div>
+        <div class="lbl">of 477 priority opportunities flagged <em>commercial bid window likely closed</em></div></div>
+      <div class="stat"><div class="num">45<span style="font-size:.5em">%</span></div>
+        <div class="lbl">of the priority pool, unbiddable on arrival</div></div>
+    </div>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal">That is the cost of starting at issuance &mdash; and the entire reason
+      we source the pre-permit stages.</p>
+  </div>
+  <div class="slide-no">03</div>
+</section>
+
+<!-- 4 — WHAT WE DO DIFFERENTLY -->
+<section class="slide" aria-labelledby="s4">
+  <div class="slide-content stack">
+    <div class="kicker reveal">What we do differently</div>
+    <h2 id="s4" class="reveal">We start upstream of the permit.</h2>
+    <div class="grid reveal">
+      <div class="card"><div class="ct">Application stage</div>
+        <div class="cd">Olympia applications &mdash; the project is filed but not issued. Commercial buyout is live here.</div></div>
+      <div class="card"><div class="ct">Design &amp; entitlement</div>
+        <div class="cd">Tumwater design review + SEPA. Earlier still: the project exists, the team is forming.</div></div>
+      <div class="card"><div class="ct">Issued permits</div>
+        <div class="cd">Nine counties. The commodity layer &mdash; useful for residential timing, late for commercial.</div></div>
+      <div class="card flag"><div class="ct">Only genuine bytes</div>
+        <div class="cd">Public records, captured the way a person would. No bot-driving, no bypassing access controls, ever.</div></div>
+    </div>
+    <p class="note reveal">Every captured report self-reconciles &mdash; each category total must match
+      the report's printed grand total, or we suppress the source rather than ship a mis-parse.</p>
+  </div>
+  <div class="slide-no">04</div>
+</section>
+
+<!-- 5 — BID WINDOW MODEL -->
+<section class="slide dark" aria-labelledby="s5">
+  <div class="slide-content stack">
+    <div class="kicker reveal">The clock, per trade</div>
+    <h2 id="s5" class="reveal">Drywall and paint do not<br>get bought at the same moment.</h2>
+    <div class="two-col reveal">
+      <div class="stack tight">
+        <span class="tag">Residential &mdash; after issuance</span>
+        <ul class="bullet-list">
+          <li><strong>Drywall</strong> &mdash; 4 to 8 weeks after the permit issues</li>
+          <li><strong>Paint</strong> &mdash; 6 to 12 weeks after issuance</li>
+          <li>Exterior paint landing Nov&ndash;Apr carries a PNW season caveat</li>
+        </ul>
+      </div>
+      <div class="stack tight">
+        <span class="tag">Commercial &mdash; before issuance</span>
+        <ul class="bullet-list">
+          <li><strong>2 to 6 months ahead</strong> of issuance, during GMP buyout</li>
+          <li>Application and plan review is the <em>only</em> live window</li>
+          <li>At issuance the package is generally gone</li>
+        </ul>
+      </div>
+    </div>
+    <p class="inference reveal">Each opportunity carries its own window line on the correct track &mdash;
+      &ldquo;bid now&rdquo;, &ldquo;opens in N weeks&rdquo;, or &ldquo;likely closed&rdquo;.</p>
+  </div>
+  <div class="slide-no">05</div>
+</section>
+
+<!-- 6 — WHAT YOU RECEIVE -->
+<section class="slide" aria-labelledby="s6">
+  <div class="slide-content stack">
+    <div class="kicker reveal">What lands in your inbox</div>
+    <h2 id="s6" class="reveal">One email a week. Ten minutes.</h2>
+    <div class="grid reveal">
+      <div class="card flag"><div class="ct">&#9889; Winnable now</div>
+        <div class="cd">At most three. Closest first, recently changed, inside your radius.</div></div>
+      <div class="card"><div class="ct">&#129517; Decisions</div>
+        <div class="cd">Pre-permit projects still forming &mdash; the relationship window.</div></div>
+      <div class="card"><div class="ct">&#128337; Deadlines</div>
+        <div class="cd">Bid invitations you forward us, with their due dates.</div></div>
+      <div class="card"><div class="ct">Priority &amp; changes</div>
+        <div class="cd">New at-or-above your threshold, plus projects that moved a stage.</div></div>
+      <div class="card"><div class="ct">Who is across the table</div>
+        <div class="cd">The GC as a resolved company &mdash; not a name string on a permit.</div></div>
+      <div class="card"><div class="ct">Coverage caveats</div>
+        <div class="cd">What we could <em>not</em> see this week, stated plainly. Never silently dropped.</div></div>
+    </div>
+  </div>
+  <div class="slide-no">06</div>
+</section>
+
+<!-- 7 — THE POOL -->
+<section class="slide" aria-labelledby="s7">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Your pool today</div>
+    <h2 id="s7" class="reveal">477 standing. Thirteen a week.</h2>
+    <div class="statline reveal">
+      <div class="stat"><div class="num">1,263</div><div class="lbl">tracked opportunities scoring 65+</div></div>
+      <div class="stat"><div class="num">477</div><div class="lbl">standing at your priority threshold of 80</div></div>
+      <div class="stat hot"><div class="num">13</div><div class="lbl">changed in the last week &mdash; what actually reaches you</div></div>
+    </div>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal">The 477 is a two-year backlog, not a weekly ask. Thirteen a week is
+      reviewable. Raising the bar to 90 would drop it to two &mdash; too quiet to build
+      relationships on.</p>
+  </div>
+  <div class="slide-no">07</div>
+</section>
+
+<!-- 8 — WHERE THE WORK IS -->
+<section class="slide" aria-labelledby="s8">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Where the work actually is</div>
+    <h2 id="s8" class="reveal">Priority opportunities by county</h2>
+    <div class="bars reveal">
+      <div class="bar-row"><span class="bn">Pierce</span><span class="bar-track"><span class="bar-fill" style="--w:100%"></span></span><span class="bv">270</span></div>
+      <div class="bar-row"><span class="bn">King</span><span class="bar-track"><span class="bar-fill" style="--w:52.6%"></span></span><span class="bv">142</span></div>
+      <div class="bar-row"><span class="bn">Thurston</span><span class="bar-track"><span class="bar-fill hot" style="--w:14.1%"></span></span><span class="bv">38</span></div>
+      <div class="bar-row"><span class="bn">Lewis</span><span class="bar-track"><span class="bar-fill" style="--w:10%"></span></span><span class="bv">27</span></div>
+    </div>
+    <p class="note reveal"><strong>Straight talk:</strong> we weighted your home metro up, and
+      Thurston is still only 8% of the pool. The weighting is working &mdash; the Thurston
+      <em>volume</em> is thin. If your appetite is home-metro-first, that is a coverage problem
+      for us to solve, and we would rather say so than dress it up.</p>
+  </div>
+  <div class="slide-no">08</div>
+</section>
+
+<!-- 9 — EASY WINS -->
+<section class="slide" aria-labelledby="s9">
+  <div class="slide-content stack">
+    <div class="kicker reveal">&#9889; Winnable now</div>
+    <h2 id="s9" class="reveal">Close, recent, and no job too small.</h2>
+    <div class="bars reveal">
+      <div class="bar-row"><span class="bn">&le; 20 mi</span><span class="bar-track"><span class="bar-fill hot" style="--w:23.5%"></span></span><span class="bv">23</span></div>
+      <div class="bar-row"><span class="bn">&le; 35 mi</span><span class="bar-track"><span class="bar-fill" style="--w:92.9%"></span></span><span class="bv">91</span></div>
+      <div class="bar-row"><span class="bn">&le; 50 mi</span><span class="bar-track"><span class="bar-fill" style="--w:100%"></span></span><span class="bv">98</span></div>
+    </div>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal">Measured from Lacey, changed in the last 60 days, no minimum job size.
+      The 35-mile ring holds the mass &mdash; going out to 50 adds only seven.
+      <strong>How far do you actually take work?</strong></p>
+  </div>
+  <div class="slide-no">09</div>
+</section>
+
+<!-- 10 — WHAT WE ASSUMED -->
+<section class="slide dark" aria-labelledby="s10">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Confirm or correct</div>
+    <h2 id="s10" class="reveal">Seven settings we chose for you<br>without asking.</h2>
+    <p class="lede reveal">These are live in your scoring right now. They came from knowing your
+      business, not from your instruction. Any one of them can be wrong.</p>
+    <ul class="bullet-list reveal">
+      <li>Your territory is Thurston, Pierce, Lewis and King</li>
+      <li>Home metro ranks above King commercial; Pierce sits about even</li>
+      <li>Application-stage projects rank <em>above</em> issued ones</li>
+      <li>A GC you already work with gives a small lift</li>
+      <li>Proximity bands of 20, 35 and 50 miles from Lacey</li>
+      <li>No minimum job size &mdash; no job is too small</li>
+      <li>King jobs under $10k go to the digest, not to priority</li>
+    </ul>
+  </div>
+  <div class="slide-no">10</div>
+</section>
+
+<!-- 11 — WHAT WE DON'T KNOW -->
+<section class="slide" aria-labelledby="s11">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Genuinely unknown</div>
+    <h2 id="s11" class="reveal">Eight things only you can answer.</h2>
+    <div class="two-col reveal">
+      <ul class="bullet-list checks">
+        <li>Your exact drywall and paint scope</li>
+        <li>Crew and subcontract capacity</li>
+        <li>Preferred and blocked GCs</li>
+        <li>Public work, bonding, prevailing wage</li>
+      </ul>
+      <ul class="bullet-list checks">
+        <li>Which invitation platforms you use</li>
+        <li>Licence renewal &mdash; yours runs to 11 Aug</li>
+        <li>Does 13 a week feel right?</li>
+        <li>Winnable-now window: 30 or 60 days?</li>
+      </ul>
+    </div>
+    <p class="note reveal">Answering these is the whole session. The questionnaire alongside this
+      deck captures them and writes straight into your configuration.</p>
+  </div>
+  <div class="slide-no">11</div>
+</section>
+
+<!-- 12 — WHAT WE CAN'T DO YET -->
+<section class="slide" aria-labelledby="s12">
+  <div class="slide-content stack">
+    <div class="kicker reveal">What is not working yet</div>
+    <h2 id="s12" class="reveal">The verified-GC signal<br>fires zero times.</h2>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal">We built two trust signals &mdash; &ldquo;this GC is a confirmed real
+      company&rdquo; and &ldquo;you already work with this GC&rdquo;. Across your entire pool,
+      neither has ever fired. Not rare. <strong>Zero.</strong></p>
+    <p class="lede reveal">The reason is coverage: we have to confirm a GC's identity before we can
+      tell you anything about them. That work is underway on our side. We are telling you now so
+      that when you see it in the product later, you know it was earned rather than switched on.</p>
+    <p class="note reveal">You will not be asked today how much that signal should be worth.
+      Pricing a signal that has never appeared would be guesswork.</p>
+  </div>
+  <div class="slide-no">12</div>
+</section>
+
+<!-- 13 — THE LOOP -->
+<section class="slide dark" aria-labelledby="s13">
+  <div class="slide-content stack">
+    <div class="kicker reveal">How it gets sharper</div>
+    <h2 id="s13" class="reveal">Every tap is a calibration.</h2>
+    <div class="grid reveal">
+      <div class="card"><div class="ct">1 &middot; You decide</div>
+        <div class="cd">Pursue or dismiss, one tap from the email. No login needed.</div></div>
+      <div class="card"><div class="ct">2 &middot; We snapshot</div>
+        <div class="cd">We record what the score and evidence said <em>at the moment you decided</em>.</div></div>
+      <div class="card"><div class="ct">3 &middot; We recalibrate</div>
+        <div class="cd">After two cycles the pattern in your dismissals reshapes the scoring.</div></div>
+      <div class="card flag"><div class="ct">4 &middot; Never silently</div>
+        <div class="cd">Weights change only in a session like this one, versioned, with you present.</div></div>
+    </div>
+    <p class="lede reveal">Dismiss reasons are the highest-value thing you can give us. One extra
+      tap teaches more than ten pursued leads.</p>
+  </div>
+  <div class="slide-no">13</div>
+</section>
+
+<!-- 14 — CLOSE -->
+<section class="slide" aria-labelledby="s14">
+  <div class="slide-content stack">
+    <div class="kicker reveal">Today</div>
+    <h1 id="s14" class="reveal">Four things<br>and we are calibrated.</h1>
+    <ul class="bullet-list reveal">
+      <li>Walk the seven assumptions &mdash; confirm or correct each one</li>
+      <li>Answer the eight unknowns in the questionnaire</li>
+      <li>Name ten to fifteen GCs: worked with, want to, never again</li>
+      <li>Confirm the forwarding address so bid invitations start flowing</li>
+    </ul>
+    <div class="rule-line reveal"></div>
+    <p class="lede reveal">Nothing changes in your scoring until you say so &mdash; and when it
+      changes, it is versioned, dated, and attributable to something you actually said.</p>
+  </div>
+  <div class="slide-no">14</div>
+</section>
+
+</main>
+
+<nav class="deck-nav" id="nav" aria-label="Slide navigation"></nav>
+
+<script>
+/**
+ * Deck controller — keyboard, wheel, touch, and dot navigation.
+ * Slides are real scroll-snap sections, so browser scrolling stays the source of
+ * truth; this class only drives programmatic jumps and the reveal/progress state.
+ */
+class Deck {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.i = 0;
+    this.locked = false;
+    this.buildNav();
+    this.observe();
+    this.bind();
+  }
+
+  buildNav() {
+    this.nav = document.getElementById('nav');
+    this.slides.forEach((_, n) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-label', `Go to slide ${n + 1}`);
+      b.addEventListener('click', () => this.go(n));
+      this.nav.appendChild(b);
+    });
+    this.dots = Array.from(this.nav.children);
+  }
+
+  /* Reveal on enter + progress/dot sync, driven by intersection rather than
+     scroll math so it stays correct after resize or a direct hash jump. */
+  observe() {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        e.target.classList.add('is-visible');
+        this.i = this.slides.indexOf(e.target);
+        this.sync();
+      });
+    }, { threshold: 0.55 });
+    this.slides.forEach((s) => io.observe(s));
+  }
+
+  sync() {
+    const pct = this.slides.length > 1 ? (this.i / (this.slides.length - 1)) * 100 : 100;
+    document.getElementById('progress').style.width = pct + '%';
+    this.dots.forEach((d, n) => d.setAttribute('aria-current', String(n === this.i)));
+  }
+
+  go(n) {
+    const t = Math.max(0, Math.min(this.slides.length - 1, n));
+    this.slides[t].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  next() { this.go(this.i + 1); }
+  prev() { this.go(this.i - 1); }
+
+  bind() {
+    document.addEventListener('keydown', (e) => {
+      const k = e.key;
+      if (['ArrowDown', 'ArrowRight', 'PageDown', ' '].includes(k)) { e.preventDefault(); this.next(); }
+      else if (['ArrowUp', 'ArrowLeft', 'PageUp'].includes(k)) { e.preventDefault(); this.prev(); }
+      else if (k === 'Home') { e.preventDefault(); this.go(0); }
+      else if (k === 'End') { e.preventDefault(); this.go(this.slides.length - 1); }
+    });
+
+    // Wheel: one gesture = one slide. Scroll-snap alone lets a trackpad fling
+    // skip several slides mid-presentation, which reads as a glitch.
+    window.addEventListener('wheel', (e) => {
+      if (this.locked || Math.abs(e.deltaY) < 12) return;
+      this.locked = true;
+      e.deltaY > 0 ? this.next() : this.prev();
+      setTimeout(() => { this.locked = false; }, 700);
+    }, { passive: true });
+
+    let y0 = null;
+    window.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (y0 === null) return;
+      const dy = y0 - e.changedTouches[0].clientY;
+      if (Math.abs(dy) > 55) dy > 0 ? this.next() : this.prev();
+      y0 = null;
+    }, { passive: true });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => new Deck());
+</script>
+</body>
+</html>

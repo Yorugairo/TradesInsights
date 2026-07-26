@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solis Interiors — Calibration Intake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800;900&family=Archivo+Narrow:wght@600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:#111112; --paper:#fbfbf9; --signal:#d6203c; --rule:#d9d9d4;
+  --muted:#6b6b66; --wash:#f2f2ee; --ok:#1d7a4c; --card:#ffffff;
+  --pad: clamp(1rem, 4vw, 3rem);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Nunito',ui-sans-serif,system-ui,'Segoe UI',sans-serif;
+  font-size:clamp(.95rem,1.1vw,1.05rem); line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    linear-gradient(to right, rgba(17,17,18,.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(17,17,18,.035) 1px, transparent 1px);
+  background-size:56px 56px;
+}
+h1,h2,h3,.kicker,.qn{font-family:'Archivo',ui-sans-serif,system-ui,sans-serif;font-weight:800;letter-spacing:-.02em;margin:0}
+h1{font-size:clamp(1.6rem,4vw,2.9rem);line-height:1.04}
+h2{font-size:clamp(1.2rem,2.4vw,1.75rem)}
+h3{font-size:clamp(1rem,1.6vw,1.2rem)}
+.kicker{
+  font-family:'Archivo Narrow',sans-serif;font-weight:600;font-size:.78rem;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--signal);
+  display:flex;align-items:center;gap:.6em;
+}
+.kicker::after{content:'';height:1px;flex:1;background:currentColor;opacity:.35}
+
+.wrap{max-width:1000px;margin:0 auto;padding:var(--pad)}
+
+header.hero{border-bottom:3px solid var(--ink);padding-bottom:1.4rem;margin-bottom:2rem}
+header.hero p{color:var(--muted);max-width:70ch}
+
+section.block{margin:2.6rem 0}
+.section-head{display:flex;align-items:baseline;gap:.8rem;margin-bottom:.4rem}
+.section-head .idx{
+  font-family:'Archivo',sans-serif;font-weight:900;font-size:clamp(1.6rem,3vw,2.4rem);
+  color:var(--signal);line-height:1;letter-spacing:-.04em;
+}
+.section-note{color:var(--muted);max-width:72ch;margin:.2rem 0 1.2rem}
+
+/* ---- Question card ---- */
+.q{
+  background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--rule);
+  padding:clamp(.85rem,2vw,1.25rem);margin-bottom:.85rem;
+  transition:border-color .2s ease, box-shadow .2s ease;
+}
+.q:focus-within{border-left-color:var(--signal);box-shadow:0 2px 14px rgba(17,17,18,.06)}
+.q[data-state="confirm"]{border-left-color:var(--ok)}
+.q[data-state="correct"]{border-left-color:var(--signal)}
+.qn{font-size:1rem;margin-bottom:.15rem}
+.why{font-size:.82rem;color:var(--muted);margin:.1rem 0 .7rem;max-width:74ch}
+.why b{color:var(--ink);font-weight:700}
+.path{
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.72rem;
+  color:var(--muted);background:var(--wash);padding:.1em .45em;border-radius:2px;
+  display:inline-block;margin-top:.55rem;
+}
+
+/* ---- Confirm / correct control ---- */
+.cc{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.15rem}
+.cc label{
+  display:inline-flex;align-items:center;gap:.45em;cursor:pointer;
+  border:1px solid var(--rule);padding:.4em .85em;font-size:.88rem;
+  font-weight:600;user-select:none;background:var(--paper);
+}
+.cc input{accent-color:var(--signal);margin:0;width:1rem;height:1rem}
+.cc label:hover{border-color:var(--ink)}
+.cc input:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.q[data-state="confirm"] .cc label.y{border-color:var(--ok);background:#f2faf6}
+.q[data-state="correct"] .cc label.n{border-color:var(--signal);background:#fdf3f4}
+
+textarea,input[type=text],input[type=number],input[type=email],select{
+  width:100%;font:inherit;font-size:.92rem;padding:.5em .7em;
+  border:1px solid var(--rule);background:var(--paper);color:var(--ink);border-radius:0;
+}
+textarea:focus,input:focus,select:focus{outline:2px solid var(--signal);outline-offset:-1px;border-color:var(--signal)}
+textarea{resize:vertical;min-height:3.1em}
+.correction{margin-top:.6rem;display:none}
+.q[data-state="correct"] .correction{display:block}
+label.fl{display:block;font-size:.82rem;font-weight:700;margin:.75rem 0 .3rem}
+
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:.7rem}
+
+/* Choice pills for scalar answers */
+.pills{display:flex;flex-wrap:wrap;gap:.45rem}
+.pills label{
+  display:inline-flex;align-items:center;gap:.4em;cursor:pointer;font-size:.88rem;
+  border:1px solid var(--rule);padding:.35em .8em;font-weight:600;background:var(--paper);
+}
+.pills input{accent-color:var(--signal);margin:0}
+.pills label:has(input:checked){border-color:var(--signal);background:#fdf3f4}
+
+/* GC table */
+table.gc{width:100%;border-collapse:collapse;margin-top:.5rem;background:var(--card)}
+table.gc th,table.gc td{border:1px solid var(--rule);padding:.35rem .5rem;text-align:left}
+table.gc th{font-family:'Archivo Narrow',sans-serif;font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;background:var(--wash)}
+table.gc input,table.gc select{border:none;background:transparent;padding:.25em}
+table.gc input:focus,table.gc select:focus{outline:2px solid var(--signal);outline-offset:-2px}
+
+button{
+  font:inherit;font-family:'Archivo',sans-serif;font-weight:800;cursor:pointer;
+  border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+  padding:.6em 1.2em;letter-spacing:.02em;border-radius:0;
+}
+button.ghost{background:transparent;color:var(--ink)}
+button:hover{background:var(--signal);border-color:var(--signal);color:#fff}
+button:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+
+.toolbar{
+  position:sticky;bottom:0;z-index:20;background:rgba(251,251,249,.95);
+  backdrop-filter:blur(6px);border-top:2px solid var(--ink);
+  padding:.8rem var(--pad);display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;
+}
+.toolbar .status{font-size:.82rem;color:var(--muted);margin-right:auto}
+.toolbar .status b{color:var(--ink)}
+
+details.out{margin-top:1rem;border:1px solid var(--rule);background:var(--card)}
+details.out summary{cursor:pointer;padding:.6rem .9rem;font-weight:700;font-family:'Archivo',sans-serif}
+details.out pre{
+  margin:0;padding:.9rem;background:var(--ink);color:#e8e8e4;overflow:auto;
+  max-height:44vh;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.78rem;line-height:1.45;
+}
+.note{border-left:3px solid var(--signal);padding:.5em 0 .5em .9em;font-size:.86rem;color:var(--muted);max-width:74ch}
+
+@media print{
+  body{background:#fff;background-image:none}
+  .toolbar,details.out,.cc input{position:static}
+  .q{break-inside:avoid;page-break-inside:avoid}
+  .correction{display:block !important}
+}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms !important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Calibration intake &middot; 26 July 2026</div>
+  <h1>Solis Interiors</h1>
+  <p>Two kinds of question below. <b>Section 1</b> is settings we already applied on your behalf &mdash;
+  they are live in your scoring today and you have never been asked, so we need a yes or a fix on each.
+  <b>Sections 2&ndash;4</b> are things nobody knows but you.</p>
+  <p class="note">Nothing here leaves this page until you press export. Answers save to this browser
+  as you type, so an interruption will not lose them.</p>
+</header>
+
+<!-- ================= SECTION 1 — CONFIRM OR CORRECT ================= -->
+<section class="block">
+  <div class="section-head"><span class="idx">01</span><h2>Confirm or correct</h2></div>
+  <p class="section-note">Each of these is running in your scoring right now, set from knowing your
+  business rather than from your instruction. Marking one &ldquo;needs changing&rdquo; opens a box &mdash;
+  a sentence is plenty.</p>
+  <div id="confirms"></div>
+</section>
+
+<!-- ================= SECTION 2 — THE UNKNOWNS ================= -->
+<section class="block">
+  <div class="section-head"><span class="idx">02</span><h2>Scope &amp; constraints</h2></div>
+  <p class="section-note">Nobody has answered these. They decide what we even count as a Solis job.</p>
+
+  <div class="q">
+    <div class="qn">What exactly do you do &mdash; and what do you not?</div>
+    <p class="why">We match on permit text. Knowing you do <b>level 5 finish</b> but not
+    <b>acoustic ceilings</b> (for example) changes which jobs reach you. Name anything you
+    subcontract out or refuse.</p>
+    <label class="fl" for="scope">Drywall scope</label>
+    <textarea id="scope" data-k="scope_drywall" placeholder="Hang, tape, texture, level 5, metal stud framing, insulation…"></textarea>
+    <label class="fl" for="scopePaint">Painting scope</label>
+    <textarea id="scopePaint" data-k="scope_paint" placeholder="Interior, exterior, spray, specialty coatings, industrial…"></textarea>
+    <span class="path">capabilities[]</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">Crew and capacity</div>
+    <p class="why">Sets how many live opportunities are useful. If you can only carry three bids at
+    once, a feed of thirty is noise &mdash; we would tighten rather than flood you.</p>
+    <div class="row">
+      <div><label class="fl" for="crews">Crews / headcount</label>
+        <input type="text" id="crews" data-k="capacity_crews" placeholder="e.g. 2 crews, 9 total"></div>
+      <div><label class="fl" for="concurrent">Bids you can carry at once</label>
+        <input type="number" id="concurrent" data-k="capacity_concurrent_bids" min="1" placeholder="e.g. 4"></div>
+      <div><label class="fl" for="sweet">Sweet-spot job size</label>
+        <input type="text" id="sweet" data-k="capacity_sweet_spot" placeholder="e.g. $40k–$250k"></div>
+    </div>
+    <span class="path">calibration_pending &rarr; capacity snapshot</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">Public work, bonding, prevailing wage</div>
+    <p class="why">Public projects are a large share of what we can see earliest. If you are not
+    bonded or will not take prevailing-wage work, we should stop surfacing them entirely.</p>
+    <div class="pills" data-group="public_work">
+      <label><input type="radio" name="public_work" value="yes_active"> Yes, we do public work</label>
+      <label><input type="radio" name="public_work" value="yes_would"> Not yet, but would</label>
+      <label><input type="radio" name="public_work" value="no"> No &mdash; exclude it</label>
+    </div>
+    <label class="fl" for="bonding">Bonding limit, union status, anything else</label>
+    <input type="text" id="bonding" data-k="bonding_notes" placeholder="e.g. bonded to $500k, non-union">
+    <span class="path">rules &rarr; exclusion</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">Where do bid invitations reach you today?</div>
+    <p class="why">If you forward them to us, they fill the <b>Deadlines</b> section and we learn which
+    GCs invite you &mdash; the strongest relationship signal there is. We only ever read what you send.</p>
+    <label class="fl" for="platforms">Platforms / how invitations arrive</label>
+    <input type="text" id="platforms" data-k="invitation_platforms" placeholder="BuildingConnected, iSqFt, plain email…">
+    <label class="fl" for="fwd">Address you would forward from</label>
+    <input type="email" id="fwd" data-k="forwarding_email" placeholder="estimating@…">
+    <span class="path">bid inbox &rarr; deadlines section</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">Licence renewal</div>
+    <p class="why">Our records show contractor registration <b>SOLISIL785NT</b> running through
+    <b>11 August 2026</b> &mdash; about two weeks out. Confirm it is being renewed so nothing lapses
+    in the public record we cite.</p>
+    <div class="pills" data-group="licence">
+      <label><input type="radio" name="licence" value="renewing"> Renewing / already done</label>
+      <label><input type="radio" name="licence" value="changed"> Details have changed</label>
+      <label><input type="radio" name="licence" value="unsure"> Need to check</label>
+    </div>
+    <span class="path">organization.contractor_registration</span>
+  </div>
+</section>
+
+<!-- ================= SECTION 3 — TUNING ================= -->
+<section class="block">
+  <div class="section-head"><span class="idx">03</span><h2>Volume &amp; timing</h2></div>
+  <p class="section-note">Two dials with live numbers behind them. There is no wrong answer &mdash;
+  it is a question of how much you want to look at.</p>
+
+  <div class="q">
+    <div class="qn">Does thirteen a week feel right?</div>
+    <p class="why">At your current threshold of 80, about <b>13 opportunities change per week</b>.
+    Dropping to 75 roughly doubles it to 23. Raising to 90 cuts it to 2 &mdash; which we think is
+    too quiet to build relationships on, but it is your call.</p>
+    <div class="pills" data-group="threshold">
+      <label><input type="radio" name="threshold" value="70"> More &mdash; 70 (~46/wk)</label>
+      <label><input type="radio" name="threshold" value="75"> A bit more &mdash; 75 (~23/wk)</label>
+      <label><input type="radio" name="threshold" value="80" checked> Keep 80 (~13/wk)</label>
+      <label><input type="radio" name="threshold" value="85"> Fewer &mdash; 85 (~9/wk)</label>
+    </div>
+    <span class="path">delivery.priority_review_min</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">How fresh does a &ldquo;winnable now&rdquo; job need to be?</div>
+    <p class="why">We only call something winnable if it changed recently. At <b>60 days</b> there are
+    98 qualifying; at <b>30 days</b> just 41. The real question: how long after a permit moves is it
+    still worth your call?</p>
+    <div class="pills" data-group="age_window">
+      <label><input type="radio" name="age_window" value="30"> 30 days &mdash; tighter, 41 jobs</label>
+      <label><input type="radio" name="age_window" value="60" checked> 60 days &mdash; current, 98 jobs</label>
+    </div>
+    <span class="path">delivery.easy_win.max_age_days</span>
+  </div>
+</section>
+
+<!-- ================= SECTION 4 — RELATIONSHIPS ================= -->
+<section class="block">
+  <div class="section-head"><span class="idx">04</span><h2>The GCs</h2></div>
+  <p class="section-note">The highest-value ten minutes of this session. Naming even a dozen general
+  contractors immediately sharpens which projects rank &mdash; and tells us who never to surface again.</p>
+
+  <div class="q">
+    <div class="qn">Who do you work with, want to work with, or avoid?</div>
+    <p class="why">&ldquo;Worked with&rdquo; gives their projects a lift. &ldquo;Avoid&rdquo; removes
+    them from your feed outright. Blank rows are ignored.</p>
+    <table class="gc">
+      <thead><tr><th style="width:58%">General contractor</th><th>Relationship</th></tr></thead>
+      <tbody id="gcRows"></tbody>
+    </table>
+    <p style="margin:.6rem 0 0"><button type="button" class="ghost" id="addGc">+ Add rows</button></p>
+    <span class="path">relationships &rarr; warm_gc_active / exclusion</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">Anything else we have wrong?</div>
+    <p class="why">Open floor. Anything that made you think &ldquo;that is not how this works&rdquo;
+    during the walkthrough is worth more than any answer above.</p>
+    <textarea id="notes" data-k="free_notes" rows="4" placeholder="…"></textarea>
+  </div>
+</section>
+
+<details class="out" id="out">
+  <summary>Preview the captured answers (JSON)</summary>
+  <pre id="json">{}</pre>
+</details>
+
+</div>
+
+<div class="toolbar">
+  <span class="status" id="status">Ready. <b id="answered">0</b> of <b id="total">0</b> answered.</span>
+  <button type="button" class="ghost" id="copy">Copy JSON</button>
+  <button type="button" class="ghost" id="print">Print</button>
+  <button type="button" id="download">Download answers</button>
+</div>
+
+<script>
+/**
+ * Calibration intake form.
+ *
+ * Two deliberate design choices:
+ *  1. Section 1 renders from ASSUMPTIONS[] rather than hand-written markup, so the
+ *     list stays 1:1 with `owner_assumed` in config/account-profiles.yaml. If that
+ *     list changes, this array is the single place to edit.
+ *  2. Every captured answer carries the `yamlPath` it maps to, so the export can be
+ *     applied as a config diff instead of being re-typed by a human (re-typing is
+ *     where a calibration answer silently becomes a different setting).
+ */
+
+/** Mirrors config/account-profiles.yaml -> accounts[solis_interiors].owner_assumed */
+const ASSUMPTIONS = [
+  {
+    id: 'territory',
+    setting: 'You work Thurston, Pierce, Lewis and King counties.',
+    why: 'This is the outer boundary of everything we show you. A county that is not on this list is invisible to you, however good the job.',
+    yamlPath: 'territory.counties_included',
+  },
+  {
+    id: 'geo_weight',
+    setting: 'Home metro outranks King commercial; Pierce sits about even.',
+    why: 'We assumed your home turf and relationship radius beat distant Seattle tenant-improvement volume. King still appears &mdash; it just does not dominate. <b>Note:</b> Thurston is only 38 of 477 priority jobs, so this weighting is fighting thin data.',
+    yamlPath: 'score_components &rarr; geography',
+  },
+  {
+    id: 'stage_weight',
+    setting: 'A project at application stage ranks ABOVE an equivalent issued one.',
+    why: 'Earlier means more time to get in before the GC locks its subs. If you would rather see confirmed, funded, issued work only, this flips.',
+    yamlPath: 'rules &rarr; routing (stage timing)',
+  },
+  {
+    id: 'warm_gc',
+    setting: 'A GC you already work with gives the job a small lift.',
+    why: 'Small on purpose &mdash; a nudge, not a reordering. Tell us if an existing relationship should count for much more, or nothing at all.',
+    yamlPath: 'score_components &rarr; warm_gc_active',
+  },
+  {
+    id: 'bands',
+    setting: 'Proximity bands of 20, 35 and 50 miles from Lacey.',
+    why: 'Drives the &ldquo;winnable now&rdquo; ordering, nearest first. The 35-mile ring holds nearly everything &mdash; stretching to 50 adds only seven jobs.',
+    yamlPath: 'delivery.easy_win.radius_bands_mi',
+  },
+  {
+    id: 'no_floor',
+    setting: 'No minimum job size &mdash; no job is too small.',
+    why: 'We never filter on price from below. If there is a size beneath which a bid is not worth writing, saying so removes real noise.',
+    yamlPath: 'delivery.easy_win.min_valuation_usd',
+  },
+  {
+    id: 'king_small',
+    setting: 'King County jobs under $10k go to the digest, not to priority.',
+    why: 'A small job two hours away rarely pays for the drive. Applies only to King.',
+    yamlPath: 'rules &rarr; routing (King banding)',
+  },
+];
+
+const STORE = 'solis-intake-2026-07-26';
+
+/* ---------- Render section 1 ---------- */
+const confirmsEl = document.getElementById('confirms');
+ASSUMPTIONS.forEach((a, n) => {
+  const el = document.createElement('div');
+  el.className = 'q';
+  el.dataset.assumption = a.id;
+  el.innerHTML = `
+    <div class="qn">${String(n + 1).padStart(2, '0')} &nbsp;${a.setting}</div>
+    <p class="why">${a.why}</p>
+    <div class="cc">
+      <label class="y"><input type="radio" name="cc_${a.id}" value="confirm"> That's right</label>
+      <label class="n"><input type="radio" name="cc_${a.id}" value="correct"> Needs changing</label>
+    </div>
+    <div class="correction">
+      <label class="fl" for="fix_${a.id}">What should it be instead?</label>
+      <textarea id="fix_${a.id}" data-fix="${a.id}" placeholder="A sentence is enough…"></textarea>
+    </div>
+    <span class="path">${a.yamlPath}</span>`;
+  confirmsEl.appendChild(el);
+  el.querySelectorAll(`input[name="cc_${a.id}"]`).forEach((r) => {
+    r.addEventListener('change', () => { el.dataset.state = r.value; save(); });
+  });
+});
+
+/* ---------- GC rows ---------- */
+const gcBody = document.getElementById('gcRows');
+const RELATIONSHIPS = ['', 'Worked with', 'Want to work with', 'Avoid', 'Blocked by incumbent'];
+function addGcRows(count) {
+  for (let i = 0; i < count; i++) {
+    const tr = document.createElement('tr');
+    const opts = RELATIONSHIPS.map((r) => `<option value="${r}">${r || '—'}</option>`).join('');
+    tr.innerHTML = `<td><input type="text" class="gc-name" placeholder="Company name"></td>
+                    <td><select class="gc-rel">${opts}</select></td>`;
+    gcBody.appendChild(tr);
+  }
+}
+addGcRows(12);
+document.getElementById('addGc').addEventListener('click', () => { addGcRows(6); });
+
+/* ---------- Collect ---------- */
+function collect() {
+  const confirmations = ASSUMPTIONS.map((a) => {
+    const picked = document.querySelector(`input[name="cc_${a.id}"]:checked`);
+    const fix = document.querySelector(`[data-fix="${a.id}"]`);
+    return {
+      id: a.id,
+      setting: a.setting.replace(/<[^>]+>/g, ''),
+      yamlPath: a.yamlPath.replace(/&rarr;/g, '->'),
+      verdict: picked ? picked.value : null,
+      correction: picked && picked.value === 'correct' ? (fix.value.trim() || null) : null,
+    };
+  });
+
+  const answers = {};
+  document.querySelectorAll('[data-k]').forEach((el) => {
+    const v = el.value.trim();
+    if (v) answers[el.dataset.k] = v;
+  });
+  document.querySelectorAll('.pills[data-group]').forEach((g) => {
+    const picked = g.querySelector('input:checked');
+    if (picked) answers[g.dataset.group] = picked.value;
+  });
+
+  const gcs = Array.from(gcBody.querySelectorAll('tr')).map((tr) => ({
+    name: tr.querySelector('.gc-name').value.trim(),
+    relationship: tr.querySelector('.gc-rel').value,
+  })).filter((g) => g.name);
+
+  return {
+    account: 'solis_interiors',
+    session: '2026-07-26',
+    capturedAt: new Date().toISOString(),
+    confirmations,
+    answers,
+    gcs,
+  };
+}
+
+/* ---------- Persist + status ---------- */
+const statusEl = document.getElementById('answered');
+document.getElementById('total').textContent = String(ASSUMPTIONS.length + 9);
+
+function save() {
+  const data = collect();
+  document.getElementById('json').textContent = JSON.stringify(data, null, 2);
+  const done = data.confirmations.filter((c) => c.verdict).length
+    + Object.keys(data.answers).length
+    + (data.gcs.length ? 1 : 0);
+  statusEl.textContent = String(done);
+  try { localStorage.setItem(STORE, JSON.stringify(data)); } catch (_) { /* private mode */ }
+}
+
+function restore() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (_) { return; }
+  if (!saved) return;
+  (saved.confirmations || []).forEach((c) => {
+    if (!c.verdict) return;
+    const r = document.querySelector(`input[name="cc_${c.id}"][value="${c.verdict}"]`);
+    if (r) { r.checked = true; r.closest('.q').dataset.state = c.verdict; }
+    if (c.correction) {
+      const f = document.querySelector(`[data-fix="${c.id}"]`);
+      if (f) f.value = c.correction;
+    }
+  });
+  Object.entries(saved.answers || {}).forEach(([k, v]) => {
+    const el = document.querySelector(`[data-k="${k}"]`);
+    if (el) { el.value = v; return; }
+    const pill = document.querySelector(`.pills[data-group="${k}"] input[value="${v}"]`);
+    if (pill) pill.checked = true;
+  });
+  const need = (saved.gcs || []).length - gcBody.children.length;
+  if (need > 0) addGcRows(need);
+  (saved.gcs || []).forEach((g, i) => {
+    const tr = gcBody.children[i];
+    if (!tr) return;
+    tr.querySelector('.gc-name').value = g.name;
+    tr.querySelector('.gc-rel').value = g.relationship;
+  });
+}
+
+document.addEventListener('input', save);
+document.addEventListener('change', save);
+
+/* ---------- Actions ---------- */
+document.getElementById('download').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(collect(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'solis-calibration-2026-07-26.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('copy').addEventListener('click', async (e) => {
+  const text = JSON.stringify(collect(), null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+    e.target.textContent = 'Copied';
+  } catch (_) {
+    // Clipboard API needs a secure context; opening the preview is the fallback
+    // rather than failing silently on a file:// page in the middle of a meeting.
+    document.getElementById('out').open = true;
+    e.target.textContent = 'Select from preview';
+  }
+  setTimeout(() => { e.target.textContent = 'Copy JSON'; }, 2200);
+});
+
+document.getElementById('print').addEventListener('click', () => window.print());
+
+restore();
+save();
+</script>
+</body>
+</html>
