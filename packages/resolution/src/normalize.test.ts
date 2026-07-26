@@ -82,6 +82,25 @@ describe("normalizeOrgName / nameSimilarity", () => {
     expect(nameSimilarity("Roamers RV Park", "Seminary Hill Water Reservoir")).toBeLessThan(0.2);
   });
 
+  it("does not treat an initial as noise — a one-word name is not a perfect match", () => {
+    // Measured against live data: dropping single characters made these token
+    // sets IDENTICAL, so each scored a perfect 1.00 and was reported as a
+    // near-match that better matching could close. They are different firms.
+    expect(nameSimilarity("CHARLES", "K C Charles Inc")).toBeLessThan(0.5);
+    expect(nameSimilarity("HOUSE", "A-Z House LLC")).toBeLessThan(0.5);
+    expect(nameSimilarity("N/A (RESIDENTIAL)", "J&w Residential LLC")).toBeLessThan(0.5);
+    expect(nameSimilarity("HOWARD", "J Howard LLC")).toBeLessThan(0.6);
+  });
+
+  it("keeps a genuine match perfect when the initials appear on BOTH sides", () => {
+    // The fix must not punish names that legitimately carry initials — the
+    // tokens survive symmetrically, so these stay exact.
+    expect(nameSimilarity("R&R FOUNDATION SPECIALIST", "R&r Foundation Specialist LLC")).toBe(1);
+    expect(nameSimilarity("KLIEMANN BROS HEATING", "Kliemann Bros Heating")).toBe(1);
+    // Word order is irrelevant to a set measure, and should stay that way.
+    expect(nameSimilarity("TRANSFORMATIONS LLC EVERGREEN", "Evergreen Transformations LLC")).toBe(1);
+  });
+
   it("flags generic names for review (spec §10)", () => {
     expect(isGenericName("Tenant Improvement")).toBe(true);
     expect(isGenericName("REROOF")).toBe(true);

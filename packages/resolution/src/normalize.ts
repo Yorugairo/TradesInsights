@@ -228,13 +228,33 @@ export function isGenericName(name: string): boolean {
   return GENERIC_NAME_PATTERNS.some((p) => p.test(n));
 }
 
+/**
+ * Comparison tokens for a name.
+ *
+ * SINGLE CHARACTERS ARE KEPT, and that is the point. In a business name an
+ * initial is identity-bearing — `K C Charles`, `J&W Residential`, `A-Z House`,
+ * `G & G Heating` are not the same firms as `Charles`, `Residential`, `House`
+ * and `Heating`. Dropping them (the old `t.length > 1`) collapsed those pairs to
+ * IDENTICAL token sets, so Jaccard scored them 1.00 — a perfect match between a
+ * one-word org name and any registry name that happened to contain that word:
+ *
+ *   CHARLES            vs  K C Charles Inc      1.00  (now 0.33)
+ *   HOUSE              vs  A-Z House LLC        1.00  (now 0.33)
+ *   N/A (RESIDENTIAL)  vs  J&w Residential LLC  1.00  (now 0.20)
+ *
+ * Symmetric matches are unaffected, because the initials survive on BOTH sides:
+ * `R&R FOUNDATION SPECIALIST` vs `R&r Foundation Specialist LLC` is still 1.00.
+ *
+ * The `&` itself never reaches here as a token — it is punctuation, replaced by
+ * a space above, and ORG_NOISE covers the spelled-out "AND".
+ */
 function tokenSet(name: string): Set<string> {
   return new Set(
     name
       .toUpperCase()
       .replace(/[^A-Z0-9 ]/g, " ")
       .split(/\s+/)
-      .filter((t) => t.length > 1 && !ORG_NOISE.has(t) && !LEGAL_SUFFIXES.has(t)),
+      .filter((t) => t.length > 0 && !ORG_NOISE.has(t) && !LEGAL_SUFFIXES.has(t)),
   );
 }
 
