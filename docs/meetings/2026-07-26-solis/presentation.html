@@ -31,8 +31,69 @@ body{overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
 .slide-content{
   flex:1;display:flex;flex-direction:column;justify-content:space-between;
   max-height:100%;overflow:hidden;padding:var(--pad);
-  position:relative;z-index:2;width:100%;max-width:1220px;margin:0 auto;gap:var(--gap);
+  position:relative;z-index:2;width:100%;max-width:var(--measure);margin:0 auto;gap:var(--gap);
 }
+/* Slides carrying an evidence-and-ask split get the wide measure. Prose-only
+   slides deliberately do NOT: a 3840px-wide paragraph is unreadable, and "use
+   the space we have" is not the same instruction as "stretch the text". */
+.slide.wide .slide-content{max-width:var(--measure-wide)}
+/* `.body.split-ask`, not `.split-ask`: `.body{display:flex;flex-direction:column}`
+   is declared LATER in this stylesheet, so a single-class selector loses the
+   cascade and the two columns silently stack — which looks like "the grid did
+   not apply" and is really "the grid applied and then was overridden". */
+.body.split-ask{
+  display:grid;grid-template-columns:minmax(0,1.32fr) minmax(0,1fr);
+  gap:clamp(1rem,2.4vw,2.8rem);align-items:center;justify-content:stretch;min-height:0;
+}
+.body.split-ask > *{min-width:0}
+@media (max-width:1100px){ .body.split-ask{grid-template-columns:1fr} }
+/* ── Capture panel ────────────────────────────────────────────────────────────
+   Lifted in behaviour from intake.html, re-skinned into Electric Studio. The
+   intake's own palette is retired here: it defines --ink as a TEXT colour while
+   this deck uses --ink as a dark BACKGROUND, so concatenating the two
+   stylesheets silently mis-colours both surfaces. */
+.ask{
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:clamp(.85rem,1.5vw,1.4rem);box-shadow:var(--shadow-sm);
+  display:flex;flex-direction:column;gap:.6em;min-height:0;
+}
+.slide.dark .ask{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.13);box-shadow:none}
+.ask .ask-q{font-family:'Archivo',sans-serif;font-weight:800;font-size:var(--h3);letter-spacing:-.02em;line-height:1.2}
+.ask .ask-setting{font-size:var(--small);color:var(--muted);line-height:1.5}
+.slide.dark .ask .ask-setting{color:#a9b4c9}
+.ask .cc{display:flex;gap:.5em;flex-wrap:wrap}
+.ask .cc label{
+  display:inline-flex;align-items:center;gap:.4em;cursor:pointer;
+  border:1px solid var(--line);border-radius:999px;padding:.3em .85em;
+  font-size:var(--small);font-weight:700;background:var(--canvas);user-select:none;
+}
+.slide.dark .ask .cc label{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.15);color:#dbe2f0}
+.ask .cc label:has(input:checked){border-color:var(--accent);background:var(--accent-wash);color:var(--accent)}
+.slide.dark .ask .cc label:has(input:checked){background:rgba(47,95,255,.26);border-color:var(--accent-2);color:#dce6ff}
+.ask textarea,.ask input[type=text]{
+  font:inherit;font-size:var(--small);width:100%;border:1px solid var(--line);border-radius:9px;
+  padding:.5em .7em;background:var(--surface);color:var(--text);resize:vertical;min-height:2.4em;
+}
+.slide.dark .ask textarea,.slide.dark .ask input[type=text]{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.16);color:#eef1f7}
+.ask .ask-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--micro);color:var(--faint)}
+.ask .saved{font-size:var(--micro);color:var(--teal);font-weight:700;opacity:0;transition:opacity .25s}
+.ask .saved.on{opacity:1}
+/* The GC table is the one genuinely tall control — it gets its own scroll region.
+   Deck.inScrollable() is what lets a trackpad reach the bottom of it without the
+   gesture being stolen by slide navigation. */
+.gc-scroll{overflow-y:auto;max-height:min(46vh,520px);border:1px solid var(--line);border-radius:12px}
+.slide.dark .gc-scroll{border-color:rgba(255,255,255,.13)}
+.gc-scroll table{width:100%;border-collapse:collapse;font-size:var(--small)}
+.gc-scroll th{position:sticky;top:0;background:var(--surface);text-align:left;font-size:var(--micro);
+  text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:.55em .7em;border-bottom:1px solid var(--line)}
+.slide.dark .gc-scroll th{background:#151d2e;color:#a9b4c9;border-color:rgba(255,255,255,.13)}
+.gc-scroll td{padding:.3em .45em;border-bottom:1px solid var(--line)}
+.slide.dark .gc-scroll td{border-color:rgba(255,255,255,.08)}
+.gc-scroll input,.gc-scroll select{font:inherit;font-size:var(--small);width:100%;border:1px solid transparent;
+  background:transparent;padding:.35em .4em;border-radius:7px;color:inherit}
+.gc-scroll input:focus,.gc-scroll select:focus{outline:2px solid var(--accent);background:var(--surface)}
+.slide.dark .gc-scroll select option{color:#101828}
+
 .head{display:flex;flex-direction:column;gap:var(--gap-s);flex:none}
 .body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:var(--gap)}
 .foot{display:flex;flex-direction:column;gap:var(--gap-s);flex:none}
@@ -59,6 +120,13 @@ body{overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
   --body:   clamp(.82rem, 1.18vw, 1.08rem);
   --small:  clamp(.7rem, .87vw, .88rem);
   --micro:  clamp(.61rem, .74vw, .75rem);
+  /* The stage. 1220px was letterboxing the deck to ~32% of a 4K 32" display and
+     centring the waste; the wide measure is what makes evidence-beside-ask fit
+     at all. Capped rather than unbounded so an ultrawide does not stretch a
+     two-column grid into two unrelated islands. */
+  --measure:      1220px;
+  --measure-wide: min(2200px, 93vw);
+
   --pad:    clamp(1.1rem, 3.6vw, 4rem);
   --pad-y:  clamp(1.4rem, 6vh, 3.6rem);
   --gap:    clamp(.6rem, 2vh, 1.7rem);
@@ -72,6 +140,25 @@ body{overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
   --teal:#0d9488; --amber:#b45309;
   --shadow-sm:0 1px 2px rgba(16,24,40,.05);
   --shadow:0 1px 3px rgba(16,24,40,.07), 0 14px 32px -16px rgba(16,24,40,.24);
+}
+
+/* 4K desk display. The vw scale above is tuned for a projector, where the room is
+   far from the screen and the clamp CEILINGS stop type getting absurd. On a 32" 4K
+   panel at desk distance those same ceilings cap --body at ~17px, so the deck reads
+   as a small bright island in a large dark room. Raise the ceilings only — the vw
+   slopes and every colour are untouched, so nothing below 2400px changes.
+   NOTE: this block must sit AFTER the full :root, not inside it. An earlier version
+   opened the media query mid-declaration and orphaned --pad and the whole palette,
+   which broke every viewport under 2400px rather than the one being tuned. */
+@media (min-width:2400px){
+  :root{
+    --title: clamp(1.7rem, 5vw, 5.4rem);
+    --h2:    clamp(1.3rem, 3.2vw, 3.2rem);
+    --h3:    clamp(1.02rem, 1.85vw, 1.85rem);
+    --body:  clamp(.82rem, 1.18vw, 1.44rem);
+    --small: clamp(.7rem, .87vw, 1.12rem);
+    --micro: clamp(.61rem, .74vw, .95rem);
+  }
 }
 .slide-content{padding-top:var(--pad-y);padding-bottom:var(--pad-y)}
 
@@ -410,7 +497,7 @@ ul.list.num li::before{
 </section>
 
 <!-- 04 THE 45% -->
-<section class="slide" aria-labelledby="s4">
+<section class="slide wide" data-ask="stage_weight" aria-labelledby="s4">
   <div class="slide-content">
     <div class="head">
       <span class="eyebrow reveal">Measured this morning</span>
@@ -592,7 +679,7 @@ ul.list.num li::before{
 </section>
 
 <!-- THE KING TENSION -->
-<section class="slide" aria-labelledby="sD">
+<section class="slide wide" data-ask="territory" aria-labelledby="sD">
   <div class="slide-content">
     <div class="head">
       <span class="eyebrow reveal">A setting worth fixing</span>
@@ -693,7 +780,7 @@ ul.list.num li::before{
 </section>
 
 <!-- 09 COUNTY -->
-<section class="slide" aria-labelledby="s9">
+<section class="slide wide" data-ask="geo_weight,king_small" aria-labelledby="s9">
   <div class="slide-content">
     <div class="head">
       <span class="eyebrow reveal">Where the work actually is</span>
@@ -717,7 +804,7 @@ ul.list.num li::before{
 </section>
 
 <!-- 10 EASY WINS -->
-<section class="slide" aria-labelledby="s10">
+<section class="slide wide" data-ask="bands,no_floor" aria-labelledby="s10">
   <div class="slide-content">
     <div class="head">
       <span class="eyebrow reveal">⚡ Winnable now</span>
@@ -806,11 +893,11 @@ ul.list.num li::before{
 </section>
 
 <!-- 13 WHAT DOESN'T WORK -->
-<section class="slide dark" aria-labelledby="s13">
+<section class="slide dark wide" data-ask="warm_gc" aria-labelledby="s13">
   <div class="slide-content">
     <div class="head">
       <span class="eyebrow reveal">What is not working yet</span>
-      <h2 id="s13" class="reveal">The verified-contractor signal<br>fires zero times.</h2>
+      <h2 id="s13" class="reveal">Both contractor signals<br>fired zero times. Until this week.</h2>
     </div>
     <div class="body">
       <div class="split reveal">
@@ -901,6 +988,68 @@ ul.list.num li::before{
 </section>
 
 <!-- ================= APPENDIX ================= -->
+
+<!-- GC CAPTURE — the one control too tall to sit beside evidence, so it gets a
+     slide and an internal scroll region (Deck.inScrollable lets the wheel reach
+     the bottom of it instead of the gesture being stolen by slide nav). -->
+<section class="slide wide" aria-labelledby="sGC">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">The highest-value ten minutes</span>
+      <h2 id="sGC" class="reveal">Who do you work with,<br>want to, or avoid?</h2>
+    </div>
+    <div class="body">
+      <div class="split-ask">
+        <div class="stack s reveal">
+          <p class="lede">Permit records show us who is <em>building</em>. Only you know who you
+            actually <em>work with</em> &mdash; it is the one thing we cannot derive.</p>
+          <p class="lede"><strong>Straight about which half works today.</strong>
+            &ldquo;Avoid&rdquo; removes them from your feed immediately. &ldquo;Worked with&rdquo; we
+            record, but it does <em>not</em> move your score yet &mdash; nothing in the scorer reads
+            it. Your answers here are what let us build that.</p>
+          <p class="callout reveal">A dozen names is plenty. Partial is fine &mdash; every row is
+            saved as you type.</p>
+        </div>
+        <div class="q" id="gcHost" data-gc></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal" style="display:flex;gap:.8em;align-items:center;flex-wrap:wrap">
+        <button type="button" id="addGc" class="ghost">+ Add rows</button>
+        <span class="ask-path">relationships &rarr; exclusion (live) &middot; relationship lift (not wired yet)</span>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ANSWERS — everything captured, in one place, exportable. -->
+<section class="slide dark wide" aria-labelledby="sANS">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Captured</span>
+      <h2 id="sANS" class="reveal">What we heard today.</h2>
+    </div>
+    <div class="body">
+      <div class="split-ask">
+        <div class="stack s reveal">
+          <p class="lede"><b id="answered">0</b> of <b id="total">0</b> answered. Saved to this
+            browser as you go &mdash; close the laptop, reopen it, nothing is lost.</p>
+          <p class="lede">Every answer carries the config path it maps to, so this applies as a
+            settings diff rather than being re-typed. Re-typing is where a calibration answer
+            silently becomes a different setting.</p>
+          <p class="callout reveal" style="display:flex;gap:.8em;align-items:center;flex-wrap:wrap">
+            <button type="button" id="copyAnswers" class="ghost">Copy JSON</button>
+            <button type="button" id="downloadAnswers" class="ghost">Download answers</button>
+          </p>
+        </div>
+        <details class="ask" id="answersOut" open>
+          <summary style="cursor:pointer;font-weight:800;font-family:Archivo,sans-serif">Raw capture</summary>
+          <pre id="answersJson" style="overflow:auto;max-height:min(44vh,470px);font-size:var(--micro);line-height:1.45;margin:.6em 0 0">{}</pre>
+        </details>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section class="slide dark" data-appendix aria-labelledby="sA1">
   <div class="slide-content">
@@ -1107,6 +1256,9 @@ ul.list.num li::before{
 
 <nav class="deck-nav" id="nav" aria-label="Slide navigation"></nav>
 
+<!-- The shared question set. Plain script, not a module: these files open from
+     file://, where `import` is blocked by CORS. Must load BEFORE the deck script. -->
+<script src="questions.js"></script>
 <script>
 /**
  * Deck controller — keyboard, wheel, touch and dot navigation.
@@ -1181,8 +1333,38 @@ class Deck {
   next() { this.go(this.i + 1); }
   prev() { this.go(this.i - 1); }
 
+  /* This deck is also a form. Every nav gesture therefore has to ask "was this
+     meant for me, or for a field?" before it acts — a deck that eats the space
+     bar while the customer types a company name is not a deck, it is a bug with
+     a progress bar. */
+  static inField(target) {
+    return !!(target && target.closest && target.closest('input, textarea, select, [contenteditable=""], [contenteditable=true]'));
+  }
+
+  /* A capture panel may scroll internally (the GC table does). Let the element
+     consume the wheel until it actually reaches its own edge, THEN hand the
+     gesture back to slide navigation. */
+  static inScrollable(target, deltaY) {
+    let el = target;
+    while (el && el !== document.body) {
+      if (el.scrollHeight - el.clientHeight > 2) {
+        const style = getComputedStyle(el).overflowY;
+        if (style === 'auto' || style === 'scroll') {
+          const atTop = el.scrollTop <= 0;
+          const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+          if (!(deltaY > 0 ? atBottom : atTop)) return true;
+        }
+      }
+      el = el.parentElement;
+    }
+    return false;
+  }
+
   bind() {
     document.addEventListener('keydown', (e) => {
+      // Space, arrows and PageUp/Down are all legitimate text-editing keys. Bail
+      // BEFORE preventDefault, or the caret can never move and Space never types.
+      if (Deck.inField(e.target)) return;
       const k = e.key;
       if (['ArrowDown', 'ArrowRight', 'PageDown', ' '].includes(k)) { e.preventDefault(); this.next(); }
       else if (['ArrowUp', 'ArrowLeft', 'PageUp'].includes(k)) { e.preventDefault(); this.prev(); }
@@ -1194,6 +1376,7 @@ class Deck {
     // several slides mid-presentation, which reads as a glitch from the room.
     window.addEventListener('wheel', (e) => {
       if (this.locked || Math.abs(e.deltaY) < 12) return;
+      if (Deck.inScrollable(e.target, e.deltaY)) return;
       this.locked = true;
       e.deltaY > 0 ? this.next() : this.prev();
       setTimeout(() => { this.locked = false; }, 700);
@@ -1204,13 +1387,239 @@ class Deck {
     window.addEventListener('touchend', (e) => {
       if (y0 === null) return;
       const dy = y0 - e.changedTouches[0].clientY;
-      if (Math.abs(dy) > 55) dy > 0 ? this.next() : this.prev();
+      if (Math.abs(dy) > 55 && !Deck.inField(e.target) && !Deck.inScrollable(e.target, dy)) {
+        dy > 0 ? this.next() : this.prev();
+      }
       y0 = null;
     }, { passive: true });
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => new Deck());
+/**
+ * Capture layer — the deck is also the intake form.
+ *
+ * Behaviour is lifted from intake.html (localStorage autosave, restore, collect,
+ * export) because that layer was already correct; what changes is WHERE the
+ * question appears. A question asked beside its evidence gets answered from the
+ * screen. The same question in a separate file gets answered from memory, later,
+ * if at all.
+ */
+class Capture {
+  constructor() {
+    const cfg = window.CALIBRATION;
+    if (!cfg) return; // questions.js missing — deck still presents, just without capture
+    this.STORE = cfg.STORE;
+    this.assumptions = cfg.ASSUMPTIONS;
+    this.relationships = cfg.RELATIONSHIPS;
+    this.mount();
+    this.mountGcTable();
+    this.bind();
+    this.restore();
+    this.save();
+  }
+
+  /* Panels are INJECTED, not authored into each slide. Hand-written panels mean
+     every question edit is a hunt through 19 slides, and the one you miss is the
+     one that contradicts questions.js. */
+  mount() {
+    document.querySelectorAll('.slide[data-ask]').forEach((slide) => {
+      const ids = slide.dataset.ask.split(',').map((s) => s.trim()).filter(Boolean);
+      const body = slide.querySelector('.body');
+      if (!body) return;
+
+      // Existing content becomes the evidence column; the asks become the second.
+      const evidence = document.createElement('div');
+      evidence.className = 'evidence';
+      evidence.style.minWidth = '0';
+      while (body.firstChild) evidence.appendChild(body.firstChild);
+
+      const asks = document.createElement('div');
+      asks.style.cssText = 'display:flex;flex-direction:column;gap:var(--gap-s);min-height:0';
+      ids.forEach((id) => {
+        const a = this.assumptions.find((x) => x.id === id);
+        if (a) asks.appendChild(this.panel(a));
+      });
+
+      body.classList.add('split-ask');
+      body.appendChild(evidence);
+      body.appendChild(asks);
+    });
+  }
+
+  panel(a) {
+    const el = document.createElement('div');
+    el.className = 'ask q';
+    el.dataset.assumption = a.id;
+    el.innerHTML = `
+      <div class="ask-q">${a.ask}</div>
+      <div class="ask-setting">${a.setting}</div>
+      <div class="cc">
+        <label><input type="radio" name="cc_${a.id}" value="confirm"> That's right</label>
+        <label><input type="radio" name="cc_${a.id}" value="correct"> Needs changing</label>
+      </div>
+      <textarea data-fix="${a.id}" rows="2" placeholder="What should it be instead?"></textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6em">
+        <span class="ask-path">${a.yamlPath}</span><span class="saved">saved</span>
+      </div>`;
+    el.querySelectorAll(`input[name="cc_${a.id}"]`).forEach((r) => {
+      r.addEventListener('change', () => { el.dataset.state = r.value; this.save(); });
+    });
+    return el;
+  }
+
+  mountGcTable() {
+    const host = document.getElementById('gcHost');
+    if (!host) return;
+    const opts = this.relationships.map((r) => `<option value="${r}">${r || '—'}</option>`).join('');
+    host.innerHTML = `
+      <div class="gc-scroll">
+        <table><thead><tr><th style="width:62%">General contractor</th><th>Relationship</th></tr></thead>
+        <tbody id="gcRows"></tbody></table>
+      </div>`;
+    this.gcBody = host.querySelector('#gcRows');
+    this.gcOpts = opts;
+    this.addGcRows(14);
+  }
+
+  addGcRows(count) {
+    for (let i = 0; i < count; i++) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><input type="text" class="gc-name" placeholder="Company name"></td>
+                      <td><select class="gc-rel">${this.gcOpts}</select></td>`;
+      this.gcBody.appendChild(tr);
+    }
+  }
+
+  collect() {
+    const confirmations = this.assumptions.map((a) => {
+      const picked = document.querySelector(`input[name="cc_${a.id}"]:checked`);
+      const fix = document.querySelector(`[data-fix="${a.id}"]`);
+      return {
+        id: a.id,
+        setting: a.setting.replace(/<[^>]+>/g, ''),
+        yamlPath: a.yamlPath,
+        verdict: picked ? picked.value : null,
+        // Persist typed text REGARDLESS of the radio. The intake gated this on
+        // verdict === 'correct', which meant a correction typed before ticking the
+        // box was silently discarded on reload — the customer says the most useful
+        // thing in the session and it evaporates. An unlabelled correction is a
+        // far smaller problem than a lost one.
+        correction: (fix && fix.value.trim()) || null,
+      };
+    });
+    const answers = {};
+    document.querySelectorAll('[data-k]').forEach((el) => {
+      const v = el.value.trim();
+      if (v) answers[el.dataset.k] = v;
+    });
+    const gcs = this.gcBody
+      ? Array.from(this.gcBody.querySelectorAll('tr')).map((tr) => ({
+          name: tr.querySelector('.gc-name').value.trim(),
+          relationship: tr.querySelector('.gc-rel').value,
+        })).filter((g) => g.name)
+      : [];
+    return { account: 'solis_interiors', session: '2026-07-26', capturedAt: new Date().toISOString(), confirmations, answers, gcs };
+  }
+
+  /* Count question CARDS, not answer keys — a hardcoded total drifts the moment a
+     question is added, and counting keys makes one multi-field card look like
+     eight answers. Either way the figure on screen lies. (from intake.html) */
+  cards() { return Array.from(document.querySelectorAll('.q')); }
+  isAnswered(q) {
+    return 'state' in q.dataset ||
+      q.querySelector('input:checked') !== null ||
+      Array.from(q.querySelectorAll('input[type=text],textarea')).some((el) => el.value.trim() !== '');
+  }
+
+  save() {
+    const data = this.collect();
+    const total = this.cards().length;
+    const done = this.cards().filter((q) => this.isAnswered(q)).length;
+    const a = document.getElementById('answered'); if (a) a.textContent = String(done);
+    const t = document.getElementById('total'); if (t) t.textContent = String(total);
+    const j = document.getElementById('answersJson'); if (j) j.textContent = JSON.stringify(data, null, 2);
+    try { localStorage.setItem(this.STORE, JSON.stringify(data)); } catch (_) { /* private mode */ }
+  }
+
+  restore() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(this.STORE) || 'null'); } catch (_) { return; }
+    if (!saved) return;
+    (saved.confirmations || []).forEach((c) => {
+      // Restore the text even when no verdict was ticked — see collect().
+      if (c.correction) {
+        const f = document.querySelector(`[data-fix="${c.id}"]`);
+        if (f) f.value = c.correction;
+      }
+      if (!c.verdict) return;
+      const r = document.querySelector(`input[name="cc_${c.id}"][value="${c.verdict}"]`);
+      if (r) { r.checked = true; const q = r.closest('.q'); if (q) q.dataset.state = c.verdict; }
+    });
+    Object.entries(saved.answers || {}).forEach(([k, v]) => {
+      const el = document.querySelector(`[data-k="${k}"]`);
+      if (el) el.value = v;
+    });
+    if (this.gcBody) {
+      const need = (saved.gcs || []).length - this.gcBody.children.length;
+      if (need > 0) this.addGcRows(need);
+      (saved.gcs || []).forEach((g, i) => {
+        const tr = this.gcBody.children[i];
+        if (!tr) return;
+        tr.querySelector('.gc-name').value = g.name;
+        tr.querySelector('.gc-rel').value = g.relationship;
+      });
+    }
+  }
+
+  flashSaved(target) {
+    const panel = target.closest && target.closest('.ask');
+    const tag = panel && panel.querySelector('.saved');
+    if (!tag) return;
+    tag.classList.add('on');
+    clearTimeout(tag._t);
+    tag._t = setTimeout(() => tag.classList.remove('on'), 1100);
+  }
+
+  bind() {
+    // ONE listener pair for the whole document. Binding these per-panel would run
+    // save() once per panel per keystroke and write localStorage N times a letter.
+    document.addEventListener('input', (e) => { this.save(); this.flashSaved(e.target); });
+    document.addEventListener('change', (e) => { this.save(); this.flashSaved(e.target); });
+
+    const add = document.getElementById('addGc');
+    if (add) add.addEventListener('click', () => { this.addGcRows(6); this.save(); });
+
+    const dl = document.getElementById('downloadAnswers');
+    if (dl) dl.addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(this.collect(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'solis-calibration-2026-07-26.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    const cp = document.getElementById('copyAnswers');
+    if (cp) cp.addEventListener('click', async (e) => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(this.collect(), null, 2));
+        e.target.textContent = 'Copied';
+      } catch (_) {
+        // Clipboard API needs a secure context; file:// is not one. Reveal the raw
+        // JSON to select by hand rather than failing silently mid-meeting.
+        const d = document.getElementById('answersOut'); if (d) d.open = true;
+        e.target.textContent = 'Select from preview';
+      }
+      setTimeout(() => { e.target.textContent = 'Copy JSON'; }, 2200);
+    });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Capture first: it restructures slide bodies, and Deck measures slides.
+  new Capture();
+  new Deck();
+});
 </script>
 </body>
 </html>
