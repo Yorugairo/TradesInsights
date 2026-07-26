@@ -1,4 +1,96 @@
-# Solis calibration prep — Sunday session (numbers as of 2026-07-17)
+# Solis calibration prep — session numbers
+
+## §0. Meeting brief — refreshed 2026-07-26
+
+**This session is a confirm-or-correct pass, not a blank-slate interview.** The
+territory, geographic weighting, easy-win bands and "no job too small" rule were
+set by the **owner from relationship knowledge of Solis** — they are live in
+scoring today and Solis has never been asked. They are tracked in
+`config/account-profiles.yaml → owner_assumed` (distinct from
+`calibration_pending`, which is what nobody knows). Walking in and asking these
+as open questions would re-open decisions already made and read as disorganized.
+
+### Refreshed numbers (regenerated 2026-07-26 vs the 2026-07-17 baseline)
+
+| Score ≥ | Standing 07-17 | Standing 07-26 | Δ | Changed/wk | Changed/30d |
+|---:|---:|---:|---:|---:|---:|
+| 65 | 953 | 1,263 | +310 | 51 | 497 |
+| 70 | 809 | 1,074 | +265 | 46 | 431 |
+| 75 | 671 | 678 | +7 | 23 | 279 |
+| **80 (current)** | **482** | **477** | −5 | **13** | 185 |
+| 85 | 369 | 205 | **−164** | 9 | 103 |
+| 90 | 142 | 32 | **−110** | 2 | 14 |
+| 95 | 22 | 7 | −15 | 0 | 3 |
+
+**The threshold recommendation holds: keep 80.** Weekly flow is still ~13, the
+same figure the 07-17 doc carried — now regenerated rather than hand-derived.
+
+**What DID move: the top of the distribution collapsed.** 85 fell 369→205 and 90
+fell 142→32. That is scorer **v1.9.0's geographic re-weighting working as
+designed** — King commercial dropped out of the top band. Consequence: raising
+the threshold is now far more aggressive than the 07-17 table implied. 90 would
+leave ~2/week, which is too quiet for relationship-building.
+
+### County mix inverted (v1.9.0, not a market shift)
+
+| County | 07-17 (≥80) | 07-26 (≥80) |
+|---|---:|---:|
+| Pierce | 148 | **270** |
+| King | **334** | 142 |
+| Thurston | — | 38 |
+| Lewis | — | 27 |
+
+**Honest finding to raise with Solis:** the home-metro up-weight was applied, but
+**Thurston is only 8% of the priority pool (38 of 477)**. The weighting is doing
+its job; the underlying Thurston *volume* is thin. Most of what we can see is
+Pierce. If Solis's real appetite is home-metro-only, the product has a coverage
+problem to solve, not a weighting one.
+
+### Two findings that change what we can ask
+
+1. **`verified_gc_on_project` and `warm_gc_active` fire ZERO times** across the
+   whole standing Solis pool. Open question 2 ("what weight should verified-GC
+   carry?") is **unanswerable as posed** — there is nothing to weight yet. The
+   real prerequisite is GC binding coverage. Do not ask Solis to price a signal
+   that never appears.
+2. **`commercial_bid_window_likely_closed` fires 217 times** — roughly 45% of the
+   priority pool is *already too late to bid*. This is the single strongest
+   evidence for the pre-permit/application-stage feed, and it is the number to
+   lead the product conversation with.
+
+Full signal coverage (standing, non-archived): `new_home_construction` 542,
+`production_builder_pipeline` 271, `tenant_improvement` 231,
+`commercial_bid_window_likely_closed` 217, `drywall_painting_keywords` 216,
+`active_campus` 137, `fact_contradiction` 133, `lifecycle_progressing` 121,
+`corroborated_multi_source` 15.
+
+### Easy-win bands as actually configured (no floor, ≤$2M cap)
+
+| Age window | ≤20 mi | ≤35 mi | ≤50 mi |
+|---|---:|---:|---:|
+| ≤30 d | 11 | 40 (+29) | 41 (+1) |
+| ≤60 d (current) | 23 | 91 (+68) | 98 (+7) |
+
+The 35-mile ring carries the mass (68 of 98). **The 50-mile outer band adds 7** —
+consistent with the older "beyond 60 km buys nothing" finding. The live decision
+is the age window: 30→60 d more than doubles the pool (41→98).
+
+### Operational notes
+
+- **Ingest gap:** broad web sources last swept **2026-07-21/22**; only the
+  operator-local sources (Olympia, Tumwater, Pierce PALS) have run since. The
+  flow column above is anchored on the most recent observed change, not on
+  `now()`, so it is immune to this gap — but a sweep before the session would
+  make the digest demo current.
+- **Contractor registration `SOLISIL785NT` runs through 2026-08-11** — 16 days
+  out at the time of this session. Worth raising.
+
+*Regenerate: `cd apps/worker && set -a && . ../../.env && set +a && pnpm exec tsx
+calibration-sensitivity.mts`.*
+
+---
+
+## Historical baseline (numbers as of 2026-07-17)
 
 Purpose: put real, deterministic numbers behind each decision the calibration session
 needs to make. Every figure below is a direct SQL count over stored opportunities /

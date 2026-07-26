@@ -37,6 +37,35 @@ const dist = await db.execute(sql`
   WHERE account_profile_id = ${solis} AND current_score IS NOT NULL AND state != 'archive'
   GROUP BY 1 ORDER BY 1`);
 
+// ---- 1b. WEEKLY FLOW, not standing backlog ------------------------------------
+// The standing count is a ~2-year backfill; the number that reaches a Monday
+// email is what CHANGED in the period. The threshold decision rests on this
+// column, so compute it here rather than by hand (the 2026-07-17 prep doc
+// carried a hand-derived "~13/week" that nothing regenerated).
+//
+// Anchor the windows on the most recent observed change, NOT on now(). Ingest
+// runs in bursts (the broad web sources are not on a daily cron), so a trailing
+// now()-7d window silently measures the gap since the last sweep rather than the
+// market: on 2026-07-26 the last sweep was 07-22, and now()-anchored flow at
+// threshold 80 read 1/wk — an artifact. Anchoring makes the number mean "in the
+// last week for which we actually have data".
+const anchorRow = await db.execute(sql`
+  SELECT max(last_material_change_at) AS anchor FROM opportunities
+  WHERE account_profile_id = ${solis} AND state != 'archive'`);
+const anchor = (anchorRow.rows[0] as { anchor: Date | null }).anchor;
+
+const flowRows: Record<string, { changed7d: number; changed30d: number }> = {};
+for (const t of thresholds) {
+  const r = await db.execute(sql`
+    SELECT count(*) FILTER (WHERE last_material_change_at > ${anchor}::timestamptz - interval '7 days')::int AS d7,
+           count(*) FILTER (WHERE last_material_change_at > ${anchor}::timestamptz - interval '30 days')::int AS d30
+    FROM opportunities
+    WHERE account_profile_id = ${solis} AND current_score >= ${t}
+      AND state != 'archive' AND last_material_change_at IS NOT NULL`);
+  const row = r.rows[0] as { d7: number; d30: number };
+  flowRows[String(t)] = { changed7d: row.d7, changed30d: row.d30 };
+}
+
 // ---- 2. Easy-win sensitivity grid (Solis) -------------------------------------
 // Mirrors packages/delivery/src/digest.ts isEasyWin() exactly, in SQL.
 const HOME = { lon: -122.823, lat: 47.046 }; // provisional home point (Lacey)
@@ -94,6 +123,33 @@ for (const [label, minVal, maxVal] of [
   valuationBands[label] = await easyWinCount({ radiusKm: 60, maxAgeDays: 60, minVal, maxVal });
 }
 
+// ---- 2b. The DECIDED easy-win shape (owner 2026-07-20) ------------------------
+// Concentric mile bands (nearest-first) and NO valuation floor. The grid above
+// still carries a $50k floor, which contradicts the standing directive — these
+// are the counts that match `delivery.easy_win` as configured today.
+const MI_M = 1609.344;
+const BANDS_MI = [20, 35, 50] as const;
+const easyWinBands: Record<string, { cumulative: number; ring: number }> = {};
+for (const maxAgeDays of [30, 60]) {
+  let prev = 0;
+  for (const mi of BANDS_MI) {
+    const cumulative = await easyWinCount({
+      radiusKm: (mi * MI_M) / 1000, maxAgeDays, minVal: null, maxVal: 2_000_000,
+    });
+    easyWinBands[`a${maxAgeDays}d_le${mi}mi`] = { cumulative, ring: cumulative - prev };
+    prev = cumulative;
+  }
+}
+
+// ---- 2c. Signal coverage — how often each disclosed signal actually fires ------
+// Open calibration question 2 is "should `verified_gc_on_project` carry weight?".
+// That is unanswerable without knowing how many opportunities carry it at all.
+const signalCoverage = await db.execute(sql`
+  SELECT s.value::text AS signal, count(*)::int AS n
+  FROM opportunities o, jsonb_array_elements(o.rationale_json->'signals') s
+  WHERE o.account_profile_id = ${solis} AND o.state != 'archive'
+  GROUP BY 1 ORDER BY 2 DESC LIMIT 40`);
+
 // ---- 3. Solis priority mix by county / stage ----------------------------------
 const solisByCounty = await db.execute(sql`
   SELECT p.county, count(*)::int AS n
@@ -122,8 +178,13 @@ console.log(JSON.stringify({
   generatedAt: new Date().toISOString(),
   solis: {
     thresholds: thresholdRows,
+    weeklyFlow: flowRows,
     scoreDeciles: dist.rows,
-    easyWin: { radiusAgeGrid, valuationBands, fixedFor: "band 50k-2M (grid) / r60km a60d (bands)" },
+    easyWin: {
+      radiusAgeGrid, valuationBands, fixedFor: "band 50k-2M (grid) / r60km a60d (bands)",
+      decidedBands: easyWinBands, decidedBandsFixedFor: "no floor, <=$2M cap (owner 2026-07-20)",
+    },
+    signalCoverage: signalCoverage.rows,
     priorityByCounty: solisByCounty.rows,
     priorityByStage: solisByStage.rows,
   },
