@@ -250,8 +250,8 @@
     // ── Section 3 — volume & timing (was intake-only) ────────────────────────
     {
       id: 'threshold', slide: null,
-      ask: 'Does thirteen a week feel right?',
-      why: 'Thirteen jobs cross your threshold in a typical week. Lower it and you see more, earlier, with more noise; raise it and only the strongest reach you.',
+      ask: 'Does forty-odd a week feel right?',
+      why: 'About <b>42</b> jobs cross your threshold in a typical week — averaged over 30 days, because ingest arrives in bursts and any single week is a coin flip (the five weeks to 23 July ran 13, 49, 45, 51, 38). Lower the threshold and you see more, earlier, with more noise; raise it and only the strongest reach you.',
       yamlPath: 'delivery.priority_review_min',
       controls: [{ type: 'pills', group: 'threshold', options: [
         ['more', 'Show me more'], ['right', 'About right'], ['fewer', 'Fewer, stronger only'] ] }],

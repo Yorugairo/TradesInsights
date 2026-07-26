@@ -54,7 +54,21 @@ const anchorRow = await db.execute(sql`
   WHERE account_profile_id = ${solis} AND state != 'archive'`);
 const anchor = (anchorRow.rows[0] as { anchor: Date | null }).anchor;
 
-const flowRows: Record<string, { changed7d: number; changed30d: number }> = {};
+// ANCHORING WAS NOT ENOUGH. It removed the now() artifact, but a single 7-day
+// window is still ONE SAMPLE of a bursty process, and on 2026-07-26 it happened
+// to land on the quietest week in the window. Measured at threshold 80, the five
+// weeks before the anchor were 13 / 49 / 45 / 51 / 38 — so `changed7d` = 13 was
+// not "the weekly rate", it was the low outlier, and the deck printed it as the
+// headline. It understated the product by roughly 3.5x.
+//
+// `weeklyAvg30d` is the honest figure: the 30-day count spread over 30 days. It
+// survives a source sweeping on Tuesday instead of Friday, which the point
+// measure does not. Both are emitted — the point measure is still useful for
+// spotting a stalled pipeline, it is just not the number you quote.
+const flowRows: Record<
+  string,
+  { changed7d: number; changed30d: number; weeklyAvg30d: number }
+> = {};
 for (const t of thresholds) {
   const r = await db.execute(sql`
     SELECT count(*) FILTER (WHERE last_material_change_at > ${anchor}::timestamptz - interval '7 days')::int AS d7,
@@ -63,7 +77,11 @@ for (const t of thresholds) {
     WHERE account_profile_id = ${solis} AND current_score >= ${t}
       AND state != 'archive' AND last_material_change_at IS NOT NULL`);
   const row = r.rows[0] as { d7: number; d30: number };
-  flowRows[String(t)] = { changed7d: row.d7, changed30d: row.d30 };
+  flowRows[String(t)] = {
+    changed7d: row.d7,
+    changed30d: row.d30,
+    weeklyAvg30d: Math.round((row.d30 / 30) * 7),
+  };
 }
 
 // ---- 2. Easy-win sensitivity grid (Solis) -------------------------------------
