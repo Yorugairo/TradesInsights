@@ -814,3 +814,62 @@ describe("corroboration signals (Phase 1 flywheel — §12.3 score-neutral)", ()
     }
   });
 });
+
+describe("scope vocabulary — which BOOK of business a record belongs to (§12.3 score-neutral)", () => {
+  // Out-of-scope work (a reroof) does not route to Solis AT ALL, so the helper
+  // must tolerate an absent route rather than dereferencing undefined — the
+  // negative assertion is "never claims specialist work", which an unrouted
+  // record satisfies.
+  const signalsFor = (text: string, over: Partial<ProjectFeatures> = {}): string[] =>
+    routeProject(features({ text, county: "Pierce", ...over }), ACCOUNTS).find(
+      (r) => r.accountKey === "solis_interiors",
+    )?.signals ?? [];
+  const solis = (text: string, over: Partial<ProjectFeatures> = {}) =>
+    routeProject(features({ text, county: "Pierce", ...over }), ACCOUNTS).find(
+      (r) => r.accountKey === "solis_interiors",
+    )!;
+
+  // The point of a separate specialist vocabulary: these are the jobs where few
+  // crews can bid, so the drive is paid for by the work rather than by geography.
+  it.each([
+    ["2 hour rated shaftwall at the elevator core, type x gypsum", "fire-rated"],
+    ["tenant improvement, metal stud framing and drywall", "light-gauge framing"],
+    ["level 5 smooth wall finish, skim coat throughout", "level 5 finish"],
+    ["soundproof partition with quietrock and resilient channel, stc-55", "acoustic"],
+    ["new data center shell and core buildout", "data centre"],
+  ])("flags specialist_assembly: %s (%s)", (text) => {
+    expect(signalsFor(text)).toContain("specialist_assembly");
+  });
+
+  // A false positive here would send Solis on a drive the job cannot justify, so
+  // ordinary interior work must stay OUT of the specialist bucket.
+  it.each([
+    "interior remodel, drywall repair and paint",
+    "single family dwelling new construction",
+    "reroof and gutter replacement",
+    "install ceiling fan in basement",
+  ])("leaves ordinary work unflagged: %s", (text) => {
+    expect(signalsFor(text)).not.toContain("specialist_assembly");
+  });
+
+  it("separates restoration and remodel scope from the specialist ladder", () => {
+    expect(signalsFor("water damage repair to ceiling and walls")).toContain("restoration_scope");
+    expect(signalsFor("popcorn ceiling removal and re-texture")).toContain(
+      "residential_remodel_scope",
+    );
+    // Remodel cues are the CURRENT book, not the expansion ladder.
+    expect(signalsFor("popcorn ceiling removal and re-texture")).not.toContain(
+      "specialist_assembly",
+    );
+  });
+
+  it("§12.3 — the new signals are score-neutral: score, state and route are byte-identical", () => {
+    const plain = solis("tenant improvement interior buildout drywall");
+    const specialist = solis("tenant improvement interior buildout drywall, type x shaftwall");
+    expect(specialist.signals).toContain("specialist_assembly");
+    expect(plain.signals).not.toContain("specialist_assembly");
+    expect(specialist.score).toBe(plain.score);
+    expect(specialist.state).toBe(plain.state);
+    expect(specialist.route).toBe(plain.route);
+  });
+});

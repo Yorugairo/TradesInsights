@@ -170,13 +170,14 @@ details.out pre{
   <p class="section-note">Nobody has answered these. They decide what we even count as a Solis job.</p>
 
   <div class="q">
-    <div class="qn">Which book of business do you actually want more of?</div>
-    <p class="why">These four pay very differently, and we can only chase what you point us at.
-    Rank them if you can &mdash; <b>1 = chase this hardest</b>. Leave blank anything you do not do.
-    <br><b>Worth knowing before you answer:</b> restoration work generally pulls no permit at all,
-    so it is the one book our sourcing structurally cannot reach.</p>
+    <div class="qn">Where are you today, and where do you want to go?</div>
+    <p class="why">Most of these are <b>expansion</b>, not a description of your current book &mdash;
+    today you are mostly smaller-ticket residential with a few commercial wins. Two columns: what
+    share of revenue each is <b>now</b>, and how hard you want us to <b>chase</b> it (1 = hardest).
+    <br><b>Worth knowing:</b> restoration generally pulls no permit at all, so it is the one book our
+    sourcing structurally cannot reach however much you want it.</p>
     <table class="gc">
-      <thead><tr><th style="width:56%">Book of business</th><th>Priority</th><th>~% of revenue</th></tr></thead>
+      <thead><tr><th style="width:56%">Book of business</th><th>Chase</th><th>% today</th></tr></thead>
       <tbody>
         <tr><td><b>A.</b> Commercial TI &amp; multi-family <span style="color:var(--muted)">— biggest contracts</span></td>
           <td><input type="text" data-k="book_a_rank" placeholder="1–4" style="width:4rem"></td>
@@ -378,7 +379,7 @@ const ASSUMPTIONS = [
   {
     id: 'geo_weight',
     setting: 'Home metro outranks King commercial; Pierce sits about even.',
-    why: 'We assumed your home turf and relationship radius beat distant Seattle tenant-improvement volume. <b>This may be backwards.</b> Commercial TI concentrates in Seattle and Bellevue, and Level 5 luxury work concentrates in Bellevue, Medina, Mercer Island and Kirkland &mdash; all King County. If your best-paying work lives there, we cut your strongest county from 334 priority jobs to 142. Thurston, meanwhile, is only 38 of 477.',
+    why: 'We down-weighted King as distant volume, cutting it from 334 priority jobs to 142. <b>Distance is probably the wrong filter.</b> A drive is only expensive relative to what you drove past: a data centre, a rated shaftwall or a Level 5 job in Medina pays for the mileage, while generic Level 4 hanging in King means passing dozens of equivalent Pierce jobs to get there. The likely fix is qualifying by <b>job type</b> rather than de-rating a whole county.',
     yamlPath: 'score_components &rarr; geography',
   },
   {

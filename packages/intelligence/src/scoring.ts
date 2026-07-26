@@ -42,7 +42,7 @@ import { bidTrackFor, type BidTrack } from "./bid-window.js";
 // (unknown distance is not evidence of proximity). The four pilot counties keep
 // their exact calibrated values, and the frozen eval set contains only those
 // four — so this is eval byte-identical by construction.
-export const SCORING_ALGORITHM_VERSION = "1.10.0";
+export const SCORING_ALGORITHM_VERSION = "1.11.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -120,6 +120,46 @@ const RE = {
   tenantImprovement: /\b(tenant|t\.i\.|interior (remodel|alteration|improvement))\b/,
   glazing: /\b(glazing|curtain ?wall|storefront|window|glass|skylight|mirror|shower door)\b/,
   interior: /\b(drywall|gypsum|paint|interior|partition|ceiling)\b/,
+  /**
+   * SPECIALIST assemblies — the work that pays for a drive.
+   *
+   * `interior` above answers "is this a drywall job at all"; this answers "is it
+   * the kind only a few crews can bid". The distinction is the point: a generic
+   * Level 4 hang two counties away means driving past a dozen equivalent local
+   * jobs, while a rated shaftwall or a data-centre assembly has no local
+   * equivalent to pass up. Qualifying a drive by JOB TYPE beats de-rating a
+   * county, which cannot tell those two cases apart.
+   *
+   * Terms are deliberately narrow — `\btype ?-?x\b` rather than `type x`, `stc`
+   * only when followed by a rating — because a false positive claims specialist
+   * work on an ordinary permit.
+   */
+  specialistAssembly: new RegExp(
+    [
+      // Data centre / industrial / controlled environments
+      /data ?cent(er|re)|server room|clean ?room/,
+      // Fire-rated assemblies
+      /fire ?-?rated|fire ?stop|shaft ?wall|\btype ?-?[xc]\b|ul ?-?listed|\b\d ?-?hour rated\b/,
+      // Acoustic / soundproofing
+      /sound ?proof|acoustica?l|quiet ?rock|resilient channel|rock ?wool|mass ?-?loaded vinyl|\bstc[- ]?\d{2}\b/,
+      // Light-gauge framing — the turnkey-package multiplier
+      /metal stud|steel stud|light ?-?gauge/,
+      // Level 5 and specialty finishes
+      /\blevel ?-?5\b|\blevel ?five\b|smooth ?-?wall|skim ?coat|venetian plaster/,
+    ]
+      .map((r) => r.source)
+      .join("|"),
+  ),
+  /** Restoration scope. Tracked mainly to MEASURE how little of it is permit-visible:
+   * insurance patch work generally pulls no permit, so a low count here is the
+   * expected finding rather than a broken matcher. */
+  restorationWork:
+    /\b(water damage|flood(ing|ed)?|burst pipe|freeze damage|mold remediation|smoke damage|restoration)\b/,
+  /** Ordinary residential remodel cues — the CURRENT book for a smaller-ticket
+   * finisher, kept separate from the specialist ladder so "where they are today"
+   * never gets confused with "where they could go". */
+  residentialRemodel:
+    /\b(popcorn ceiling|basement finish|finished basement|re-?texture|knockdown texture|orange peel)\b/,
   /** Work that mentions interiors but is not an interior-finishes package. */
   notInteriorTrade:
     /\b(re-?roof|fire (suppression|sprinkler|alarm)|hood suppression|mechanical (only|replacement)|boiler|furnace|heat pump|freezer|condenser|ductless|rooftop unit|water heater|plumbing only|electrical only|solar|antenna|cell tower)\b/,
@@ -213,7 +253,12 @@ export function classify(f: ProjectFeatures) {
     isCommercial: RE.commercial.test(f.text),
     isTi: RE.tenantImprovement.test(f.text),
     hasGlazing: RE.glazing.test(f.text),
-    hasInterior: RE.interior.test(f.text),
+    // A specialist assembly IS interior work, whether or not the permit ever says
+    // "drywall". A data-centre shaftwall reading "2-hour rated, shell and core",
+    // or a luxury remodel reading "level 5 skim coat", contains no word in
+    // RE.interior — so without this the specialist vocabulary could never fire on
+    // exactly the records it was written to catch.
+    hasInterior: RE.interior.test(f.text) || RE.specialistAssembly.test(f.text),
     isNonInteriorTrade: RE.notInteriorTrade.test(f.text),
     isPublicWork: RE.publicWork.test(f.text),
     isSubdivision: RE.subdivision.test(f.text) || f.clusterSize >= 3,
@@ -549,6 +594,13 @@ export function routeSolis(
   ) {
     signals.push("verified_gc_on_project");
   }
+  // Scope-vocabulary SIGNALS (§12.3 score-neutral): which BOOK of business a
+  // record belongs to. No weight until Solis confirms scope at calibration —
+  // these exist now so the evidence accumulates from today rather than starting
+  // at zero the day someone decides to weight them.
+  if (RE.specialistAssembly.test(f.text)) signals.push("specialist_assembly");
+  if (RE.restorationWork.test(f.text)) signals.push("restoration_scope");
+  if (RE.residentialRemodel.test(f.text)) signals.push("residential_remodel_scope");
   // WS-B — score-NEUTRAL SIGNALS (§12.3): pushed for rationale/digest only, with
   // NO account weight and NO `components` entry, so `weighted()` leaves the score
   // byte-identical (the neutrality invariant in scoring.test.ts). Both read the

@@ -554,6 +554,10 @@ const ROUTE_PHRASES: Record<string, string> = {
 const SIGNAL_PHRASES: Record<string, string> = {
   tenant_improvement: "tenant-improvement scope",
   drywall_painting_keywords: "drywall/paint mentioned in the records",
+  specialist_assembly:
+    "specialist assembly — rated, acoustic, data-centre or Level 5 scope (fewer bidders, pays for a drive)",
+  restoration_scope: "water/fire damage restoration scope",
+  residential_remodel_scope: "residential remodel scope (popcorn removal, basement finish, re-texture)",
   active_campus: "on an active multi-permit site",
   gc_relationship_radar: "GC relationship opportunity",
   division_08_keywords: "glazing scope in the records",
