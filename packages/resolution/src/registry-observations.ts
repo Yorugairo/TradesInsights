@@ -49,7 +49,14 @@ import {
   normalizePhoneUS,
   normalizeRootDomain,
 } from "./identifiers.js";
-import { crossNameKey, nameSimilarity } from "./normalize.js";
+import {
+  crossNameKey,
+  isGovernmentOrgName,
+  nameContainment,
+  nameSimilarity,
+  nameTokens,
+  type NameContainment,
+} from "./normalize.js";
 import { buildPrincipalPersonIndex, isPersonShapedOrgName } from "./principal-person.js";
 import { identitySnapshot, type RegistryBrand, type RegistryIdentityRow } from "./registry-link.js";
 import {
@@ -106,6 +113,21 @@ export const SINGLE_TOKEN_NAME_RULE = "binding_name_exact_single_token";
  * construction, not merely disallowed by policy. `registry-observations.test.ts`
  * asserts it. */
 export const AMBIGUOUS_NAME_RULE = "binding_name_ambiguous";
+
+/** One name is the other plus extra words — a business that publishes its trade
+ * in one system and not the other. `NEXT LEVEL ROOFING & CONSTRUCTION LLC`
+ * against `Next Level Roofing`. See `nameContainment` for why a subset plus two
+ * distinctive tokens is the test, and why similarity alone is not.
+ *
+ * Its own rule key, and absent from `evaluateStrictBind`, so a partial name can
+ * never auto-bind. It is also the LAST rule tried: every identifier rule above
+ * it matches on something unique, which is stronger evidence than a name that
+ * merely contains another. */
+export const NAME_CONTAINMENT_RULE = "binding_name_containment";
+
+/** A token shared by this many registry entities is a shortlist explosion, not a
+ * lead. Mirrors the binding audit's own fan-out guard. */
+export const CONTAINMENT_TOKEN_FANOUT_CAP = 400;
 
 /** Ceiling on review rows one ambiguous org may produce.
  *
@@ -771,6 +793,23 @@ export async function generateRegistryObservations(
   }
   const byEntity = new Map(registryRows.map((r) => [r.entityId, r]));
 
+  // Inverted token index for the containment rule. SHORTLIST GENERATOR ONLY — it
+  // never decides anything, so it cannot drift into a second matcher; every
+  // candidate it offers is still put through `nameContainment`. It exists purely
+  // so containment is not 3,777 orgs x 72,952 entities.
+  const byContainmentToken = new Map<string, Set<string>>();
+  for (const row of registryRows) {
+    const names = [row.canonicalName, ...(row.aliases ?? [])];
+    for (const n of names) {
+      if (typeof n !== "string" || n.length === 0) continue;
+      for (const t of nameTokens(n)) {
+        const hit = byContainmentToken.get(t);
+        if (hit) hit.add(row.entityId);
+        else byContainmentToken.set(t, new Set([row.entityId]));
+      }
+    }
+  }
+
   const inserts: PendingInsert[] = [];
 
   // Registry phone index from L&I phones — UNIQUE phones only (a phone shared
@@ -1113,6 +1152,66 @@ export async function generateRegistryObservations(
         }
       }
     }
+    // Containment — LAST, deliberately. Every rule above matches on something
+    // unique (an exact key, a phone, an address, a domain, a published alias);
+    // this one matches on a name that merely CONTAINS another, which is weaker
+    // than all of them and must never pre-empt them.
+    //
+    // `identifierOnlyAllowed` gates it too (P6). The safeguard that exempts name
+    // rules is "a registry name match proves it is a business" — but that
+    // reasoning holds for an EXACT registration, not a partial one. A homeowner
+    // called John Smith does not prove `John Smith Roofing LLC` is him, and the
+    // two distinctive tokens this rule requires are exactly the two his name
+    // supplies.
+    let containmentDetail: NameContainment | null = null;
+    // A public body is excluded outright: the only thing it can contain-match is
+    // a business carrying its place name, which is geography rather than
+    // identity. See `isGovernmentOrgName` for the three live matches that proved
+    // it. Applied ONLY to this rule — an exact-key match on a municipality is a
+    // different and much stronger claim, and is left alone.
+    if (!hit && identifierOnlyAllowed && !isGovernmentOrgName(org.canonical_name)) {
+      const shortlist = new Set<string>();
+      for (const t of nameTokens(org.canonical_name)) {
+        const hits = byContainmentToken.get(t);
+        // A token this common says nothing about identity, and pulling its whole
+        // bucket in would make the shortlist the opposite of a shortlist.
+        if (!hits || hits.size > CONTAINMENT_TOKEN_FANOUT_CAP) continue;
+        for (const e of hits) shortlist.add(e);
+      }
+      const matches: { row: RegistryIdentityRow; detail: NameContainment }[] = [];
+      for (const entityId of shortlist) {
+        const row = byEntity.get(entityId);
+        for (const candidateName of [row?.canonicalName, ...(row?.aliases ?? [])]) {
+          if (typeof candidateName !== "string" || candidateName.length === 0) continue;
+          const detail = nameContainment(org.canonical_name, candidateName);
+          if (!detail.contained) continue;
+          matches.push({ row: row!, detail });
+          break; // one entity contributes one candidate, however many names hit
+        }
+      }
+      // TWO entities containing the same name is the same ambiguity a shared
+      // exact key is, and is dropped for the same reason: this rule picks a
+      // single business or it picks none. It does NOT fall through to the
+      // ambiguous lane — that lane is about an exact key reaching several
+      // entities, which is a stronger and differently-shaped claim.
+      const only = matches.length === 1 ? matches[0]! : undefined;
+      if (only) {
+        hit = only.row;
+        // The name is a PARTIAL match, so the component is the measured
+        // similarity — the same thing every other non-exact rule reports —
+        // never 1, which would claim the names are the same string.
+        nameComponent = nameSimilarity(org.canonical_name, only.row.canonicalName ?? "");
+        const phoneAgrees = only.row.phone !== null && phones.has(only.row.phone);
+        agreement =
+          phones.size === 0
+            ? "none"
+            : phoneAgrees
+              ? agreementFor("phone", only.row.phone!)
+              : "contradicts";
+        ruleKey = NAME_CONTAINMENT_RULE;
+        containmentDetail = only.detail;
+      }
+    }
     // NORMALLY EXACTLY ONE CANDIDATE — every rule above resolves to a single
     // `hit`. The ambiguous-name lane is the one exception: it contributes N,
     // and since `registry_observations.registry_entity_id` is NOT NULL, "N
@@ -1257,6 +1356,12 @@ export async function generateRegistryObservations(
           // the row correctly: "1 of 4 candidates" is a different decision from
           // "the match", and a capped row must never look like the whole set.
           ambiguous_candidate_count: ambiguousCandidateCount,
+          // Which way the containment ran and how many words did identifying
+          // work. Null for every other rule. A reviewer reading "registry_in_org
+          // on 2 distinctive tokens" can check the claim without re-deriving it.
+          name_containment: containmentDetail
+            ? { direction: containmentDetail.direction, distinctive: containmentDetail.distinctive }
+            : null,
           phone_evidence: phones.size > 0 ? [...phones] : [],
           registry_phone: hit.phone,
           phone_agrees: hit.phone !== null && phones.has(hit.phone),

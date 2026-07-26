@@ -4,6 +4,9 @@ import {
   extractFeatures,
   isGenericName,
   laterStage,
+  CONTAINMENT_MIN_DISTINCTIVE,
+  isGovernmentOrgName,
+  nameContainment,
   nameSimilarity,
   normalizeAddress,
   normalizeOrgName,
@@ -90,6 +93,57 @@ describe("normalizeOrgName / nameSimilarity", () => {
     expect(nameSimilarity("HOUSE", "A-Z House LLC")).toBeLessThan(0.5);
     expect(nameSimilarity("N/A (RESIDENTIAL)", "J&w Residential LLC")).toBeLessThan(0.5);
     expect(nameSimilarity("HOWARD", "J Howard LLC")).toBeLessThan(0.6);
+  });
+
+  it("nameContainment matches a business that publishes its trade in only one system", () => {
+    // Every one of these is a real pair from the near_match_fixable bucket that
+    // exact-key matching cannot reach and Jaccard scores 0.75.
+    for (const [org, registry] of [
+      ["NEXT LEVEL ROOFING & CONSTRUCTION LLC", "Next Level Roofing"],
+      ["WEST COAST ROOFING & SIDING", "West Coast Roofing LLC"],
+      ["EMERALD CITY CONSTRUCTION & RENOVATIONS", "Emerald City Construction Inc"],
+      ["FULL CIRCLE CONSTRUCTION SERVICES", "Full Circle Construction, LLC"],
+      ["FIVE STAR PLUMBING & ROOTER", "Five Star Plumbing"],
+    ] as const) {
+      const r = nameContainment(org, registry);
+      expect(r.contained, `${org} vs ${registry}`).toBe(true);
+      expect(r.distinctive).toBeGreaterThanOrEqual(CONTAINMENT_MIN_DISTINCTIVE);
+    }
+    // Containment runs the other way just as well — the org name being the
+    // SHORTER one is the same evidence, read from the other side.
+    expect(nameContainment("SUN'S EYE SOLAR", "Sun'S Eye Solar Power LLC").direction).toBe(
+      "org_in_registry",
+    );
+  });
+
+  it("nameContainment stays conservative when only ONE word distinguishes", () => {
+    // `COMFORT SYSTEMS NW` ⊂ `Comfort Systems Usa (Nw) Inc` is a true subset and
+    // plausibly the same firm — but SYSTEMS and NW are generic, so COMFORT is
+    // the only word doing identifying work. One is below the bar on purpose:
+    // for a new binding rule, under-matching is recoverable and over-matching
+    // writes a false identity. The pair stays visible in near_match_fixable.
+    expect(nameContainment("COMFORT SYSTEMS NW", "Comfort Systems Usa (Nw) Inc").contained).toBe(false);
+  });
+
+  it("nameContainment refuses the near-misses that share the SAME 0.75 score", () => {
+    // Not a subset either way — the distinguishing word differs (G vs PRO,
+    // DICKEYS vs S&S). This is exactly what similarity alone cannot separate.
+    expect(nameContainment("G & G HEATING & AIR CONDITIONING LLC", "Pro Heating & Air Conditioning").contained).toBe(false);
+    expect(nameContainment("DICKEY'S REMODEL AND REPAIR", "S & S Remodel & Repair LLC").contained).toBe(false);
+  });
+
+  it("nameContainment refuses a subset built only from trade words", () => {
+    // The failure mode this guard exists for: a subset on nothing that
+    // identifies anybody. Half the registry is a construction services LLC.
+    expect(nameContainment("ROOFING", "Acme Roofing LLC").contained).toBe(false);
+    expect(nameContainment("CONSTRUCTION SERVICES", "Emerald Construction Services Inc").contained).toBe(false);
+    expect(nameContainment("NW PLUMBING", "Seattle NW Plumbing LLC").contained).toBe(false);
+  });
+
+  it("nameContainment does not claim an EXACT match as a containment", () => {
+    // Identical token sets belong to the exact-key rule; reporting them here
+    // would double-count one piece of evidence under two rules.
+    expect(nameContainment("Kliemann Bros Heating", "KLIEMANN BROS HEATING LLC").contained).toBe(false);
   });
 
   it("keeps a genuine match perfect when the initials appear on BOTH sides", () => {
@@ -216,5 +270,40 @@ describe("extractFeatures", () => {
       {},
     );
     expect(f.generic).toBe(true);
+  });
+});
+
+describe("isGovernmentOrgName (public bodies are not contractors)", () => {
+  it("catches the live false positives the containment rule produced", () => {
+    // Each of these matched a business carrying the same PLACE name.
+    expect(isGovernmentOrgName("CITY OF LAKEWOOD")).toBe(true);
+    expect(isGovernmentOrgName("LAKEWOOD CITY OF")).toBe(true);
+    expect(isGovernmentOrgName("THURSTON COUNTY")).toBe(true);
+  });
+
+  it("catches the other public shapes permit data uses", () => {
+    for (const n of [
+      "BELLEVUE SCHOOL DISTRICT",
+      "PORT OF SEATTLE",
+      "KING COUNTY HOUSING AUTHORITY",
+      "CITY OF TUMWATER PUBLIC WORKS",
+      "DEPARTMENT OF TRANSPORTATION",
+      "PIERCE COUNTY FIRE DISTRICT",
+    ]) {
+      expect(isGovernmentOrgName(n), n).toBe(true);
+    }
+  });
+
+  it("does NOT catch a business that merely carries a place name", () => {
+    // The whole point of testing the ORG side only: these are real contractors
+    // and must keep matching normally.
+    for (const n of [
+      "Thurston County Cement Fnshrs",
+      "Lakewood City Glass Inc",
+      "Port Townsend Plumbing LLC",
+      "University Mechanical Contractors",
+    ]) {
+      expect(isGovernmentOrgName(n), n).toBe(false);
+    }
   });
 });

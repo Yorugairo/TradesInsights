@@ -258,6 +258,130 @@ function tokenSet(name: string): Set<string> {
   );
 }
 
+/**
+ * Words that describe a TRADE rather than identify a business. Two firms sharing
+ * only these are not related — half the registry is a "CONSTRUCTION SERVICES
+ * LLC" — so they are excluded when counting the evidence behind a containment
+ * match. They are deliberately NOT excluded from `tokenSet`: for a similarity
+ * score "ROOFING" is real signal about what the name says, and only the
+ * containment rule needs the stricter "does this DISTINGUISH anyone" test.
+ */
+const TRADE_GENERIC_TOKENS = new Set([
+  "CONSTRUCTION", "CONTRACTING", "CONTRACTORS", "CONTRACTOR", "BUILDERS",
+  "BUILDING", "BUILD", "SERVICES", "SERVICE", "SOLUTIONS", "SYSTEMS", "GROUP",
+  "ENTERPRISES", "INDUSTRIES", "REMODEL", "REMODELING", "RENOVATIONS",
+  "RENOVATION", "REPAIR", "ROOFING", "PLUMBING", "ELECTRIC", "ELECTRICAL",
+  "HEATING", "COOLING", "AIR", "CONDITIONING", "HVAC", "SIDING", "PAINTING",
+  "FLOORING", "CONCRETE", "MASONRY", "EXCAVATION", "LANDSCAPING", "DRYWALL",
+  "GLASS", "NW", "NORTHWEST", "PACIFIC", "USA", "WA", "WASHINGTON", "INC",
+]);
+
+/**
+ * Is this "organization" a public body rather than a contractor?
+ *
+ * MEASURED, not speculative. The first live run of the containment rule matched
+ * `CITY OF LAKEWOOD` and `LAKEWOOD CITY OF` to `Lakewood City Glass Inc`, and
+ * `THURSTON COUNTY` to `Thurston County Cement Fnshrs`. Each is a true subset
+ * clearing the distinctive-token bar — because the token doing the identifying
+ * work is a PLACE, and a place says where a business operates, not who it is.
+ * Half a county's contractors can put the county's name in theirs.
+ *
+ * A public agency is also never the contractor on its own permit: it is the
+ * owner or the applicant. So binding one to a licensed business is a false
+ * identity by construction, the same shape as binding a homeowner.
+ *
+ * Deliberately matched against the ORG name only. `Thurston County Cement
+ * Fnshrs` is a real business that happens to carry a county's name, and must
+ * keep matching normally from the registry side.
+ */
+const GOVERNMENT_ORG_PATTERNS: RegExp[] = [
+  /^(CITY|TOWN|PORT|COUNTY|STATE|UNIVERSITY|DISTRICT)\s+OF\b/,
+  /\b(CITY|TOWN|PORT|COUNTY|STATE)\s+OF$/,
+  /\bCOUNTY$/,
+  /\b(SCHOOL|FIRE|WATER|SEWER|UTILITY|LIBRARY|HOSPITAL|CEMETERY)\s+DISTRICT\b/,
+  /\bHOUSING\s+AUTHORITY\b/,
+  /\bPUBLIC\s+(WORKS|UTILITIES|SCHOOLS)\b/,
+  /\b(MUNICIPAL|MUNICIPALITY)\b/,
+  /\bDEPARTMENT\s+OF\b/,
+  /\bTRANSIT\s+AUTHORITY\b/,
+];
+export function isGovernmentOrgName(name: string | null | undefined): boolean {
+  const n = String(name ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (n.length === 0) return false;
+  return GOVERNMENT_ORG_PATTERNS.some((p) => p.test(n));
+}
+
+/**
+ * The comparison tokens of a name, for callers that need to INDEX by them.
+ * Exported so a shortlist index and `nameContainment` cannot drift apart on what
+ * counts as a token — the index would silently stop offering candidates the
+ * matcher would have accepted.
+ */
+export function nameTokens(name: string): string[] {
+  return [...tokenSet(name)];
+}
+
+export interface NameContainment {
+  /** One name's tokens are a subset of the other's, on enough real evidence. */
+  contained: boolean;
+  /** Shared tokens that actually distinguish a business — the evidence count. */
+  distinctive: number;
+  /** Which way the containment runs; null when there is none. */
+  direction: "org_in_registry" | "registry_in_org" | null;
+}
+
+/** Shared tokens that identify rather than describe. Order-insensitive. */
+export const CONTAINMENT_MIN_DISTINCTIVE = 2;
+
+/**
+ * Is one name the other plus extra words?
+ *
+ * The case this exists for is a business that publishes its trade in one system
+ * and not the other: `NEXT LEVEL ROOFING & CONSTRUCTION LLC` against
+ * `Next Level Roofing`, `WEST COAST ROOFING & SIDING` against
+ * `West Coast Roofing LLC`, `EMERALD CITY CONSTRUCTION & RENOVATIONS` against
+ * `Emerald City Construction Inc`. Exact-key matching cannot reach any of them,
+ * and Jaccard puts them at 0.75 — real, but indistinguishable from coincidence.
+ *
+ * CONTAINMENT IS THE DISCRIMINATOR, NOT THE SCORE. A subset means every word of
+ * the shorter name appears in the longer one, which is what "same business, extra
+ * trade words" looks like. It is also what rules OUT the near-misses that sit at
+ * the same 0.75: `G & G HEATING & AIR CONDITIONING` vs `Pro Heating & Air
+ * Conditioning` is not a subset either way (G vs PRO), and `DICKEY'S REMODEL AND
+ * REPAIR` vs `S & S Remodel & Repair` is not either.
+ *
+ * `CONTAINMENT_MIN_DISTINCTIVE` is the second half, and the load-bearing half:
+ * `ROOFING` ⊂ `ACME ROOFING` is a subset on nothing but a trade word. Requiring
+ * two shared tokens that are not generic means the match rests on the part of the
+ * name that identifies a company — NEXT+LEVEL, WEST+COAST, EMERALD+CITY.
+ */
+export function nameContainment(a: string, b: string): NameContainment {
+  const sa = tokenSet(a);
+  const sb = tokenSet(b);
+  const none: NameContainment = { contained: false, distinctive: 0, direction: null };
+  if (sa.size === 0 || sb.size === 0) return none;
+
+  const aInB = [...sa].every((t) => sb.has(t));
+  const bInA = [...sb].every((t) => sa.has(t));
+  if (!aInB && !bInA) return none;
+
+  // The shared set IS the smaller set under containment; count what identifies.
+  const shared = aInB ? sa : sb;
+  let distinctive = 0;
+  for (const t of shared) if (!TRADE_GENERIC_TOKENS.has(t)) distinctive += 1;
+  if (distinctive < CONTAINMENT_MIN_DISTINCTIVE) return none;
+
+  // Identical sets are an exact match, not a containment — that is the exact-key
+  // rule's job, and claiming it here would double-report the same evidence.
+  if (aInB && bInA) return none;
+
+  return { contained: true, distinctive, direction: aInB ? "org_in_registry" : "registry_in_org" };
+}
+
 /** Jaccard similarity over name tokens ∈ [0,1]. */
 export function nameSimilarity(a: string, b: string): number {
   const sa = tokenSet(a);

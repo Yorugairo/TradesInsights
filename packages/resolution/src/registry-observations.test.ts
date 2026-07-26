@@ -3,6 +3,7 @@ import {
   ADDRESS_SHARED_MIN_NAME_SIMILARITY,
   AMBIGUOUS_FANOUT_CAP,
   AMBIGUOUS_NAME_RULE,
+  NAME_CONTAINMENT_RULE,
   AUTO_ACCEPT_MIN_RATE,
   buildAmbiguousCandidates,
   buildRegistryAddressIndex,
@@ -160,6 +161,15 @@ describe("evaluateStrictBind (the ONE binding tier that auto-accepts — governa
     expect(r.strict).toBe(false);
     // If this ever fails, someone added AMBIGUOUS_NAME_RULE to evaluateStrictBind.
     expect(r.sharedTradeCodes).toEqual(["electrical"]);
+  });
+
+  it("NEVER auto-binds a containment match — a partial name is not a registration", () => {
+    // Governance-critical, same shape as the two above. `NEXT LEVEL ROOFING &
+    // CONSTRUCTION` containing `Next Level Roofing` is good enough to ask a human
+    // about and nowhere near good enough to write into the identity graph
+    // unattended. Passing nameComponent 1 proves the refusal comes from the rule
+    // key, not from the lower score this rule actually carries.
+    expect(evaluateStrictBind({ ...base, ruleKey: NAME_CONTAINMENT_RULE }).strict).toBe(false);
   });
 
   it("refuses without a shared trade (registry codes GC, permits say roofing → stays in review)", () => {
