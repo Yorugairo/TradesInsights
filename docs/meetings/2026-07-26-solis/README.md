@@ -6,16 +6,45 @@ so both work offline in a customer's office.
 
 | File | Use |
 |---|---|
-| `presentation.html` | 14-slide walkthrough. Arrow keys / space / swipe / scroll. |
+| `presentation.html` | 18 slides + 6 appendix. Arrow keys / space / swipe / scroll. |
 | `intake.html` | The working form. Fill in live; export at the end. |
+
+Slide numbers are **generated at runtime** (`Deck.number()`), main as `01..` and
+appendix as `A1..`. Insert a slide anywhere without renumbering anything; mark
+appendix slides with a bare `data-appendix` attribute.
 
 ## Order of play
 
-1. **Deck slides 1–9** — the product and the live numbers.
-2. **Deck slide 10** — the seven settings we applied without asking. Switch to the form here.
-3. **`intake.html` section 1** — walk those same seven, confirm or correct each.
-4. **Sections 2–4** — the genuine unknowns, then the GC list (highest value in the session).
-5. **Download answers** — writes `solis-calibration-2026-07-26.json`.
+1. **Slides 1–6** — the product, the timing argument, the live numbers.
+2. **Slides 7–9** — the four books of business, which of them we can actually see,
+   and the King County tension. **Slide 9 is the most valuable slide in the deck.**
+3. **Slide 11** — the seven settings we applied without asking. Switch to the form here.
+4. **`intake.html` section 1** — walk those same seven, confirm or correct each.
+5. **Sections 2–4** — books of business, scope, certifications, the unknowns, then the
+   GC list (highest value in the session).
+6. **Download answers** — writes `solis-calibration-2026-07-26.json`.
+7. **Appendix A1–A6** — only if the conversation goes there. Capability ladder, margin
+   levers, route into Tier-1 bidding, and two software concepts.
+
+## The three findings to lead with
+
+- **Slide 9 — assumption 2 may be backwards.** Commercial TI concentrates in Seattle and
+  Bellevue; Level 5 luxury in Bellevue, Medina, Mercer Island and Kirkland. All King County
+  — the county the geographic weighting cut from 334 priority opportunities to 142. If A
+  and B are where the money is, the setting is suppressing his best work. This is the single
+  highest-value correction available in the session.
+- **Slide 8 — restoration is structurally invisible.** Insurance patch work generally pulls
+  no permit, so the book with the best net margin is one the sourcing cannot reach. Say it
+  before he discovers it.
+- **Slide 16 — the verified-contractor signal fires zero times.** Volunteering a gap he
+  cannot yet see is what makes the numbers credible.
+
+## Margin figures are labelled, deliberately
+
+Every industry figure carries a `~` marker and the slides say plainly that they are estimates,
+not measurements of Solis's books. Telling a drywall contractor what his own margins are, from
+a slide, is the fastest way to lose the room — the numbers are there to frame the question,
+and his correction is the answer.
 
 ## Why the form is shaped this way
 

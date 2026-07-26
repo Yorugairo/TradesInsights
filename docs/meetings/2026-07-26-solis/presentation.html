@@ -137,6 +137,13 @@ em{font-style:normal;font-weight:700;color:var(--accent)}
 .grid{display:grid;gap:clamp(.5rem,1.3vw,1rem);align-content:center}
 .g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
 .g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,225px),1fr))}
+/* Four cards under auto-fit wrap 3+1 at desktop widths, leaving a hole where
+   the fourth should balance. A 2x2 is the only honest layout for four peers. */
+.g2x2{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* Collapse on NARROW, not on small. A landscape phone (667x375) is short, not
+   narrow — stacking four cards in one column there overflows the viewport,
+   while two columns fit comfortably. */
+@media (max-width:620px){.g2x2{grid-template-columns:1fr}}
 .grid.tall{height:100%}
 .card{
   background:var(--surface);border:1px solid var(--line);border-radius:14px;
@@ -240,7 +247,28 @@ ul.list.num li::before{
 }
 .slide.dark .callout{background:rgba(109,148,255,.13);color:#c5cfe4;border-left-color:var(--accent-2)}
 .callout.warn{border-left-color:var(--amber);background:#fffaf0;color:#7c4a03}
+.slide.dark .callout.warn{background:rgba(245,158,11,.13);color:#f3d9a8;border-left-color:#f59e0b}
 .footnote{font-size:var(--micro);color:var(--faint);font-style:italic}
+
+/* ---------- Book-of-business cards + provenance marking ---------- */
+/* Industry figures are labelled, never asserted. Telling a drywall contractor
+   what his own margins are — from a slide — is how you lose the room. */
+.est{display:inline-flex;align-items:center;gap:.4em;font-size:var(--micro);font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--amber)}
+.est::before{content:'~';font-weight:800}
+.slide.dark .est{color:#f0b45f}
+.card .band{font-size:var(--h3);font-weight:800;letter-spacing:-.03em;color:var(--accent);line-height:1}
+.slide.dark .card .band{color:var(--accent-2)}
+.card .sub{font-size:var(--micro);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.card.warn{border-color:rgba(180,83,9,.35);background:linear-gradient(165deg,#fff8ee,var(--surface) 72%)}
+.slide.dark .card.warn{background:linear-gradient(165deg,rgba(180,83,9,.24),rgba(255,255,255,.04) 75%);border-color:rgba(245,158,11,.42)}
+.card.warn .band{color:var(--amber)}
+.slide.dark .card.warn .band{color:#f0b45f}
+.card.mute{opacity:.72}
+.vis{display:inline-flex;align-items:center;gap:.4em;font-size:var(--micro);font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.vis.yes{color:var(--teal)} .vis.part{color:var(--amber)} .vis.no{color:#b42318}
+.slide.dark .vis.yes{color:#2dd4bf} .slide.dark .vis.no{color:#fda29b}
+.appendix-tag{position:absolute;top:var(--pad);right:var(--pad);z-index:3}
 
 /* ---------- Reveal ---------- */
 .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1)}
@@ -319,7 +347,6 @@ ul.list.num li::before{
       </div>
     </div>
   </div>
-  <div class="slide-no">01</div>
 </section>
 
 <!-- 02 HOW THIS RUNS -->
@@ -347,7 +374,6 @@ ul.list.num li::before{
         versioned and dated, so a shift in what you receive always traces back to something you actually said.</p>
     </div>
   </div>
-  <div class="slide-no">02</div>
 </section>
 
 <!-- 03 THE PROBLEM -->
@@ -381,7 +407,6 @@ ul.list.num li::before{
         dates &mdash; not a fact asserted by the permit office.</p>
     </div>
   </div>
-  <div class="slide-no">03</div>
 </section>
 
 <!-- 04 THE 45% -->
@@ -417,7 +442,6 @@ ul.list.num li::before{
         the timing is not.</p>
     </div>
   </div>
-  <div class="slide-no">04</div>
 </section>
 
 <!-- 05 WHERE WE SOURCE -->
@@ -428,7 +452,7 @@ ul.list.num li::before{
       <h2 id="s5" class="reveal">Three stages upstream, one downstream.</h2>
     </div>
     <div class="body">
-      <div class="grid g2 tall reveal">
+      <div class="grid g2 g2x2 tall reveal">
         <div class="card lead"><span class="idx">Earliest</span><div class="ct">Design review &amp; environmental</div>
           <div class="cd">Tumwater design review and SEPA filings. The project exists and the team is still
             forming &mdash; relationship territory, not yet bidding territory.</div></div>
@@ -449,7 +473,6 @@ ul.list.num li::before{
         mis-parse &mdash; a wrong lead costs you more than a missing one.</p>
     </div>
   </div>
-  <div class="slide-no">05</div>
 </section>
 
 <!-- 06 BID WINDOW -->
@@ -485,7 +508,119 @@ ul.list.num li::before{
         so the feed tells you when to act, not merely what exists.</p>
     </div>
   </div>
-  <div class="slide-no">06</div>
+</section>
+
+<!-- FOUR BOOKS OF BUSINESS -->
+<section class="slide" aria-labelledby="sB">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">The work itself</span>
+      <h2 id="sB" class="reveal">Four books of business &mdash;<br>and they do not pay the same.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g2 g2x2 tall reveal">
+        <div class="card lead"><span class="idx">A &middot; Biggest top line</span>
+          <div class="ct">Commercial TI &amp; multi-family</div>
+          <div class="band">$100k &ndash; $5M+</div>
+          <div class="cd">Office buildouts, mid-rise multi-family, retail, public and educational.
+            Metal stud framing, hanging and taping, fire-rated shaftwall, acoustic ceiling grid.
+            <span class="est">8&ndash;12% net</span></div></div>
+        <div class="card lead"><span class="idx">B &middot; Best margin per foot</span>
+          <div class="ct">Level 5 custom residential</div>
+          <div class="band">$3.50 &ndash; $7.00 / sq ft</div>
+          <div class="cd">Luxury builds and remodels. Full skim coat, trimless and flush walls, wrapped
+            window returns, curves, Venetian plaster. Against $1.50&ndash;$3.00 for standard Level 4.
+            <span class="est">35&ndash;50% gross labour</span></div></div>
+        <div class="card warn"><span class="idx">C &middot; Best net profit</span>
+          <div class="ct">Restoration &amp; insurance patch</div>
+          <div class="band">40&ndash;50%+ net</div>
+          <div class="cd">Burst pipes, freeze damage, roof leaks. Demo, dry, patch, match texture,
+            paint. Billed at emergency or Xactimate rates; low material overhead, fast turnaround.</div></div>
+        <div class="card"><span class="idx">D &middot; Ticket multiplier</span>
+          <div class="ct">Turnkey wall &amp; ceiling package</div>
+          <div class="band">+40&ndash;60% ticket</div>
+          <div class="cd">WA general contractors prefer single-source. Bundling light-gauge framing and
+            insulation with drywall raises contract size and protects against margin erosion on
+            single-trade bids.</div></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout warn reveal">Every figure on this slide is an <strong>industry estimate</strong>,
+        not a measurement of your books. You know your real numbers &mdash; correct any of these and
+        we will target the feed against yours instead.</p>
+    </div>
+  </div>
+</section>
+
+<!-- WHAT WE CAN SEE -->
+<section class="slide dark" aria-labelledby="sC">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Honest coverage</span>
+      <h2 id="sC" class="reveal">We can see two of the four.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g2 g2x2 tall reveal">
+        <div class="card"><span class="vis yes">■ Fully visible</span>
+          <div class="ct">A &mdash; Commercial TI &amp; multi-family</div>
+          <div class="cd">Exactly what the pre-permit engine was built for. Application and plan-review
+            stage is where this work is bought, and that is our earliest feed.</div></div>
+        <div class="card"><span class="vis yes">■ Fully visible</span>
+          <div class="ct">B &mdash; Level 5 custom residential</div>
+          <div class="cd">Custom builds and major remodels pull permits. We see the project; the
+            <em>finish level</em> is rarely stated, so we infer it from valuation and address.</div></div>
+        <div class="card warn"><span class="vis no">■ Structurally invisible</span>
+          <div class="ct">C &mdash; Restoration &amp; insurance patch</div>
+          <div class="cd">Emergency patch work generally pulls <strong>no permit at all</strong>. Your
+            highest-margin book is one our sourcing cannot reach &mdash; not a gap we can close by
+            trying harder.</div></div>
+        <div class="card"><span class="vis part">■ Partly</span>
+          <div class="ct">D &mdash; Turnkey package</div>
+          <div class="cd">A bidding posture, not a project type. We cannot source it directly, but we can
+            flag projects whose scope includes framing so you know where to bid the bundle.</div></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">If restoration is where your profit actually lives, this product is
+        aimed at the wrong half of your business &mdash; and that is worth knowing in the first hour,
+        not the sixth month.</p>
+    </div>
+  </div>
+</section>
+
+<!-- THE KING TENSION -->
+<section class="slide" aria-labelledby="sD">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">A setting worth challenging</span>
+      <h2 id="sD" class="reveal">Your two best books both<br>concentrate in the county we cut.</h2>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <div class="stack s">
+          <ul class="list">
+            <li><strong>A</strong> — commercial TI concentrates in <em>Seattle and Bellevue</em></li>
+            <li><strong>B</strong> — Level 5 luxury concentrates in <em>Bellevue, Medina, Mercer Island, Kirkland</em></li>
+            <li>All of those are <strong>King County</strong></li>
+            <li>Assumption 2 down-weights King commercial</li>
+          </ul>
+          <p class="lede">Gig Harbor sits in Pierce and stays. Bainbridge Island is Kitsap &mdash;
+            outside your territory entirely.</p>
+        </div>
+        <div class="kpis" style="grid-template-columns:1fr 1fr">
+          <div class="kpi"><div class="n">334</div><div class="l">King priority opportunities before the re-weighting</div></div>
+          <div class="kpi warn" style="border-color:rgba(180,83,9,.35);background:linear-gradient(165deg,#fff8ee,#fff 72%)">
+            <div class="n" style="color:var(--amber)">142</div><div class="l">King after &mdash; a 58% cut</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout warn reveal"><strong>So assumption 2 may be backwards.</strong> We down-weighted
+        King as distant volume. If your highest-value and highest-margin work both live there, we cut
+        your best county by more than half. This is the single most valuable correction you can make
+        today &mdash; and we would not have caught it without the scope conversation.</p>
+    </div>
+  </div>
 </section>
 
 <!-- 07 THE DIGEST -->
@@ -516,7 +651,6 @@ ul.list.num li::before{
         straight from the email. No login, no portal to remember, nothing to keep up to date.</p>
     </div>
   </div>
-  <div class="slide-no">07</div>
 </section>
 
 <!-- 08 THE POOL -->
@@ -551,7 +685,6 @@ ul.list.num li::before{
         relationships on. But it is your call, and it is question six on the form.</p>
     </div>
   </div>
-  <div class="slide-no">08</div>
 </section>
 
 <!-- 09 COUNTY -->
@@ -576,7 +709,6 @@ ul.list.num li::before{
         we would rather name it than dress it up.</p>
     </div>
   </div>
-  <div class="slide-no">09</div>
 </section>
 
 <!-- 10 EASY WINS -->
@@ -605,7 +737,6 @@ ul.list.num li::before{
         So the real question is not how far we <em>can</em> look, but how far you actually take work.</p>
     </div>
   </div>
-  <div class="slide-no">10</div>
 </section>
 
 <!-- 11 ASSUMPTIONS -->
@@ -637,7 +768,6 @@ ul.list.num li::before{
         of the session, because you already know the answers.</p>
     </div>
   </div>
-  <div class="slide-no">11</div>
 </section>
 
 <!-- 12 UNKNOWNS -->
@@ -668,7 +798,6 @@ ul.list.num li::before{
         them and writes straight into your configuration &mdash; nothing gets re-typed on the way in.</p>
     </div>
   </div>
-  <div class="slide-no">12</div>
 </section>
 
 <!-- 13 WHAT DOESN'T WORK -->
@@ -699,7 +828,6 @@ ul.list.num li::before{
         have you discover it later.</p>
     </div>
   </div>
-  <div class="slide-no">13</div>
 </section>
 
 <!-- 14 THE LOOP -->
@@ -710,7 +838,7 @@ ul.list.num li::before{
       <h2 id="s14" class="reveal">Every tap is a calibration.</h2>
     </div>
     <div class="body">
-      <div class="grid g2 tall reveal">
+      <div class="grid g2 g2x2 tall reveal">
         <div class="card"><span class="idx">Step one</span><div class="ct">You decide</div>
           <div class="cd">Pursue or dismiss, one tap from the email. No login required.</div></div>
         <div class="card"><span class="idx">Step two</span><div class="ct">We snapshot</div>
@@ -727,7 +855,6 @@ ul.list.num li::before{
         tap teaches the system more than ten leads you pursued.</p>
     </div>
   </div>
-  <div class="slide-no">14</div>
 </section>
 
 <!-- 15 CLOSE -->
@@ -759,7 +886,209 @@ ul.list.num li::before{
         is reproducible from the same query set.</p>
     </div>
   </div>
-  <div class="slide-no">15</div>
+</section>
+
+<!-- ================= APPENDIX ================= -->
+
+<section class="slide dark" data-appendix aria-labelledby="sA1">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Appendix</span>
+      <h1 id="sA1" class="reveal">Beyond the feed.</h1>
+    </div>
+    <div class="body">
+      <p class="lede big reveal">Not part of today's calibration. Reference material for where this
+        goes next &mdash; the capability ladder into higher-margin work, the operational levers inside
+        a job, and two pieces of software we could build for you.</p>
+    </div>
+    <div class="foot">
+      <div class="grid g3 reveal">
+        <div class="card"><span class="idx">A2 &ndash; A3</span><div class="ct">Capability ladder</div>
+          <div class="cd">What the highest-margin sectors actually demand, and where they sit in WA.</div></div>
+        <div class="card"><span class="idx">A4</span><div class="ct">Margin inside the job</div>
+          <div class="cd">Four levers that move net profit without winning another bid.</div></div>
+        <div class="card"><span class="idx">A5 &ndash; A6</span><div class="ct">Software concepts</div>
+          <div class="cd">Field logging and AI takeoff. Nothing built &mdash; concepts for discussion.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-appendix aria-labelledby="sA2">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Appendix &middot; capability ladder</span>
+      <h2 id="sA2" class="reveal">What high-margin drywall<br>actually requires.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g3 tall reveal">
+        <div class="card lead"><span class="idx">Data centre / industrial</span>
+          <div class="ct">Heavy-gauge &amp; containment</div>
+          <div class="cd">Structural heavy-gauge steel framing. UL-listed 2&ndash;3 hour shaftwall.
+            Thermal control layers. Strict cleanroom dust containment.</div></div>
+        <div class="card lead"><span class="idx">Acoustic</span>
+          <div class="ct">STC 55&ndash;60+ assemblies</div>
+          <div class="cd">QuietRock acoustic board, RC-1 resilient channel, mass-loaded vinyl,
+            ROCKWOOL stone-wool batts. Tech offices, party walls, health facilities.</div></div>
+        <div class="card lead"><span class="idx">Fire-rated</span>
+          <div class="ct">Certified assemblies</div>
+          <div class="cd">Double-layer Type X / Type C. Head-of-wall deflection joints. Certified
+            firestop caulking. Elevator shafts, stairwells, rated partitions.</div></div>
+      </div>
+      <div class="split reveal">
+        <p class="lede"><strong>Where they are in Washington.</strong> Data centres cluster in Central
+          WA &mdash; Quincy, Moses Lake, Douglas County &mdash; plus server and tech facilities in
+          Bellevue, Redmond and Seattle.</p>
+        <p class="lede">Central WA is <em>far outside</em> your current territory. The Puget Sound tech
+          facilities are not &mdash; they are King County, which is the same tension as the main deck.</p>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">These are permit-text detectable. If you hold any of these
+        certifications, say so today &mdash; we can hunt the assemblies specifically rather than
+        matching on the word &ldquo;drywall&rdquo;.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-appendix aria-labelledby="sA3">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Appendix &middot; margin inside the job</span>
+      <h2 id="sA3" class="reveal">Four levers that pay<br>without winning another bid.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g2 g2x2 tall reveal">
+        <div class="card"><span class="idx">Materials</span><div class="ct">Board length optimisation</div>
+          <div class="band">3&ndash;5%</div>
+          <div class="cd">Standard 8&nbsp;ft and 10&nbsp;ft sheets create butt joints and 15&ndash;20%
+            scrap on tall walls. Ordering 12, 14 or 16&nbsp;ft to match wall height cuts waste under
+            5% and reduces taping labour. <span class="est">margin recovery</span></div></div>
+        <div class="card"><span class="idx">Scope</span><div class="ct">Turnkey expansion</div>
+          <div class="band">10&ndash;15% &rarr; 30&ndash;45%</div>
+          <div class="cd">Hanging alone is thin. Adding light-gauge framing and mineral wool or batt
+            insulation roughly doubles the ticket and lifts gross margin.
+            <span class="est">gross margin</span></div></div>
+        <div class="card"><span class="idx">Contract</span><div class="ct">Change-order capture</div>
+          <div class="band">10&ndash;15% of value</div>
+          <div class="cd">Out-of-plumb studs, floor-to-deck variance, moisture damage. Verbal agreements
+            lose it; digital field sign-off recovers cost plus 15&ndash;20% overhead and profit.
+            <span class="est">of project value</span></div></div>
+        <div class="card"><span class="idx">Engineering</span><div class="ct">Value engineering</div>
+          <div class="band">30&ndash;40% fewer hours</div>
+          <div class="cd">Proposing single-layer high-STC board or engineered shaftwall instead of
+            double-layer standard holds contract value while cutting field labour.
+            <span class="est">field labour</span></div></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout warn reveal">Industry figures again, not yours. The one we can act on directly is
+        change-order capture &mdash; it is a software problem, and it is A5.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide dark" data-appendix aria-labelledby="sA4">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Appendix &middot; market access</span>
+      <h2 id="sA4" class="reveal">The route into Tier-1<br>commercial bidding.</h2>
+      <p class="lede reveal">Finding the work is our half. This is the half that decides whether you are
+        allowed to bid it &mdash; and none of it happens quickly.</p>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <ul class="list num">
+          <li><strong>Prequalify with Tier-1 GCs.</strong> Turner, Skanska, Lease Crutcher Lewis,
+            Mortenson, GLY, DPR, Howard S. Wright — via Highwire, COMPASS or Vertikal RMS. Financials,
+            EMR, bonding, $2M–$5M+ general liability.</li>
+          <li><strong>Safety &amp; quality documentation.</strong> Written site-specific safety plan,
+            orientation records, EMR under 1.0. Mandatory on tech and industrial sites.</li>
+          <li><strong>Manufacturer certification.</strong> USG, National Gypsum, CertainTeed, ROCKWOOL,
+            Trim-Tex. Firestop and acoustic credentials weigh in bid evaluation.</li>
+        </ul>
+        <ul class="list num" style="counter-reset:i 3">
+          <li><strong>Surety bonding capacity.</strong> $1M single / $3M–$5M aggregate for performance
+            and payment bonds — required for data centre and public commercial work.</li>
+          <li><strong>Public procurement registration.</strong> WA Department of Enterprise Services
+            Bonfire portal and the MRSC Small Works Roster, for automated public, educational and
+            municipal RFPs.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Step 5 is the cheap one and it is worth doing this month &mdash;
+        registration is free and turns public work into inbound RFPs rather than something to hunt.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-appendix aria-labelledby="sA5">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Appendix &middot; software concept &mdash; nothing built yet</span>
+      <h2 id="sA5" class="reveal">Two systems worth building.</h2>
+    </div>
+    <div class="body">
+      <div class="split top reveal">
+        <div class="stack s">
+          <span class="chip">Field communication &mdash; fast to build</span>
+          <ul class="list">
+            <li>Daily logs: board counts, linear feet taped, crew hours</li>
+            <li>Photo punch lists with pins dropped on drawings</li>
+            <li>Change orders: photo, description, signature — approved in the field</li>
+            <li>Offline-first, so basements and data centres still log</li>
+          </ul>
+          <p class="lede">This is the lever from A4 that actually recovers money — the 10&ndash;15%
+            currently lost to verbal agreements.</p>
+        </div>
+        <div class="stack s">
+          <span class="chip">AI takeoff &mdash; genuinely hard</span>
+          <ul class="list">
+            <li>Blueprints are noisy, multi-layered and non-standard</li>
+            <li>Scale calibration, vector vs scanned raster, wall-type classification</li>
+            <li>Opening deductions and floor-to-deck height variance</li>
+            <li><strong>80&ndash;90% automation with human review is realistic; full black-box is not</strong></li>
+          </ul>
+          <p class="lede">Estimator keeps the pen: AI proposes wall polylines, the human adjusts handles
+            and reclassifies partitions.</p>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout warn reveal">Concepts only &mdash; neither exists today. Shown so you can tell us
+        whether either is worth more to you than more leads.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide dark" data-appendix aria-labelledby="sA6">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Appendix &middot; why they belong together</span>
+      <h2 id="sA6" class="reveal">Estimate, then measure<br>yourself against it.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g3 tall reveal">
+        <div class="card lead"><span class="idx">Step one</span><div class="ct">AI takeoff estimate</div>
+          <div class="cd">Linear feet × wall height × layers, minus openings. Studs at 16&Prime; o.c.,
+            track, insulation, compound, tape — all derived, none re-keyed.</div></div>
+        <div class="card"><span class="idx">Step two</span><div class="ct">Billed job scope</div>
+          <div class="cd">The estimate becomes the contract, and the procurement list goes straight to
+            the supplier without anyone retyping it.</div></div>
+        <div class="card"><span class="idx">Step three</span><div class="ct">Daily field logs</div>
+          <div class="cd">Crews log actual boards hung against the model, from the same database.</div></div>
+      </div>
+      <p class="callout reveal"><strong>The loop closes here.</strong> Estimated versus actual variance
+        surfaces material waste or lagging productivity <em>while the job is still running</em> &mdash;
+        not in a post-mortem after the money is gone.</p>
+    </div>
+    <div class="foot">
+      <hr class="divider reveal">
+      <p class="footnote reveal">Same architecture as the lead engine: one database, evidence kept with
+        the decision, variance surfaced rather than averaged away.</p>
+    </div>
+  </div>
 </section>
 
 </main>
@@ -778,9 +1107,26 @@ class Deck {
     this.slides = Array.from(document.querySelectorAll('.slide'));
     this.i = 0;
     this.locked = false;
+    this.number();
     this.buildNav();
     this.observe();
     this.bind();
+  }
+
+  /* Slide numbers are generated, never authored. Hand-written labels mean every
+     insertion mid-deck is a fifteen-line renumbering chore, and the one you miss
+     is the one on screen. Appendix slides number A1.. so the main sequence stays
+     honest about its own length. */
+  number() {
+    let main = 0, appx = 0;
+    this.slides.forEach((s) => {
+      const el = document.createElement('div');
+      el.className = 'slide-no';
+      el.textContent = 'appendix' in s.dataset
+        ? `A${++appx}`
+        : String(++main).padStart(2, '0');
+      s.appendChild(el);
+    });
   }
 
   buildNav() {

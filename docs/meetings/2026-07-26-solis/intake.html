@@ -170,15 +170,61 @@ details.out pre{
   <p class="section-note">Nobody has answered these. They decide what we even count as a Solis job.</p>
 
   <div class="q">
+    <div class="qn">Which book of business do you actually want more of?</div>
+    <p class="why">These four pay very differently, and we can only chase what you point us at.
+    Rank them if you can &mdash; <b>1 = chase this hardest</b>. Leave blank anything you do not do.
+    <br><b>Worth knowing before you answer:</b> restoration work generally pulls no permit at all,
+    so it is the one book our sourcing structurally cannot reach.</p>
+    <table class="gc">
+      <thead><tr><th style="width:56%">Book of business</th><th>Priority</th><th>~% of revenue</th></tr></thead>
+      <tbody>
+        <tr><td><b>A.</b> Commercial TI &amp; multi-family <span style="color:var(--muted)">— biggest contracts</span></td>
+          <td><input type="text" data-k="book_a_rank" placeholder="1–4" style="width:4rem"></td>
+          <td><input type="text" data-k="book_a_share" placeholder="%" style="width:4.5rem"></td></tr>
+        <tr><td><b>B.</b> Level 5 custom residential <span style="color:var(--muted)">— best per sq ft</span></td>
+          <td><input type="text" data-k="book_b_rank" placeholder="1–4" style="width:4rem"></td>
+          <td><input type="text" data-k="book_b_share" placeholder="%" style="width:4.5rem"></td></tr>
+        <tr><td><b>C.</b> Restoration &amp; insurance patch <span style="color:var(--muted)">— best net margin</span></td>
+          <td><input type="text" data-k="book_c_rank" placeholder="1–4" style="width:4rem"></td>
+          <td><input type="text" data-k="book_c_share" placeholder="%" style="width:4.5rem"></td></tr>
+        <tr><td><b>D.</b> Turnkey framing + drywall package <span style="color:var(--muted)">— bigger ticket</span></td>
+          <td><input type="text" data-k="book_d_rank" placeholder="1–4" style="width:4rem"></td>
+          <td><input type="text" data-k="book_d_share" placeholder="%" style="width:4.5rem"></td></tr>
+      </tbody>
+    </table>
+    <span class="path">score_components &rarr; trade_fit / package_size_fit</span>
+  </div>
+
+  <div class="q">
     <div class="qn">What exactly do you do &mdash; and what do you not?</div>
-    <p class="why">We match on permit text. Knowing you do <b>level 5 finish</b> but not
-    <b>acoustic ceilings</b> (for example) changes which jobs reach you. Name anything you
+    <p class="why">We match on permit text. Knowing you do <b>Level 5 skim</b> but not
+    <b>acoustic ceiling grid</b> (for example) changes which jobs reach you. Name anything you
     subcontract out or refuse.</p>
     <label class="fl" for="scope">Drywall scope</label>
-    <textarea id="scope" data-k="scope_drywall" placeholder="Hang, tape, texture, level 5, metal stud framing, insulation…"></textarea>
+    <textarea id="scope" data-k="scope_drywall" placeholder="Hang, tape, texture, Level 5 skim, metal stud framing, shaftwall, ACT grid, insulation…"></textarea>
     <label class="fl" for="scopePaint">Painting scope</label>
-    <textarea id="scopePaint" data-k="scope_paint" placeholder="Interior, exterior, spray, specialty coatings, industrial…"></textarea>
+    <textarea id="scopePaint" data-k="scope_paint" placeholder="Interior, exterior, spray, specialty coatings, Venetian plaster, industrial…"></textarea>
     <span class="path">capabilities[]</span>
+  </div>
+
+  <div class="q">
+    <div class="qn">Do you hold any specialty assembly certifications?</div>
+    <p class="why">These are detectable in permit text, so a certification turns into a targeted
+    search rather than a keyword match on &ldquo;drywall&rdquo;. They also weigh in Tier-1 general
+    contractor bid evaluation.</p>
+    <div class="pills" data-group="certs_fire">
+      <label><input type="radio" name="certs_fire" value="yes"> Fire-rated / firestop certified</label>
+      <label><input type="radio" name="certs_fire" value="capable"> Do the work, not certified</label>
+      <label><input type="radio" name="certs_fire" value="no"> Neither</label>
+    </div>
+    <div class="pills" data-group="certs_acoustic" style="margin-top:.45rem">
+      <label><input type="radio" name="certs_acoustic" value="yes"> Acoustic STC 55–60+ assemblies</label>
+      <label><input type="radio" name="certs_acoustic" value="capable"> Do the work, not certified</label>
+      <label><input type="radio" name="certs_acoustic" value="no"> Neither</label>
+    </div>
+    <label class="fl" for="certOther">Manufacturer certifications, bonding line, anything else</label>
+    <input type="text" id="certOther" data-k="certifications_other" placeholder="USG, National Gypsum, CertainTeed, ROCKWOOL, Trim-Tex; bonding capacity…">
+    <span class="path">capabilities[] &rarr; assembly detection</span>
   </div>
 
   <div class="q">
@@ -332,7 +378,7 @@ const ASSUMPTIONS = [
   {
     id: 'geo_weight',
     setting: 'Home metro outranks King commercial; Pierce sits about even.',
-    why: 'We assumed your home turf and relationship radius beat distant Seattle tenant-improvement volume. King still appears &mdash; it just does not dominate. <b>Note:</b> Thurston is only 38 of 477 priority jobs, so this weighting is fighting thin data.',
+    why: 'We assumed your home turf and relationship radius beat distant Seattle tenant-improvement volume. <b>This may be backwards.</b> Commercial TI concentrates in Seattle and Bellevue, and Level 5 luxury work concentrates in Bellevue, Medina, Mercer Island and Kirkland &mdash; all King County. If your best-paying work lives there, we cut your strongest county from 334 priority jobs to 142. Thurston, meanwhile, is only 38 of 477.',
     yamlPath: 'score_components &rarr; geography',
   },
   {
@@ -449,15 +495,25 @@ function collect() {
 
 /* ---------- Persist + status ---------- */
 const statusEl = document.getElementById('answered');
-document.getElementById('total').textContent = String(ASSUMPTIONS.length + 9);
+
+/* Count question CARDS, not answer keys. Keying off a hardcoded total drifts the
+   moment a question is added, and counting keys makes one multi-field card look
+   like eight answers — either way the progress figure lies. */
+const cards = () => Array.from(document.querySelectorAll('.q'));
+const isAnswered = (q) =>
+  'state' in q.dataset ||
+  q.querySelector('input:checked') !== null ||
+  cardsWithValue(q);
+const cardsWithValue = (q) =>
+  Array.from(q.querySelectorAll('input[type=text],input[type=number],input[type=email],textarea'))
+    .some((el) => el.value.trim() !== '');
+
+document.getElementById('total').textContent = String(cards().length);
 
 function save() {
   const data = collect();
   document.getElementById('json').textContent = JSON.stringify(data, null, 2);
-  const done = data.confirmations.filter((c) => c.verdict).length
-    + Object.keys(data.answers).length
-    + (data.gcs.length ? 1 : 0);
-  statusEl.textContent = String(done);
+  statusEl.textContent = String(cards().filter(isAnswered).length);
   try { localStorage.setItem(STORE, JSON.stringify(data)); } catch (_) { /* private mode */ }
 }
 
