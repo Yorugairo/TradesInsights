@@ -119,6 +119,28 @@ body{overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
   background:var(--surface);color:var(--text);
 }
 .slide.dark .ask table.matrix input{background:rgba(0,0,0,.22);border-color:rgba(255,255,255,.16);color:#eef1f7}
+/* The data-centre exception on the books slide. Deliberately NOT a fifth card:
+   a fifth card in a 2x2 reads as a fifth rung of the same ladder, and the point
+   is that this one does not sit on the ladder — it has A's contract size without
+   A's margin. Given the accent rather than the amber `warn` treatment, because
+   it is an opportunity, not a caveat. */
+/* NOT flex. A flex column makes every inline <strong>/<em>/<span> its own flex
+   ITEM, so the sentence breaks onto a new line at each emphasis — "8–12% net"
+   and "whole" each got their own row. Normal block flow; only the tag and the
+   trailing note are promoted to blocks. */
+.callout.dc{
+  border-left:3px solid var(--accent);background:var(--accent-wash);
+}
+.slide.dark .callout.dc{background:rgba(47,95,255,.14);border-left-color:var(--accent-2)}
+.callout.dc .dc-tag{
+  display:block;margin-bottom:.25em;
+  font-family:'Archivo Narrow','Archivo',sans-serif;font-size:var(--micro);font-weight:700;
+  text-transform:uppercase;letter-spacing:.09em;color:var(--accent);
+}
+.slide.dark .callout.dc .dc-tag{color:var(--accent-2)}
+.callout.dc .dc-note{display:block;margin-top:.3em;color:var(--muted);font-size:var(--small)}
+.slide.dark .callout.dc .dc-note{color:#a9b4c9}
+
 .ask .matrix-note{color:var(--faint);font-weight:500}
 .slide.dark .ask .matrix-note{color:#7c88a0}
 .ask .ask-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--micro);color:var(--faint)}
@@ -681,6 +703,19 @@ ul.list.num li::before{
       </div>
     </div>
     <div class="foot">
+      <!-- The exception that breaks the slide's own tradeoff. Every other rung trades
+           size against margin; this one refuses to. Called out separately rather than
+           tucked under A because it is also the answer to "is King worth the drive". -->
+      <div class="callout dc reveal">
+        <span class="dc-tag">The exception &middot; inside A, but not at A&rsquo;s margin</span>
+        <strong>Data centres and critical facilities.</strong> Contract size sits in A&rsquo;s range
+        or above it &mdash; but A&rsquo;s <em>8&ndash;12% net</em> does not follow, because the premium
+        is not one portion of the scope, it is the <strong>whole</strong> scope: fire-rated assemblies
+        throughout, sealed and clean-room detailing, acoustic separation, and inspection and safety
+        requirements that price the labour differently from an office buildout.
+        <span class="dc-note">This is also the one case where the drive into King pays for itself
+          &mdash; and we can already pick these out of permit text.</span>
+      </div>
       <p class="callout warn reveal">Every figure on this slide is an <strong>industry estimate</strong>,
         not a measurement of your books. You know your real numbers &mdash; correct any of these and
         we will target the feed against yours instead.</p>
