@@ -50,6 +50,7 @@ import {
   normalizeRootDomain,
 } from "./identifiers.js";
 import { crossNameKey, nameSimilarity } from "./normalize.js";
+import { buildPrincipalPersonIndex, isPersonShapedOrgName } from "./principal-person.js";
 import { identitySnapshot, type RegistryBrand, type RegistryIdentityRow } from "./registry-link.js";
 import {
   classifyGoogleConfirmation,
@@ -615,6 +616,11 @@ export interface GenerateSummary {
    * floor/weight tuning at the §12.3 calibration session is evidence-driven. */
   belowFloor: number;
   byRule: Record<string, number>;
+  /** Roadmap P6: orgs whose name is a real person's and which reached NO registry
+   * name match, so only a coincidental identifier could have bound them. Counted
+   * rather than dropped silently — a refusal nobody can see is indistinguishable
+   * from a rule that never fired. */
+  personShapedRefused: number;
   /** Existing PENDING rows whose score/payload this pass recomputed. Decided rows
    * are never rescored — their evidence is frozen at the decision. */
   rescored: number;
@@ -703,6 +709,7 @@ export async function generateRegistryObservations(
   const summary: GenerateSummary = {
     skipped: false, bindingCandidates: 0, phoneAdoptions: 0, aliasExports: 0, tradeExports: 0, autoAccepted: 0,
     strictAutoBound: 0, strictCandidates: [], belowFloor: 0, byRule: {}, rescored: 0,
+    personShapedRefused: 0,
   };
   if (registryRows === null) {
     summary.skipped = true;
@@ -848,6 +855,52 @@ export async function generateRegistryObservations(
     return found.isStrong ? "strong" : "weak";
   };
 
+  // ── Roadmap P6: the person-shape refusal ─────────────────────────────────
+  //
+  // Real people appear in permit data as "organizations" — homeowners pulling
+  // their own permits, applicants, owners. Binding one to a licensed contractor
+  // is a false identity in the graph, and it is a PRIVACY event, not just a data
+  // error: principals are private individuals.
+  //
+  // THE REFUSAL WAS MEASURED AND REJECTED ONCE, in 2026-07, on two grounds that
+  // have both since expired:
+  //   1. "refusing would destroy 12.9% of every available match" — measured
+  //      WITHOUT the surname allowlist, so it counted CAPITOL FIRE PROTECTION and
+  //      WSP USA as people. With the allowlist the real figure is 1.9%.
+  //   2. "L&I sits at 26,934 of 75,364 (35.7%)" — the safeguard below needs the
+  //      registry to actually contain the businesses it vouches for. The load is
+  //      now complete: 75,845 licences, 72,952 entities.
+  //
+  // THE SAFEGUARD: A REGISTRY NAME MATCH PROVES IT IS A BUSINESS. Companies
+  // register under their names, so if this org's name reaches a registry entity
+  // at all, it is not a homeowner however person-shaped the string looks — and
+  // it is never refused. That is why only the IDENTIFIER-COINCIDENCE rules are
+  // gated below (phone, Google phone, address, domain) and every NAME rule is
+  // left alone: canonical, ambiguous, and alias alike. An alias is a name the
+  // org was published under, so it carries the same proof.
+  //
+  // What that leaves refused is exactly the dangerous case: a person's name with
+  // no registry name behind it, bound to a contractor because they happen to
+  // share a phone number or a street address. A homeowner shares an address with
+  // whoever re-roofed their house.
+  //
+  // The allowlist is built here rather than taken as a parameter because
+  // `registryRows` already carries the principals, so no caller has to be taught
+  // a new argument to get the safe behaviour.
+  const knownSurnames = buildPrincipalPersonIndex(registryRows).surnames;
+  // An EMPTY allowlist is the opposite failure: `personCoreKey` returns null for
+  // any surname absent from a SUPPLIED set, so passing an empty one would call
+  // every person a business and silently disable the refusal. Undefined keeps
+  // the token heuristic, which over-refuses rather than under-refuses — the safe
+  // direction for a guard.
+  const surnameGate = knownSurnames.size > 0 ? knownSurnames : undefined;
+  opts.logger?.info(
+    { surnameAllowlist: knownSurnames.size, refusalActive: true },
+    knownSurnames.size > 0
+      ? "person-shape refusal active (surname allowlist)"
+      : "person-shape refusal active WITHOUT a surname allowlist — contract surfaced no principals",
+  );
+
   const unbound = (await loadOrgFacts(db)).filter((o) => o.registry_ref === null);
   for (const org of unbound) {
     const phones = orgPhones.get(org.id) ?? new Set<string>();
@@ -871,6 +924,21 @@ export async function generateRegistryObservations(
     // if they do turn out noisy the queue floor corrects itself on evidence.
     const nameHits = keyTokens >= 1 ? byNameKey.get(key) : undefined;
     const singleTokenName = keyTokens === 1;
+    // P6. `identifierOnlyAllowed` is false for a person-shaped name that reached
+    // no registry name — see the block above the loop. Computed once here so the
+    // four identifier rules cannot drift apart on which orgs they refuse.
+    const identifierOnlyAllowed = !(
+      (nameHits === undefined || nameHits.length === 0) &&
+      isPersonShapedOrgName(org.canonical_name, surnameGate)
+    );
+    // Count only refusals that actually WITHHELD a lookup — a person-shaped org
+    // carrying no identifier at all was never going to bind, and counting it
+    // would inflate this into a headline number that means nothing. This is an
+    // upper bound on suppressed matches, not a count of them: proving a rule
+    // would have matched means running it, which is the thing being refused.
+    if (!identifierOnlyAllowed && (phones.size > 0 || addresses.size > 0 || domains.size > 0)) {
+      summary.personShapedRefused += 1;
+    }
 
     let hit: RegistryIdentityRow | undefined;
     /** Set ONLY by the ambiguous-name branch, and only as a last resort — see
@@ -923,7 +991,7 @@ export async function generateRegistryObservations(
         // nothing, and cannot change a single existing observation.
         ambiguousHits = nameHits;
       }
-    } else if (phones.size > 0) {
+    } else if (phones.size > 0 && identifierOnlyAllowed) {
       // No name match — phone-exact against a UNIQUE registry phone, gated on
       // a minimum of name agreement (phones get recycled between businesses).
       let best: { row: RegistryIdentityRow; sim: number } | null = null;
@@ -946,7 +1014,7 @@ export async function generateRegistryObservations(
     // same name gate as the L&I phone path, DE-RATED identifier component,
     // distinct rule key so it earns its own reviewed accept history.
     let matchedGooglePhone: string | null = null;
-    if (!hit && phones.size > 0) {
+    if (!hit && phones.size > 0 && identifierOnlyAllowed) {
       let best: { row: RegistryIdentityRow; sim: number; phone: string } | null = null;
       for (const p of phones) {
         const row = byGooglePhone.get(p);
@@ -972,7 +1040,7 @@ export async function generateRegistryObservations(
     // drifts). Name-gated; shared buckets need name dominance (4B.3); NEVER
     // auto-binds (binding_name_match is excluded from auto-accept).
     let addressBucketSize: number | null = null;
-    if (!hit && addresses.size > 0) {
+    if (!hit && addresses.size > 0 && identifierOnlyAllowed) {
       const addrHit = matchOrgByAddress(org.canonical_name, addresses, byAddress);
       if (addrHit) {
         hit = addrHit.row;
@@ -991,7 +1059,7 @@ export async function generateRegistryObservations(
     // registered website root domain is entity-specific; still name-gated and
     // review-only like every binding rule.
     let matchedDomain: string | null = null;
-    if (!hit && domains.size > 0) {
+    if (!hit && domains.size > 0 && identifierOnlyAllowed) {
       let best: { row: RegistryIdentityRow; sim: number; domain: string } | null = null;
       for (const d of domains) {
         const row = byDomain.get(d);
@@ -1642,6 +1710,7 @@ export async function generateRegistryObservations(
       belowFloor: summary.belowFloor,
       byRule: summary.byRule,
       rescored: summary.rescored,
+      personShapedRefused: summary.personShapedRefused,
     },
     "registry-observations generated",
   );

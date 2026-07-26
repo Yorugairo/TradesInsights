@@ -1021,3 +1021,132 @@ describe("registry-side DBA aliases (contract column `aliases`) as match keys", 
   });
 });
 });
+
+describe("roadmap P6 — the person-shape refusal (governance)", () => {
+  const PRUN = randomUUID().slice(0, 8).toUpperCase();
+  let pdb: Db;
+  let ppool: pg.Pool;
+  let pAccountId: string;
+  let pOrgId: string;
+  let pProjectId: string;
+  let pRecId: string;
+  let pArtId: string;
+  let pRunId: string;
+
+  const P_ENTITY = randomUUID();
+  const SURNAME = `TESTSUR${PRUN}`;
+  const PHONE = "2535550461";
+  // The org is named like a person AND the surname is one L&I records for a real
+  // principal, so the allowlist confirms rather than merely guesses.
+  const ORG_NAME = `DIEGO ${SURNAME}`;
+
+  /** The entity shares the org's PHONE but nothing else — the coincidence case. */
+  const P_ROWS: RegistryIdentityRow[] = [
+    {
+      entityId: P_ENTITY,
+      ubi: "602777911",
+      contractorNumbers: [`P6${PRUN.slice(0, 6)}`],
+      canonicalName: `Summit Ridge Roofing ${PRUN} LLC`,
+      canonicalNameNormalized: `SUMMIT RIDGE ROOFING ${PRUN}`,
+      phone: PHONE,
+      cityToken: "tacoma",
+      stateCode: "WA",
+      registeredAddress: null,
+      registeredPostalCode: null,
+      principals: [{ name: `Diego ${SURNAME}`, key: `${SURNAME}, DIEGO` }],
+    },
+  ];
+
+  /** Same entity, now ALSO registered under the org's own name — the safeguard:
+   * a registry name match proves this is a business, not a homeowner. */
+  const P_ROWS_NAME_MATCH: RegistryIdentityRow[] = [
+    { ...P_ROWS[0]!, canonicalName: ORG_NAME, canonicalNameNormalized: ORG_NAME },
+  ];
+
+  beforeAll(async () => {
+    ({ db: pdb, pool: ppool } = await testDb());
+    const [a] = await pdb.insert(accountProfiles).values({
+      key: `test_p6_${PRUN.toLowerCase()}`, name: "p6", active: true,
+      capabilitiesJson: [], territoryJson: {}, deliveryConfigJson: {},
+    }).returning({ id: accountProfiles.id });
+    pAccountId = a!.id;
+
+    const [org] = await pdb.insert(organizations).values({
+      canonicalName: ORG_NAME, status: "active",
+    }).returning({ id: organizations.id });
+    pOrgId = org!.id;
+
+    const [src] = (await pdb.execute(sql`SELECT id FROM sources WHERE key = 'fake_source' LIMIT 1`)).rows as { id: string }[];
+    const sourceId = src?.id ?? (await resetSource(pdb, "fake_source"));
+    const [run] = await pdb.insert(sourceRuns).values({ sourceId, status: "succeeded" }).returning({ id: sourceRuns.id });
+    pRunId = run!.id;
+    const [art] = await pdb.insert(rawArtifacts).values({
+      sourceId, sourceRunId: run!.id, canonicalUrl: `https://example.invalid/p6/${PRUN}`,
+      retrievedAt: new Date(), contentType: "text/html", httpStatus: 200,
+      storageKey: `raw/fake_source/p6-${PRUN}`, sha256: PRUN.padEnd(64, "7").toLowerCase(), byteSize: 7,
+      headersJson: {}, parserVersion: "test",
+    }).returning({ id: rawArtifacts.id });
+    pArtId = art!.id;
+    const [rec] = await pdb.insert(sourceRecords).values({
+      sourceId, rawArtifactId: art!.id, externalId: `P6-${PRUN}`, recordType: "permit",
+      firstSeenAt: new Date(), lastSeenAt: new Date(), rawFieldsJson: {},
+      normalizedJson: { title: `P6-${PRUN}`, city: "Tacoma", permitType: "Roofing", sourceUrl: "https://example.invalid/p" },
+      normalizedFingerprint: `p6-${PRUN}`,
+    }).returning({ id: sourceRecords.id });
+    pRecId = rec!.id;
+    const [p] = await pdb.insert(projects).values({
+      canonicalName: `P6-${PRUN}`, permittingJurisdiction: "Tacoma", county: "Pierce",
+      currentStage: "permit_issued", firstSeenAt: new Date(), lastSeenAt: new Date(),
+    }).returning({ id: projects.id });
+    pProjectId = p!.id;
+    await pdb.execute(sql`
+      INSERT INTO project_roles (project_id, organization_id, role, source_record_id, confirmed, confidence, first_seen_at, last_seen_at)
+      VALUES (${pProjectId}, ${pOrgId}, 'primary_contractor', ${pRecId}, true, 1, now(), now())`);
+    // The permit publishes the homeowner's phone — the same number the contractor
+    // filed with L&I, which is exactly how a false bind used to happen.
+    await persistOrganizationIdentifiers(pdb, pOrgId, pRecId, { phone: PHONE });
+  });
+
+  afterAll(async () => {
+    await pdb.execute(sql`DELETE FROM registry_observations WHERE organization_id = ${pOrgId}`);
+    await pdb.execute(sql`DELETE FROM organization_identifiers WHERE organization_id = ${pOrgId}`);
+    await pdb.execute(sql`DELETE FROM project_roles WHERE organization_id = ${pOrgId}`);
+    await deleteTestProjects(pdb, [pProjectId]);
+    await pdb.execute(sql`DELETE FROM source_records WHERE id = ${pRecId}`);
+    await pdb.execute(sql`DELETE FROM raw_artifacts WHERE id = ${pArtId}`);
+    await pdb.execute(sql`DELETE FROM source_runs WHERE id = ${pRunId}`);
+    await pdb.execute(sql`DELETE FROM organizations WHERE id = ${pOrgId}`);
+    await pdb.execute(sql`DELETE FROM account_profiles WHERE id = ${pAccountId}`);
+    await ppool.end();
+  });
+
+  it("REFUSES to bind a person-shaped org on a shared phone alone", async () => {
+    // The whole point of P6. A homeowner and the contractor who re-roofed their
+    // house legitimately share a phone number on a permit; binding them makes a
+    // private individual into a business in the identity graph.
+    const summary = await generateRegistryObservations(pdb, P_ROWS);
+    const pending = await listRegistryObservations(pdb, { status: "pending", limit: 500 });
+    expect(pending.find((o) => o.organizationId === pOrgId)).toBeUndefined();
+    // Counted, not silently dropped — a refusal nobody can see is
+    // indistinguishable from a rule that never fired.
+    expect(summary.personShapedRefused).toBeGreaterThan(0);
+  });
+
+  it("does NOT refuse once the registry knows the same name — the safeguard", async () => {
+    // A registry name match proves it is a business: companies register under
+    // their names. This is what keeps the refusal's cost at 1.9% instead of
+    // destroying the 10 real companies whose names look like people's.
+    await generateRegistryObservations(pdb, P_ROWS_NAME_MATCH);
+    const pending = await listRegistryObservations(pdb, { status: "pending", limit: 500 });
+    const bind = pending.find((o) => o.organizationId === pOrgId);
+    expect(bind).toBeDefined();
+    // Reached by a NAME rule, never by the phone coincidence that was refused above.
+    expect(bind!.ruleKey.startsWith("binding_name")).toBe(true);
+  });
+
+  it("still never auto-binds what it did allow through", async () => {
+    const pending = await listRegistryObservations(pdb, { status: "pending", limit: 500 });
+    const bind = pending.find((o) => o.organizationId === pOrgId);
+    expect(bind!.status).toBe("pending");
+  });
+});

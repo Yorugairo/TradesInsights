@@ -135,30 +135,32 @@ export function personCoreKey(
 /**
  * Is this "organization" name actually a person?
  *
- * REPORTING ONLY. Nothing in the binding path consults this, and that is a
- * deliberate, measured decision rather than an oversight.
+ * THE BINDING PATH NOW CONSULTS THIS (roadmap P6, enabled 2026-07-25). It gates
+ * the IDENTIFIER-COINCIDENCE rules only — phone, Google phone, address, domain —
+ * and never a name rule. See `generateRegistryObservations`.
  *
- * The obvious use — skip person-shaped orgs so the queue stops proposing
- * homeowner↔contractor binds — was measured before being built and rejected. Of
- * 3,777 unbound orgs, 2,376 are person-shaped by this test, and 33 of those 2,376
- * nonetheless MATCH a registry entity by name: `JOHNSON CONTROLS`,
- * `CINTAS FIRE PROTECTION`, `JH KELLY`, `RESCUE ROOTER`, `WASHINGTON GENERATORS`.
- * Only 256 unbound orgs match anything at all, so refusing on this test would
- * destroy 12.9% of every available match, and all but one of the 33 is a real
- * company.
+ * IT WAS REJECTED ONCE, ON TWO GROUNDS THAT HAVE BOTH EXPIRED. The original
+ * measurement found that of 3,777 unbound orgs, 2,376 were person-shaped and 33
+ * of those nonetheless matched a registry entity by name (`JOHNSON CONTROLS`,
+ * `CINTAS FIRE PROTECTION`, `JH KELLY`, `RESCUE ROOTER`) — 12.9% of the 256
+ * available matches, nearly all real companies. And the safeguard that rescues
+ * them ("a registry name match proves it is a business, so never refuse it")
+ * could not be trusted while L&I sat at 26,934 of 75,364 records (35.7%): an
+ * absent business looks exactly like a homeowner.
  *
- * The safeguard that would fix that — "a registry name match proves it is a
- * business, so never refuse it" — cannot work yet. It only fires for contractors
- * already loaded, and L&I sits at 26,934 of 75,364 (35.7%), with general
- * contractors at roughly 3,074 of ~51,000. Coverage is thinnest exactly where the
- * binding work needs it densest.
+ * Both inputs changed:
+ *   - the L&I load is COMPLETE — 75,845 licences, 72,952 entities — so the
+ *     safeguard vouches against a registry that actually holds the trade;
+ *   - that 12.9% was measured WITHOUT `knownSurnames`, so it counted CAPITOL FIRE
+ *     PROTECTION and WSP USA as people. Re-measured with the allowlist:
+ *     person-shaped 2,376 -> 1,346, person-shaped WITH a registry match 33 -> 10,
+ *     total matchable 256 -> 514, cost of refusing 12.9% -> 1.9%.
  *
- * Nor does the problem age out: this reads the INSIGHTS org name, while Google
- * enrichment improves REGISTRY entity names, so a refused org would never reach
- * the matcher however good the registry became.
- *
- * Enabling refusal is gated on the completed L&I load (roadmap P6). Until then
- * this exists to MEASURE the gap, not to act on it.
+ * Those last 10 are not lost either — a name match IS the safeguard, so they are
+ * never refused. What the refusal blocks is the case it was always aimed at: a
+ * person's name with no registry name behind it, bound to a contractor by a
+ * shared phone or address. A homeowner shares an address with whoever re-roofed
+ * their house.
  *
  * `knownSurnames` should be passed whenever the caller holds it: requiring a real
  * L&I principal surname is strictly stricter, and for a refusal that is the safe
