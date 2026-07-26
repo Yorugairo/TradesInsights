@@ -359,6 +359,9 @@ details.out pre{
   <button type="button" id="download">Download answers</button>
 </div>
 
+<!-- The shared question set — the SAME file the deck reads, so the two surfaces
+     cannot drift into asking different things. Plain script: file:// blocks imports. -->
+<script src="questions.js"></script>
 <script>
 /**
  * Calibration intake form.
@@ -372,53 +375,10 @@ details.out pre{
  *     where a calibration answer silently becomes a different setting).
  */
 
-/** Mirrors config/account-profiles.yaml -> accounts[solis_interiors].owner_assumed */
-const ASSUMPTIONS = [
-  {
-    id: 'territory',
-    setting: 'You work Thurston, Pierce, Lewis and King counties.',
-    why: 'This is the outer boundary of everything we show you. A county that is not on this list is invisible to you, however good the job.',
-    yamlPath: 'territory.counties_included',
-  },
-  {
-    id: 'geo_weight',
-    setting: 'Home metro outranks King commercial; Pierce sits about even.',
-    why: 'We down-weighted King as distant volume, cutting it from 334 priority jobs to 142. <b>Distance is probably the wrong filter.</b> A drive is only expensive relative to what you drove past: a data centre, a rated shaftwall or a Level 5 job in Medina pays for the mileage, while generic Level 4 hanging in King means passing dozens of equivalent Pierce jobs to get there. The likely fix is qualifying by <b>job type</b> rather than de-rating a whole county.',
-    yamlPath: 'score_components &rarr; geography',
-  },
-  {
-    id: 'stage_weight',
-    setting: 'A project at application stage ranks ABOVE an equivalent issued one.',
-    why: 'Earlier means more time to get in before the GC locks its subs. If you would rather see confirmed, funded, issued work only, this flips.',
-    yamlPath: 'rules &rarr; routing (stage timing)',
-  },
-  {
-    id: 'warm_gc',
-    setting: 'A GC that is active near you, on your kind of work, gives the job +3 points.',
-    why: 'Note what this is NOT: it does not mean you have worked with them &mdash; we have never asked, so we do not know. It means the same verified company keeps turning up in your territory on relevant jobs (2+ projects). Small on purpose: a nudge, not a reordering. Until this week it had never once fired, so today is the first run where it moved anything. Is +3 right, too shy, or too much?',
-    yamlPath: 'score_components &rarr; warm_gc_active',
-  },
-  {
-    id: 'bands',
-    setting: 'Proximity bands of 20, 35 and 50 miles from Lacey.',
-    why: 'Drives the &ldquo;winnable now&rdquo; ordering, nearest first. The 35-mile ring holds nearly everything &mdash; stretching to 50 adds only seven jobs.',
-    yamlPath: 'delivery.easy_win.radius_bands_mi',
-  },
-  {
-    id: 'no_floor',
-    setting: 'No minimum job size &mdash; no job is too small.',
-    why: 'We never filter on price from below. If there is a size beneath which a bid is not worth writing, saying so removes real noise.',
-    yamlPath: 'delivery.easy_win.min_valuation_usd',
-  },
-  {
-    id: 'king_small',
-    setting: 'King County jobs under $10k go to the digest, not to priority.',
-    why: 'A small job two hours away rarely pays for the drive. Applies only to King.',
-    yamlPath: 'rules &rarr; routing (King banding)',
-  },
-];
-
-const STORE = 'solis-intake-2026-07-26';
+/* The question set now lives in questions.js and is shared with presentation.html.
+ * It used to be duplicated here, which is how a deck ends up asking something the
+ * form does not and the customer answers a question nobody recorded. */
+const { ASSUMPTIONS, RELATIONSHIPS, STORE } = window.CALIBRATION;
 
 /* ---------- Render section 1 ---------- */
 const confirmsEl = document.getElementById('confirms');
@@ -446,7 +406,6 @@ ASSUMPTIONS.forEach((a, n) => {
 
 /* ---------- GC rows ---------- */
 const gcBody = document.getElementById('gcRows');
-const RELATIONSHIPS = ['', 'Worked with', 'Want to work with', 'Avoid', 'Blocked by incumbent'];
 function addGcRows(count) {
   for (let i = 0; i < count; i++) {
     const tr = document.createElement('tr');
