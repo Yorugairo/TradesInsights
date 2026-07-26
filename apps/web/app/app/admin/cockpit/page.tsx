@@ -130,7 +130,23 @@ const card: React.CSSProperties = {
   gap: "0.4rem",
 };
 
-/** A queue card: number, one-line claim, a body, and the link that acts on it. */
+/**
+ * A queue card: number, one-line claim, a body, and the link that acts on it.
+ *
+ * The WHOLE card is the click target when the queue is actionable. Previously
+ * only the trailing "Review bindings →" text was a link, so clicking the card,
+ * its title, or the big count — the three things an operator actually aims at —
+ * did nothing, and the cockpit read as though it had no link at all.
+ *
+ * One <Link> wrapping everything (rather than a link per element) also keeps it
+ * to a single tab stop with the queue name and count inside its accessible name,
+ * so keyboard and screen-reader users get "Registry review 760, Review bindings"
+ * as one target instead of tabbing past inert text to reach a bare arrow.
+ *
+ * Dormant queues (no href) stay a plain <div>: nothing to click, and rendering a
+ * disabled-looking link would imply the lane is merely unfinished rather than
+ * deliberately gated.
+ */
 function QueueCard({
   n,
   title,
@@ -146,8 +162,8 @@ function QueueCard({
   hrefLabel?: string;
   children?: React.ReactNode;
 }) {
-  return (
-    <div style={card}>
+  const body = (
+    <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
         <strong>
           <span style={{ color: "#999" }}>Queue {n} · </span>
@@ -156,16 +172,34 @@ function QueueCard({
         <span style={{ fontSize: "1.4rem", fontWeight: 700, whiteSpace: "nowrap" }}>{count}</span>
       </div>
       <div style={{ fontSize: "0.88rem", color: "#333" }}>{children}</div>
-      {href ? (
-        <div>
-          <Link href={href}>{hrefLabel ?? "Open →"}</Link>
-        </div>
-      ) : (
+    </>
+  );
+
+  if (!href) {
+    return (
+      <div style={card}>
+        {body}
         <div style={{ color: "#999", fontSize: "0.85rem" }}>{hrefLabel}</div>
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <Link href={href} style={cardLink}>
+      {body}
+      <div style={{ color: "#0645ad", fontSize: "0.9rem" }}>{hrefLabel ?? "Open →"}</div>
+    </Link>
   );
 }
+
+/** The actionable variant of `card`. Inherits colour so wrapping the card in a
+ * link does not turn every word inside it blue and underlined. */
+const cardLink: React.CSSProperties = {
+  ...card,
+  color: "inherit",
+  textDecoration: "none",
+  cursor: "pointer",
+};
 
 function RegistryReviewCard({ summary }: { summary: QueueSummary }) {
   const { total, byRule, byTier } = summary.registryReview;
