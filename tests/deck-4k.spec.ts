@@ -144,6 +144,38 @@ test.describe("calibration deck", () => {
     expect(await page.evaluate(() => window.CALIBRATION.STORE)).toBe("solis-intake-2026-07-26");
   });
 
+  /**
+   * The books A–D matrix was silently deleted when sections 2–3 were converted to
+   * the shared model: the rewrite replaced a range of markup and this question was
+   * inside it. Nothing failed — the deck still rendered, the form still saved, and
+   * the single most strategic question in the session had simply stopped existing.
+   * Pin all eight keys.
+   */
+  test("the books A–D matrix survives, with its original keys", async ({ page }) => {
+    await page.goto(DECK);
+    const keys = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-k^='book_']")).map((el) => el.getAttribute("data-k")).sort(),
+    );
+    expect(keys).toEqual([
+      "book_a_rank", "book_a_share", "book_b_rank", "book_b_share",
+      "book_c_rank", "book_c_share", "book_d_rank", "book_d_share",
+    ]);
+  });
+
+  test("every question in the model reaches the deck", async ({ page }) => {
+    await page.goto(DECK);
+    // Guards the same class of loss generally: a question defined but never mounted
+    // because no slide claimed it and no generated slide picked it up.
+    const missing = await page.evaluate(() => {
+      const ids = window.CALIBRATION.QUESTIONS.map((q) => q.id);
+      const mounted = new Set(
+        Array.from(document.querySelectorAll("[data-question]")).map((el) => el.getAttribute("data-question")),
+      );
+      return ids.filter((id) => !mounted.has(id));
+    });
+    expect(missing, `questions defined but never rendered: ${missing.join(", ")}`).toEqual([]);
+  });
+
   test("progress counts cards, not fields", async ({ page }) => {
     await page.goto(DECK);
     const total = await page.locator("#total").textContent();

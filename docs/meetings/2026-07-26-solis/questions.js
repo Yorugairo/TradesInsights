@@ -147,6 +147,28 @@
         ['keep', 'Keep — late calls land'] ] }],
     },
 
+    // ── The books of business ────────────────────────────────────────────────
+    {
+      id: 'books', slide: 'sB',
+      ask: 'Where are you today, and where do you want to go?',
+      why: 'Most of these are <b>expansion</b>, not a description of your current book — today you are mostly smaller-ticket residential with a few commercial wins. Two columns: what share of revenue each is <b>now</b>, and how hard you want us to <b>chase</b> it (1 = hardest).<br><b>Worth knowing:</b> restoration generally pulls no permit at all, so it is the one book our sourcing structurally cannot reach however much you want it.',
+      yamlPath: 'score_components -> trade_fit / package_size_fit',
+      controls: [{
+        type: 'matrix',
+        columns: ['Chase', '% today'],
+        rows: [
+          { label: '<b>A.</b> Commercial TI &amp; multi-family', note: 'biggest contracts',
+            cells: [['book_a_rank', '1–4'], ['book_a_share', '%']] },
+          { label: '<b>B.</b> Level 5 custom residential', note: 'best per sq ft',
+            cells: [['book_b_rank', '1–4'], ['book_b_share', '%']] },
+          { label: '<b>C.</b> Restoration &amp; insurance patch', note: 'best net margin',
+            cells: [['book_c_rank', '1–4'], ['book_c_share', '%']] },
+          { label: '<b>D.</b> Turnkey framing + drywall package', note: 'bigger ticket',
+            cells: [['book_d_rank', '1–4'], ['book_d_share', '%']] },
+        ],
+      }],
+    },
+
     // ── Section 2 — scope & constraints (was intake-only) ────────────────────
     {
       id: 'scope', slide: null,
@@ -276,6 +298,20 @@
         const opts = c.options.map(([v, label]) =>
           `<label><input type="radio" name="${c.group}" value="${v}"> ${label}</label>`).join('');
         return `${c.label ? `<div class="fl">${c.label}</div>` : ''}<div class="pills cc" data-group="${c.group}">${opts}</div>`;
+      }
+      if (c.type === 'matrix') {
+        // A two-axis question — "how much is it now" against "how hard should we
+        // chase it" — which is genuinely a table and does not collapse into pills
+        // without losing the comparison the customer is making across rows.
+        const head = c.columns.map((h) => `<th>${h}</th>`).join('');
+        const body = c.rows.map((r) => {
+          const cells = r.cells.map(([k, ph]) =>
+            `<td><input type="text" data-k="${k}" placeholder="${ph}" inputmode="numeric"></td>`).join('');
+          const note = r.note ? ` <span class="matrix-note">— ${r.note}</span>` : '';
+          return `<tr><td>${r.label}${note}</td>${cells}</tr>`;
+        }).join('');
+        return `<table class="gc matrix"><thead><tr><th>Book of business</th>${head}</tr></thead>
+                <tbody>${body}</tbody></table>`;
       }
       if (c.type === 'textarea') {
         return `<label class="fl" for="f_${c.k}">${c.label}</label>
