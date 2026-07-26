@@ -4,6 +4,7 @@ import { createDb, createPool, createRegistryPool, orgBindingGap } from "@otn/db
 import { sql } from "drizzle-orm";
 import { createLogger } from "@otn/source-sdk";
 import {
+  buildPrincipalPersonIndex,
   crossNameKey,
   fetchRegistryIdentityRows,
   isGenericName,
@@ -168,6 +169,28 @@ async function main() {
 
     // Binder's exact index: canonicalName + aliases + brands under crossNameKey.
     const registryRows = await fetchRegistryIdentityRows(registryPool);
+
+    // THE PERSON-SHAPE TEST NEEDS THE SURNAME ALLOWLIST, and this audit holds
+    // the rows to build it. Without it `isPersonShapedOrgName` degrades to "2-3
+    // tokens", which calls CAPITOL FIRE PROTECTION, WSP USA, GENESIS BUILDINGS
+    // and BARNHART CRANE & RIGGING people. That was inflating the single biggest
+    // bucket in this report — 2,340 orgs, 66% of everything unbound — and
+    // because the person test runs FIRST, those orgs were never even probed for
+    // a name match. `personCoreKey`'s own doc says it: the allowlist "is the
+    // decisive gate ... callers holding the index should always pass it."
+    //
+    // GUARDED, because an EMPTY set is worse than none: `personCoreKey` returns
+    // null for any surname not in a supplied set, so an empty one silently
+    // reclassifies every person as a business and empties this bucket. If the
+    // contract did not surface `principals`, say so and keep the old behaviour.
+    const knownSurnames = buildPrincipalPersonIndex(registryRows).surnames;
+    const surnameGate = knownSurnames.size > 0 ? knownSurnames : undefined;
+    if (surnameGate === undefined) {
+      logger.info(
+        { surnames: 0 },
+        "no registry principals in the contract — person-shape falls back to the token heuristic",
+      );
+    }
     const byKey = new Map<string, Set<string>>();
     const nameByEntity = new Map<string, string>();
     const byToken = new Map<string, Set<string>>();
@@ -240,7 +263,7 @@ async function main() {
       // Most-specific reason first: a name can satisfy several tests, and the
       // FIRST one is the actionable defect.
       if (isPrefixNoise(org.name)) { plain("prefix_noise", org); continue; }
-      if (isPersonShapedOrgName(org.name)) { plain("person_shaped", org); continue; }
+      if (isPersonShapedOrgName(org.name, surnameGate)) { plain("person_shaped", org); continue; }
       if (isGenericName(org.name)) { plain("generic", org); continue; }
 
       const entities = byKey.get(crossNameKey(org.name));

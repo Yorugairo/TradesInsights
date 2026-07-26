@@ -2,7 +2,12 @@ import "../load-env.js";
 import { sql } from "drizzle-orm";
 import { createDb, createPool, createRegistryPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
-import { crossNameKey, fetchRegistryIdentityRows, isPersonShapedOrgName } from "@otn/resolution";
+import {
+  buildPrincipalPersonIndex,
+  crossNameKey,
+  fetchRegistryIdentityRows,
+  isPersonShapedOrgName,
+} from "@otn/resolution";
 
 // pnpm person-shape:report        (READ-ONLY — always; there is no --apply)
 //
@@ -80,9 +85,19 @@ async function main() {
       return key.split(" ").length >= 2 && byNameKey.has(key);
     };
 
+    // THE SURNAME ALLOWLIST, which this report holds the rows to build. Without
+    // it the person test degrades to "2-3 tokens" and calls CAPITOL FIRE
+    // PROTECTION, WSP USA and GENESIS BUILDINGS people — inflating
+    // `personShaped` and therefore OVERSTATING the very cost this report exists
+    // to measure. Empty set is guarded: `personCoreKey` returns null for any
+    // surname absent from a SUPPLIED set, so an empty one would call every
+    // person a business — the opposite error, and a silent one.
+    const knownSurnames = buildPrincipalPersonIndex(registryRows).surnames;
+    const surnameGate = knownSurnames.size > 0 ? knownSurnames : undefined;
+
     const orgs = await loadUnboundOrgs(db);
-    const personShaped = orgs.filter((o) => isPersonShapedOrgName(o.name));
-    const businessShaped = orgs.filter((o) => !isPersonShapedOrgName(o.name));
+    const personShaped = orgs.filter((o) => isPersonShapedOrgName(o.name, surnameGate));
+    const businessShaped = orgs.filter((o) => !isPersonShapedOrgName(o.name, surnameGate));
     const personShapedMatching = personShaped.filter((o) => matchesRegistry(o.name));
     const businessShapedMatching = businessShaped.filter((o) => matchesRegistry(o.name));
     const matchableTotal = personShapedMatching.length + businessShapedMatching.length;
@@ -105,8 +120,9 @@ async function main() {
             ? null
             : Math.round((personShapedMatching.length / matchableTotal) * 1000) / 10,
         primaryContractors: primaryContractors.length,
+        surnameAllowlist: knownSurnames.size,
         primaryContractorsPersonShaped: primaryContractors.filter((o) =>
-          isPersonShapedOrgName(o.name),
+          isPersonShapedOrgName(o.name, surnameGate),
         ).length,
       },
       "person-shape report",
