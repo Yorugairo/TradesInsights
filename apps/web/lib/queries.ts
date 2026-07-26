@@ -26,7 +26,22 @@ export interface AccountView {
   capabilities: unknown;
   territory: unknown;
   exclusions: unknown;
-  delivery: { priority_review_min?: number; weekly_digest_min?: number };
+  delivery: {
+    priority_review_min?: number;
+    weekly_digest_min?: number;
+    /** P2.1 easy-win config. Every field is optional: the block itself is
+     * optional per account, and a pre-calibration account may carry none of it.
+     * Mirrors `delivery.easy_win` in config/account-profiles.yaml. */
+    easy_win?: {
+      home_lon?: number | null;
+      home_lat?: number | null;
+      radius_km?: number | null;
+      radius_bands_mi?: number[] | null;
+      max_age_days?: number | null;
+      min_valuation_usd?: number | null;
+      max_valuation_usd?: number | null;
+    };
+  };
 }
 
 export async function accountByKey(db: Db, key: string): Promise<AccountView | null> {
