@@ -46,9 +46,11 @@ let accountAId: string;
 let accountBId: string;
 const ACCOUNT_A = `test_ckpt_a_${RUN}`;
 const ACCOUNT_B = `test_ckpt_b_${RUN}`;
-let projectIds: string[] = [];
-let recordIds: string[] = [];
-let artifactIds: string[] = [];
+// Accumulated by the fixture builders and drained in afterAll — pushed to, never
+// reassigned, so the binding is const even though the contents are not.
+const projectIds: string[] = [];
+const recordIds: string[] = [];
+const artifactIds: string[] = [];
 let orgBuildersId: string;
 let orgSmithId: string;
 let oppAlphaId: string;
