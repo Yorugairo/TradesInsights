@@ -167,152 +167,15 @@ details.out pre{
 <!-- ================= SECTION 2 — THE UNKNOWNS ================= -->
 <section class="block">
   <div class="section-head"><span class="idx">02</span><h2>Scope &amp; constraints</h2></div>
-  <p class="section-note">Nobody has answered these. They decide what we even count as a Solis job.</p>
-
-  <div class="q">
-    <div class="qn">Where are you today, and where do you want to go?</div>
-    <p class="why">Most of these are <b>expansion</b>, not a description of your current book &mdash;
-    today you are mostly smaller-ticket residential with a few commercial wins. Two columns: what
-    share of revenue each is <b>now</b>, and how hard you want us to <b>chase</b> it (1 = hardest).
-    <br><b>Worth knowing:</b> restoration generally pulls no permit at all, so it is the one book our
-    sourcing structurally cannot reach however much you want it.</p>
-    <table class="gc">
-      <thead><tr><th style="width:56%">Book of business</th><th>Chase</th><th>% today</th></tr></thead>
-      <tbody>
-        <tr><td><b>A.</b> Commercial TI &amp; multi-family <span style="color:var(--muted)">— biggest contracts</span></td>
-          <td><input type="text" data-k="book_a_rank" placeholder="1–4" style="width:4rem"></td>
-          <td><input type="text" data-k="book_a_share" placeholder="%" style="width:4.5rem"></td></tr>
-        <tr><td><b>B.</b> Level 5 custom residential <span style="color:var(--muted)">— best per sq ft</span></td>
-          <td><input type="text" data-k="book_b_rank" placeholder="1–4" style="width:4rem"></td>
-          <td><input type="text" data-k="book_b_share" placeholder="%" style="width:4.5rem"></td></tr>
-        <tr><td><b>C.</b> Restoration &amp; insurance patch <span style="color:var(--muted)">— best net margin</span></td>
-          <td><input type="text" data-k="book_c_rank" placeholder="1–4" style="width:4rem"></td>
-          <td><input type="text" data-k="book_c_share" placeholder="%" style="width:4.5rem"></td></tr>
-        <tr><td><b>D.</b> Turnkey framing + drywall package <span style="color:var(--muted)">— bigger ticket</span></td>
-          <td><input type="text" data-k="book_d_rank" placeholder="1–4" style="width:4rem"></td>
-          <td><input type="text" data-k="book_d_share" placeholder="%" style="width:4.5rem"></td></tr>
-      </tbody>
-    </table>
-    <span class="path">score_components &rarr; trade_fit / package_size_fit</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">What exactly do you do &mdash; and what do you not?</div>
-    <p class="why">We match on permit text. Knowing you do <b>Level 5 skim</b> but not
-    <b>acoustic ceiling grid</b> (for example) changes which jobs reach you. Name anything you
-    subcontract out or refuse.</p>
-    <label class="fl" for="scope">Drywall scope</label>
-    <textarea id="scope" data-k="scope_drywall" placeholder="Hang, tape, texture, Level 5 skim, metal stud framing, shaftwall, ACT grid, insulation…"></textarea>
-    <label class="fl" for="scopePaint">Painting scope</label>
-    <textarea id="scopePaint" data-k="scope_paint" placeholder="Interior, exterior, spray, specialty coatings, Venetian plaster, industrial…"></textarea>
-    <span class="path">capabilities[]</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">Do you hold any specialty assembly certifications?</div>
-    <p class="why">These are detectable in permit text, so a certification turns into a targeted
-    search rather than a keyword match on &ldquo;drywall&rdquo;. They also weigh in Tier-1 general
-    contractor bid evaluation.</p>
-    <div class="pills" data-group="certs_fire">
-      <label><input type="radio" name="certs_fire" value="yes"> Fire-rated / firestop certified</label>
-      <label><input type="radio" name="certs_fire" value="capable"> Do the work, not certified</label>
-      <label><input type="radio" name="certs_fire" value="no"> Neither</label>
-    </div>
-    <div class="pills" data-group="certs_acoustic" style="margin-top:.45rem">
-      <label><input type="radio" name="certs_acoustic" value="yes"> Acoustic STC 55–60+ assemblies</label>
-      <label><input type="radio" name="certs_acoustic" value="capable"> Do the work, not certified</label>
-      <label><input type="radio" name="certs_acoustic" value="no"> Neither</label>
-    </div>
-    <label class="fl" for="certOther">Manufacturer certifications, bonding line, anything else</label>
-    <input type="text" id="certOther" data-k="certifications_other" placeholder="USG, National Gypsum, CertainTeed, ROCKWOOL, Trim-Tex; bonding capacity…">
-    <span class="path">capabilities[] &rarr; assembly detection</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">Crew and capacity</div>
-    <p class="why">Sets how many live opportunities are useful. If you can only carry three bids at
-    once, a feed of thirty is noise &mdash; we would tighten rather than flood you.</p>
-    <div class="row">
-      <div><label class="fl" for="crews">Crews / headcount</label>
-        <input type="text" id="crews" data-k="capacity_crews" placeholder="e.g. 2 crews, 9 total"></div>
-      <div><label class="fl" for="concurrent">Bids you can carry at once</label>
-        <input type="number" id="concurrent" data-k="capacity_concurrent_bids" min="1" placeholder="e.g. 4"></div>
-      <div><label class="fl" for="sweet">Sweet-spot job size</label>
-        <input type="text" id="sweet" data-k="capacity_sweet_spot" placeholder="e.g. $40k–$250k"></div>
-    </div>
-    <span class="path">calibration_pending &rarr; capacity snapshot</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">Public work, bonding, prevailing wage</div>
-    <p class="why">Public projects are a large share of what we can see earliest. If you are not
-    bonded or will not take prevailing-wage work, we should stop surfacing them entirely.</p>
-    <div class="pills" data-group="public_work">
-      <label><input type="radio" name="public_work" value="yes_active"> Yes, we do public work</label>
-      <label><input type="radio" name="public_work" value="yes_would"> Not yet, but would</label>
-      <label><input type="radio" name="public_work" value="no"> No &mdash; exclude it</label>
-    </div>
-    <label class="fl" for="bonding">Bonding limit, union status, anything else</label>
-    <input type="text" id="bonding" data-k="bonding_notes" placeholder="e.g. bonded to $500k, non-union">
-    <span class="path">rules &rarr; exclusion</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">Where do bid invitations reach you today?</div>
-    <p class="why">If you forward them to us, they fill the <b>Deadlines</b> section and we learn which
-    GCs invite you &mdash; the strongest relationship signal there is. We only ever read what you send.</p>
-    <label class="fl" for="platforms">Platforms / how invitations arrive</label>
-    <input type="text" id="platforms" data-k="invitation_platforms" placeholder="BuildingConnected, iSqFt, plain email…">
-    <label class="fl" for="fwd">Address you would forward from</label>
-    <input type="email" id="fwd" data-k="forwarding_email" placeholder="estimating@…">
-    <span class="path">bid inbox &rarr; deadlines section</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">Licence renewal</div>
-    <p class="why">Our records show contractor registration <b>SOLISIL785NT</b> running through
-    <b>11 August 2026</b> &mdash; about two weeks out. Confirm it is being renewed so nothing lapses
-    in the public record we cite.</p>
-    <div class="pills" data-group="licence">
-      <label><input type="radio" name="licence" value="renewing"> Renewing / already done</label>
-      <label><input type="radio" name="licence" value="changed"> Details have changed</label>
-      <label><input type="radio" name="licence" value="unsure"> Need to check</label>
-    </div>
-    <span class="path">organization.contractor_registration</span>
-  </div>
+  <p class="section-note">What we cannot derive from public records. Answers here become config, not notes.</p>
+  <div id="scopeQs"></div>
 </section>
 
 <!-- ================= SECTION 3 — TUNING ================= -->
 <section class="block">
   <div class="section-head"><span class="idx">03</span><h2>Volume &amp; timing</h2></div>
-  <p class="section-note">Two dials with live numbers behind them. There is no wrong answer &mdash;
-  it is a question of how much you want to look at.</p>
-
-  <div class="q">
-    <div class="qn">Does thirteen a week feel right?</div>
-    <p class="why">At your current threshold of 80, about <b>13 opportunities change per week</b>.
-    Dropping to 75 roughly doubles it to 23. Raising to 90 cuts it to 2 &mdash; which we think is
-    too quiet to build relationships on, but it is your call.</p>
-    <div class="pills" data-group="threshold">
-      <label><input type="radio" name="threshold" value="70"> More &mdash; 70 (~46/wk)</label>
-      <label><input type="radio" name="threshold" value="75"> A bit more &mdash; 75 (~23/wk)</label>
-      <label><input type="radio" name="threshold" value="80" checked> Keep 80 (~13/wk)</label>
-      <label><input type="radio" name="threshold" value="85"> Fewer &mdash; 85 (~9/wk)</label>
-    </div>
-    <span class="path">delivery.priority_review_min</span>
-  </div>
-
-  <div class="q">
-    <div class="qn">How fresh does a &ldquo;winnable now&rdquo; job need to be?</div>
-    <p class="why">We only call something winnable if it changed recently. At <b>60 days</b> there are
-    98 qualifying; at <b>30 days</b> just 41. The real question: how long after a permit moves is it
-    still worth your call?</p>
-    <div class="pills" data-group="age_window">
-      <label><input type="radio" name="age_window" value="30"> 30 days &mdash; tighter, 41 jobs</label>
-      <label><input type="radio" name="age_window" value="60" checked> 60 days &mdash; current, 98 jobs</label>
-    </div>
-    <span class="path">delivery.easy_win.max_age_days</span>
-  </div>
+  <p class="section-note">Two dials with live numbers behind them. There is no wrong answer &mdash; it is a question of how much you want to look at.</p>
+  <div id="tuningQs"></div>
 </section>
 
 <!-- ================= SECTION 4 — RELATIONSHIPS ================= -->
@@ -403,6 +266,48 @@ ASSUMPTIONS.forEach((a, n) => {
     r.addEventListener('change', () => { el.dataset.state = r.value; save(); });
   });
 });
+
+/* ---------- Sections 2 & 3, from the SAME model the deck renders ----------
+ * These were hand-written markup here and absent from the deck entirely. Now both
+ * surfaces call renderControls(), so `collect()` finds identical data-k /
+ * data-group hooks whichever file the answer was typed into. */
+const { QUESTIONS, WAAS_SERVICES, renderControls } = window.CALIBRATION;
+function renderQuestions(hostId, list) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  list.forEach((q) => {
+    const el = document.createElement('div');
+    el.className = 'q';
+    el.dataset.question = q.id;
+    el.innerHTML = `<div class="qn">${q.ask}</div><p class="why">${q.why}</p>` +
+      renderControls(q.controls) + `<span class="path">${q.yamlPath}</span>`;
+    host.appendChild(el);
+  });
+}
+const TUNING = ['threshold', 'age_window', 'digest_recipients'];
+renderQuestions('scopeQs', QUESTIONS.filter((q) => !TUNING.includes(q.id)));
+renderQuestions('tuningQs', QUESTIONS.filter((q) => TUNING.includes(q.id)));
+
+/* WaaS capability confirmations — each yes flips one `indexable` flag. */
+(function waas() {
+  const host = document.getElementById('scopeQs');
+  if (!host || !WAAS_SERVICES) return;
+  const el = document.createElement('div');
+  el.className = 'q';
+  el.dataset.question = 'waas_capabilities';
+  el.innerHTML = '<div class="qn">Which of these do you actually take?</div>' +
+    '<p class="why">Seven pages are written and live on your site but held out of search until you ' +
+    'say yes &mdash; a page that ranks for work you refuse costs you more than no page at all.</p>' +
+    WAAS_SERVICES.map(([slug, label]) =>
+      `<label class="fl">${label}</label>
+       <div class="pills" data-group="waas_${slug}">
+         <label><input type="radio" name="waas_${slug}" value="yes"> Yes</label>
+         <label><input type="radio" name="waas_${slug}" value="no"> No</label>
+         <label><input type="radio" name="waas_${slug}" value="would"> Would, not yet</label>
+       </div>`).join('') +
+    '<span class="path">solis-landing-pages.mjs &rarr; indexable</span>';
+  host.appendChild(el);
+})();
 
 /* ---------- GC rows ---------- */
 const gcBody = document.getElementById('gcRows');

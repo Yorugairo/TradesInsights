@@ -41,12 +41,37 @@ body{overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
    is declared LATER in this stylesheet, so a single-class selector loses the
    cascade and the two columns silently stack — which looks like "the grid did
    not apply" and is really "the grid applied and then was overridden". */
+/* TWO shapes exist and both must match:
+     • hand-authored slides nest  <div class="body"><div class="split-ask">
+     • Capture.mount() restructures existing slides by adding the class TO .body
+   `.body.split-ask` alone matches only the second, so the hand-authored GC,
+   answers and WaaS slides silently lost their grid. The `.body.split-ask` half
+   is still required because `.body{display:flex}` is declared later and would
+   otherwise win. */
+.split-ask,
 .body.split-ask{
   display:grid;grid-template-columns:minmax(0,1.32fr) minmax(0,1fr);
-  gap:clamp(1rem,2.4vw,2.8rem);align-items:center;justify-content:stretch;min-height:0;
+  /* minmax(0,1fr) ROW, not the implicit max-content one. Without it the row grows
+     to fit its tallest child, `max-height:100%` on that child resolves against a
+     height it is itself defining, and the column overflows the slide — which
+     clips, because .slide is overflow:hidden. Cost us the WaaS slide at 1440x900
+     while 4K looked perfect. */
+  grid-template-rows:minmax(0,1fr);
+  gap:clamp(1rem,2.4vw,2.8rem);align-items:stretch;justify-content:stretch;min-height:0;
 }
-.body.split-ask > *{min-width:0}
-@media (max-width:1100px){ .body.split-ask{grid-template-columns:1fr} }
+/* Columns scroll rather than clip. `.slide{overflow:hidden}` means a column that
+   outgrows the viewport loses its bottom silently — a question the customer never
+   sees and nobody knows was dropped. Deck.inScrollable() lets the wheel reach the
+   end of a column before the gesture becomes slide navigation, so this is usable
+   rather than a trap. */
+.split-ask > *,
+.body.split-ask > *{min-width:0;min-height:0;max-height:100%;overflow-y:auto}
+/* Keep the scrollbar off the visual edge of a capture panel. */
+.split-ask > *::-webkit-scrollbar,
+.body.split-ask > *::-webkit-scrollbar{width:9px}
+.split-ask > *::-webkit-scrollbar-thumb,
+.body.split-ask > *::-webkit-scrollbar-thumb{background:rgba(128,140,165,.38);border-radius:9px}
+@media (max-width:1100px){ .split-ask,.body.split-ask{grid-template-columns:1fr} }
 /* ── Capture panel ────────────────────────────────────────────────────────────
    Lifted in behaviour from intake.html, re-skinned into Electric Studio. The
    intake's own palette is retired here: it defines --ink as a TEXT colour while
@@ -1022,6 +1047,34 @@ ul.list.num li::before{
   </div>
 </section>
 
+<!-- WaaS capability confirmations. Each answer flips one `indexable` flag in
+     apps/registry/scripts/solis-landing-pages.mjs. -->
+<section class="slide wide" aria-labelledby="sWAAS">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Your site, held back on purpose</span>
+      <h2 id="sWAAS" class="reveal">Seven pages written,<br>waiting on your word.</h2>
+    </div>
+    <div class="body">
+      <div class="split-ask">
+        <div class="stack s reveal">
+          <p class="lede">We built your site out to fifteen pages. Eight are live in search. The
+            other seven describe work we were not certain you take &mdash; so they are on the site,
+            but deliberately <em>invisible to Google</em>.</p>
+          <p class="lede">That is not caution for its own sake. A page ranking for
+            <em>fire-rated shaft wall</em> brings calls for fire-rated shaft wall, and a lead you
+            have to turn down costs you more than no lead at all.</p>
+          <p class="callout reveal">Every yes here switches one page on. Nothing else changes.</p>
+        </div>
+        <div id="waasHost"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Generated question slides are inserted BEFORE this marker. -->
+<div id="remainingHost" hidden></div>
+
 <!-- ANSWERS — everything captured, in one place, exportable. -->
 <section class="slide dark wide" aria-labelledby="sANS">
   <div class="slide-content">
@@ -1411,7 +1464,12 @@ class Capture {
     this.STORE = cfg.STORE;
     this.assumptions = cfg.ASSUMPTIONS;
     this.relationships = cfg.RELATIONSHIPS;
+    this.questions = cfg.QUESTIONS || [];
+    this.waas = cfg.WAAS_SERVICES || [];
+    this.render = cfg.renderControls;
     this.mount();
+    this.mountRemaining();
+    this.mountWaas();
     this.mountGcTable();
     this.bind();
     this.restore();
@@ -1422,10 +1480,23 @@ class Capture {
      every question edit is a hunt through 19 slides, and the one you miss is the
      one that contradicts questions.js. */
   mount() {
-    document.querySelectorAll('.slide[data-ask]').forEach((slide) => {
-      const ids = slide.dataset.ask.split(',').map((s) => s.trim()).filter(Boolean);
+    // A slide earns a capture column from EITHER source: a data-ask list of owner
+    // assumptions, or an audit question naming it. Selecting only on [data-ask]
+    // silently dropped the two highest-value questions (the weight vector and the
+    // relationship price), because their slides carry no assumptions.
+    const targets = new Set();
+    document.querySelectorAll('.slide[data-ask]').forEach((s) => targets.add(s));
+    this.questions.filter((q) => q.slide).forEach((q) => {
+      const h = document.getElementById(q.slide);
+      const s = h && h.closest('.slide');
+      if (s) targets.add(s);
+    });
+
+    targets.forEach((slide) => {
+      const ids = (slide.dataset.ask || '').split(',').map((s) => s.trim()).filter(Boolean);
       const body = slide.querySelector('.body');
       if (!body) return;
+      slide.classList.add('wide');
 
       // Existing content becomes the evidence column; the asks become the second.
       const evidence = document.createElement('div');
@@ -1439,6 +1510,9 @@ class Capture {
         const a = this.assumptions.find((x) => x.id === id);
         if (a) asks.appendChild(this.panel(a));
       });
+      // Audit questions that belong beside THIS slide's evidence.
+      this.questions.filter((q) => q.slide === slide.getAttribute('aria-labelledby'))
+        .forEach((q) => asks.appendChild(this.question(q)));
 
       body.classList.add('split-ask');
       body.appendChild(evidence);
@@ -1465,6 +1539,74 @@ class Capture {
       r.addEventListener('change', () => { el.dataset.state = r.value; this.save(); });
     });
     return el;
+  }
+
+  /** An audit/scope question. Same `.ask q` shell as an assumption panel so the
+   *  progress counter treats them identically, but the controls come from the
+   *  shared renderer rather than being hand-written per surface. */
+  question(q) {
+    const el = document.createElement('div');
+    el.className = 'ask q';
+    el.dataset.question = q.id;
+    el.innerHTML = `
+      <div class="ask-q">${q.ask}</div>
+      <div class="ask-setting">${q.why}</div>
+      ${this.render(q.controls)}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6em">
+        <span class="ask-path">${q.yamlPath}</span><span class="saved">saved</span>
+      </div>`;
+    return el;
+  }
+
+  /* Questions with no evidence slide of their own — scope, capacity, constraints,
+     tuning. They used to live only in the form, which meant walking the deck and
+     then starting a separate document. Two or three per slide: enough that the
+     session keeps moving, few enough that nothing is clipped. */
+  mountRemaining() {
+    const host = document.getElementById('remainingHost');
+    if (!host) return;
+    const loose = this.questions.filter((q) => !q.slide);
+    const PER_SLIDE = 2;
+    for (let i = 0; i < loose.length; i += PER_SLIDE) {
+      const group = loose.slice(i, i + PER_SLIDE);
+      const section = document.createElement('section');
+      section.className = 'slide wide';
+      section.innerHTML = `
+        <div class="slide-content">
+          <div class="head">
+            <span class="eyebrow reveal">Only you can answer this</span>
+            <h2 class="reveal">${group[0].ask}</h2>
+          </div>
+          <div class="body"><div class="split-ask"></div></div>
+        </div>`;
+      const grid = section.querySelector('.split-ask');
+      group.forEach((q) => grid.appendChild(this.question(q)));
+      if (group.length === 1) grid.style.gridTemplateColumns = 'minmax(0,1fr)';
+      host.parentNode.insertBefore(section, host);
+    }
+  }
+
+  /* The seven WaaS pages built and withheld. Each yes is a deploy switch, not a
+     preference — it flips one `indexable` flag and the page starts ranking. */
+  mountWaas() {
+    const host = document.getElementById('waasHost');
+    if (!host || !this.waas.length) return;
+    host.className = 'ask q';
+    host.dataset.question = 'waas_capabilities';
+    host.innerHTML = `
+      <div class="ask-q">Which of these do you actually take?</div>
+      <div class="ask-setting">Each page is already written and live on your site — but held out of
+        search until you say yes, so it cannot bring you a job you would turn down.</div>
+      ${this.waas.map(([slug, label]) => `
+        <div class="fl" style="margin:.45em 0 .15em">${label}</div>
+        <div class="pills cc" data-group="waas_${slug}">
+          <label><input type="radio" name="waas_${slug}" value="yes"> Yes</label>
+          <label><input type="radio" name="waas_${slug}" value="no"> No</label>
+          <label><input type="radio" name="waas_${slug}" value="would"> Would, not yet</label>
+        </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6em">
+        <span class="ask-path">solis-landing-pages.mjs -&gt; indexable</span><span class="saved">saved</span>
+      </div>`;
   }
 
   mountGcTable() {
