@@ -116,7 +116,11 @@ accounts:
     territory:
       counties_included: [Thurston, Pierce, Lewis, King]
       counties_excluded: []
-      notes: Territory provisional until Solis confirms geography (spec §22).
+      # Owner-set from relationship knowledge, not stated by Solis — see
+      # `owner_assumed` below. Geographic WEIGHTING within these counties is live
+      # in scorer v1.9.0 (home metro up, King commercial down); the county LIST
+      # itself has never been confirmed by Solis.
+      notes: Territory owner-assumed; awaiting Solis confirmation (spec §22).
     # Spec §12.3 — do NOT finalize weights until Solis confirms scope, territory,
     # capacity, minimum job size, preferred GCs, and public-work eligibility.
     # These equal-weight placeholders are provisional.
@@ -164,11 +168,26 @@ accounts:
         rule:
           excluded_ubis: ["604701295"]
           reason: older closed legal entity — never attribute records to it
+    # Set by the OWNER from relationship knowledge of Solis, not stated by Solis.
+    # These are LIVE in scoring today and carry no customer mandate — the
+    # 2026-07-26 session is a confirm-or-correct pass over this list, NOT a
+    # blank-slate interview. An item moves to a rule (or is reversed) only when
+    # Solis speaks to it. See docs/calibration-prep-solis.md §0.
+    owner_assumed:
+      - territory counties Thurston/Pierce/Lewis/King — never stated by Solis
+      - geographic weighting — home metro up, King commercial down, Pierce ~equal (scorer v1.9.0)
+      - application-stage ranked ABOVE issued (scorer v1.9.0)
+      - warm_gc_active carries a small positive weight (scorer v1.9.0)
+      - easy-win proximity bands 20/35/50 mi from the Lacey home point
+      - no minimum job size (no valuation floor); $2M upper sanity cap
+      - King jobs under $10k are digest-band not priority (scorer v1.6.0)
+    # Genuinely unknown — nobody has answered these.
     calibration_pending:
-      - current entity/license and renewal (researched registration ran through 2026-08-11)
+      - current entity/license and renewal (registration runs through 2026-08-11)
       - detailed drywall and painting scope
       - crew/subcontract capacity
-      - minimum/ideal job size and geography
       - preferred/blocked GCs
       - public-work/bonding/union/prevailing-wage constraints
       - current invitation platforms and authorized ingestion method
+      - priority threshold 80 — 13 changed/wk; confirm that weekly volume is right
+      - easy-win last-change age window (<=30 d vs <=60 d)

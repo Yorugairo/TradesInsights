@@ -77,7 +77,17 @@ export const AccountProfileSchema = z
       })
       .strict(),
     rules: z.array(AccountRuleSchema).default([]),
+    /** Genuinely UNKNOWN — nobody has answered these; the customer must. */
     calibration_pending: z.array(z.string()).default([]),
+    /** Settings the OWNER set from domain/relationship knowledge of the customer,
+     * which the customer has NOT yet confirmed. Distinct from
+     * `calibration_pending` (nobody knows) and from a confirmed setting: these
+     * are live in scoring today but carry no customer mandate. Keeping the two
+     * lists apart is what stops a calibration session from re-asking a question
+     * the owner already answered — and stops an assumption from silently
+     * hardening into a settled fact. An item leaves this list only when the
+     * customer confirms or corrects it. */
+    owner_assumed: z.array(z.string()).default([]),
   })
   .strict()
   .superRefine((p, ctx) => {
