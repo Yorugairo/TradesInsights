@@ -6,490 +6,760 @@
 <title>Solis Interiors — Calibration Session</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800;900&family=Nunito:wght@400;600;700&family=Archivo+Narrow:wght@600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-/* ===========================================
-   VIEWPORT FITTING: MANDATORY BASE
-   =========================================== */
-*, *::before, *::after { box-sizing: border-box; }
-html, body { height: 100%; overflow-x: hidden; margin: 0; }
-/* The snap + smooth behaviour MUST live on the element that actually scrolls.
-   With `height:100%` on both html and body, body's content overflows body and
-   `overflow-x:hidden` stops that overflow propagating up — so body is the
-   scroll container while `document.scrollingElement` still reports html. Put
-   scroll-snap-type on html and it is silently inert: slides stop snapping and a
-   wheel gesture strands you mid-slide. Verified by measurement, not by eye. */
-html { scroll-behavior: smooth; }
-body { overflow-y: auto; scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+/* ============================================================
+   VIEWPORT FITTING — mandatory base
+   ============================================================ */
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;overflow-x:hidden;margin:0}
+/* Snap + smooth must live on the element that ACTUALLY scrolls. With height:100%
+   on html and body, body's overflow can't propagate up (overflow-x:hidden), so
+   BODY is the scroll container while document.scrollingElement still reports
+   html. Put scroll-snap-type on html and it is silently inert — slides stop
+   snapping and a wheel gesture strands you mid-slide. */
+html{scroll-behavior:smooth}
+body{overflow-y:auto;scroll-snap-type:y mandatory;scroll-behavior:smooth}
 
-.slide {
-  width: 100vw; height: 100vh; height: 100dvh;
-  overflow: hidden; scroll-snap-align: start;
-  display: flex; flex-direction: column; position: relative;
+.slide{
+  width:100vw;height:100vh;height:100dvh;overflow:hidden;scroll-snap-align:start;
+  display:flex;flex-direction:column;position:relative;
 }
-.slide-content {
-  flex: 1; display: flex; flex-direction: column; justify-content: center;
-  max-height: 100%; overflow: hidden; padding: var(--slide-padding);
-  position: relative; z-index: 2;
+/* Header / body / footer composition rather than one centred block. A centred
+   block leaves the top and bottom thirds empty, which reads as an unfinished
+   slide however good the content is. */
+.slide-content{
+  flex:1;display:flex;flex-direction:column;justify-content:space-between;
+  max-height:100%;overflow:hidden;padding:var(--pad);
+  position:relative;z-index:2;width:100%;max-width:1220px;margin:0 auto;gap:var(--gap);
 }
+.head{display:flex;flex-direction:column;gap:var(--gap-s);flex:none}
+.body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:var(--gap)}
+.foot{display:flex;flex-direction:column;gap:var(--gap-s);flex:none}
+/* The main block OWNS the middle band, but its components keep their natural
+   proportions inside it. Stretching them to the full band instead produces
+   metre-tall stat cards and a table with an inch between rows — filling the
+   space is not the same as using it. Cards get a floor so they read as
+   deliberate; nothing gets a ceiling it has to grow into. */
+.body > *:only-child{flex:1;min-height:0}
+.body > .split:only-child{align-items:center}
+/* When a chart IS the slide, give it the weight of one. Four bars at inline
+   scale float in the middle of the band and read as a placeholder. */
+.body > .bars:only-child{gap:clamp(.6rem,2.8vh,1.7rem)}
+.body > .bars:only-child .track{height:clamp(18px,4.6vh,44px)}
+.body > .bars:only-child .bv{font-size:clamp(1.1rem,2.1vw,1.7rem)}
+.split > .stack,.split > ul.list{justify-content:center}
+.kpi{min-height:clamp(84px,12.5vh,138px)}
+.grid.tall .card{max-height:clamp(150px,30vh,270px)}
 
-:root {
-  --title-size: clamp(1.5rem, 5vw, 4rem);
-  --h2-size:    clamp(1.25rem, 3.5vw, 2.5rem);
-  --h3-size:    clamp(1rem, 2.5vw, 1.75rem);
-  --body-size:  clamp(0.75rem, 1.5vw, 1.125rem);
-  --small-size: clamp(0.65rem, 1vw, 0.875rem);
-  --slide-padding: clamp(1rem, 4vw, 4rem);
-  --content-gap:   clamp(0.5rem, 2vw, 2rem);
-  --element-gap:   clamp(0.25rem, 1vw, 1rem);
+:root{
+  --title:  clamp(1.7rem, 5vw, 4.2rem);
+  --h2:     clamp(1.3rem, 3.2vw, 2.5rem);
+  --h3:     clamp(1.02rem, 1.85vw, 1.4rem);
+  --body:   clamp(.82rem, 1.18vw, 1.08rem);
+  --small:  clamp(.7rem, .87vw, .88rem);
+  --micro:  clamp(.61rem, .74vw, .75rem);
+  --pad:    clamp(1.1rem, 3.6vw, 4rem);
+  --pad-y:  clamp(1.4rem, 6vh, 3.6rem);
+  --gap:    clamp(.6rem, 2vh, 1.7rem);
+  --gap-s:  clamp(.32rem, 1vh, .8rem);
 
-  /* Swiss Modern palette — white field, black type, one signal red. */
-  --ink:    #111112;
-  --paper:  #fbfbf9;
-  --signal: #d6203c;
-  --rule:   #d9d9d4;
-  --muted:  #6b6b66;
-  --wash:   #f2f2ee;
+  /* Electric Studio — near-black, white, one saturated cobalt. */
+  --ink:#0b1220; --ink-2:#151d2e;
+  --canvas:#f6f7f9; --surface:#ffffff; --line:#e5e8ee;
+  --text:#101828; --muted:#667085; --faint:#98a2b3;
+  --accent:#2f5fff; --accent-2:#6d94ff; --accent-wash:#edf2ff;
+  --teal:#0d9488; --amber:#b45309;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+  --shadow:0 1px 3px rgba(16,24,40,.07), 0 14px 32px -16px rgba(16,24,40,.24);
 }
+.slide-content{padding-top:var(--pad-y);padding-bottom:var(--pad-y)}
 
-body {
-  font-family: 'Nunito', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
-  color: var(--ink); background: var(--paper);
-  font-size: var(--body-size); line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+body{
+  font-family:'Manrope',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  background:var(--canvas);color:var(--text);
+  font-size:var(--body);line-height:1.5;-webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
 }
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.03em;line-height:1.05}
+h1{font-size:var(--title)}
+h2{font-size:var(--h2)}
+h3{font-size:var(--h3);letter-spacing:-.015em}
+p{margin:0}
+em{font-style:normal;font-weight:700;color:var(--accent)}
+.slide.dark em{color:var(--accent-2)}
 
-h1, h2, h3, .num, .kicker {
-  font-family: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
-  font-weight: 800; letter-spacing: -0.02em; margin: 0;
+/* ---------- Dark slides: depth from light, not from lines ---------- */
+.slide.dark{background:var(--ink);color:#eef1f7}
+.slide.dark::before{
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(80ch 55ch at 82% 4%, rgba(47,95,255,.22), transparent 60%),
+    radial-gradient(65ch 45ch at 4% 98%, rgba(13,148,136,.14), transparent 58%);
 }
-h1 { font-size: var(--title-size); line-height: 1.02; }
-h2 { font-size: var(--h2-size);  line-height: 1.05; }
-h3 { font-size: var(--h3-size);  line-height: 1.15; }
+.slide.dark .muted,.slide.dark .lede{color:#a3aec5}
+.slide.dark .card{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.11);box-shadow:none}
+.slide.dark .card:hover{background:rgba(255,255,255,.08)}
+.slide.dark .divider{background:rgba(255,255,255,.14)}
+.slide.dark .chip{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.15);color:#cad3e7}
+.slide.dark .track{background:rgba(255,255,255,.10)}
+.slide.dark .kpi{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.11);box-shadow:none}
 
-/* --- Drafting grid: the visual identity. Abstract geometry, no illustration. */
-.slide::before {
-  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background-image:
-    linear-gradient(to right, rgba(17,17,18,.045) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(17,17,18,.045) 1px, transparent 1px);
-  background-size: clamp(36px, 5vw, 72px) clamp(36px, 5vw, 72px);
+/* ---------- Furniture ---------- */
+.eyebrow{
+  display:inline-flex;align-items:center;gap:.5em;font-size:var(--small);
+  font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);
 }
-.slide.dark { background: var(--ink); color: var(--paper); }
-.slide.dark::before {
-  background-image:
-    linear-gradient(to right, rgba(251,251,249,.07) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(251,251,249,.07) 1px, transparent 1px);
-}
-.slide.dark .muted, .slide.dark .lede { color: #a9a9a4; }
-.slide.dark .rule-line { background: rgba(251,251,249,.22); }
+.eyebrow::before{content:'';width:.4em;height:.4em;border-radius:50%;background:currentColor;flex:none}
+.slide.dark .eyebrow{color:var(--accent-2)}
+.divider{height:1px;background:var(--line);width:100%;border:0}
+.lede{color:var(--muted);max-width:66ch;font-size:var(--body)}
+.lede.big{font-size:var(--h3);line-height:1.4;color:#c3cbdd;max-width:56ch}
+.muted{color:var(--muted)}
+.stack{display:flex;flex-direction:column;gap:var(--gap)}
+.stack.s{gap:var(--gap-s)}
 
-/* --- Slide furniture --- */
-.kicker {
-  font-family: 'Archivo Narrow', 'Archivo', sans-serif; font-weight: 600;
-  font-size: var(--small-size); letter-spacing: .18em; text-transform: uppercase;
-  color: var(--signal); display: flex; align-items: center; gap: .6em;
+.chip{
+  display:inline-flex;align-items:center;gap:.4em;font-size:var(--micro);font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;padding:.4em .85em;border-radius:999px;
+  background:var(--accent-wash);border:1px solid rgba(47,95,255,.18);color:var(--accent);
 }
-.kicker::after { content: ''; height: 1px; flex: 1; background: currentColor; opacity: .35; }
-.rule-line { height: 1px; background: var(--rule); width: 100%; }
-.lede { color: var(--muted); font-size: var(--body-size); max-width: 62ch; }
-.muted { color: var(--muted); }
-.sig { color: var(--signal); }
-.stack { display: flex; flex-direction: column; gap: var(--content-gap); }
-.tight { gap: var(--element-gap); }
+.chip.neutral{background:#f2f4f7;border-color:var(--line);color:var(--muted)}
+.chip-row{display:flex;flex-wrap:wrap;gap:.45rem}
 
-.slide-no {
-  position: absolute; bottom: clamp(.6rem, 2vh, 1.4rem); right: var(--slide-padding);
-  font-family: 'Archivo Narrow', sans-serif; font-size: var(--small-size);
-  letter-spacing: .16em; color: var(--muted); z-index: 3;
+.slide-no{
+  position:absolute;bottom:clamp(.5rem,1.8vh,1.4rem);right:var(--pad);
+  font-size:var(--micro);font-weight:700;letter-spacing:.18em;color:var(--faint);z-index:3;
 }
+.slide.dark .slide-no{color:rgba(255,255,255,.3)}
 
-/* --- Data display --- */
-.statline { display: flex; flex-wrap: wrap; gap: clamp(1rem, 4vw, 3.5rem); }
-.stat .num {
-  font-size: clamp(2rem, 7vw, 5.5rem); font-weight: 900; line-height: .92;
-  font-variant-numeric: tabular-nums; letter-spacing: -0.04em;
+/* ---------- Cards: varied radius, real elevation ---------- */
+.grid{display:grid;gap:clamp(.5rem,1.3vw,1rem);align-content:center}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,225px),1fr))}
+.grid.tall{height:100%}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:clamp(.7rem,1.6vw,1.35rem);box-shadow:var(--shadow-sm);
+  display:flex;flex-direction:column;gap:.35em;justify-content:center;
+  transition:transform .25s cubic-bezier(.16,1,.3,1),box-shadow .25s,background .25s;
 }
-.stat .lbl {
-  font-size: var(--small-size); text-transform: uppercase; letter-spacing: .12em;
-  color: var(--muted); margin-top: .4em; max-width: 22ch;
-}
-.stat.hot .num { color: var(--signal); }
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.card .ct{font-weight:800;font-size:var(--body);letter-spacing:-.012em}
+.card .cd{font-size:var(--small);color:var(--muted);line-height:1.5}
+.card.lead{border-color:rgba(47,95,255,.3);background:linear-gradient(165deg,var(--accent-wash),var(--surface) 70%)}
+.slide.dark .card.lead{background:linear-gradient(165deg,rgba(47,95,255,.22),rgba(255,255,255,.04) 75%);border-color:rgba(109,148,255,.42)}
+.card .idx{font-size:var(--micro);font-weight:800;letter-spacing:.15em;color:var(--accent);text-transform:uppercase;margin-bottom:.15em}
+.slide.dark .card .idx{color:var(--accent-2)}
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: clamp(0.5rem, 1.5vw, 1rem); }
-.card {
-  border: 1px solid var(--rule); background: #fff; padding: clamp(.7rem, 1.6vw, 1.15rem);
-  display: flex; flex-direction: column; gap: .35em;
+/* ---------- KPIs ---------- */
+/* align-content:center keeps the row track at content height. Without it, a
+   .kpis grid that flexes to fill the band stretches its row and the stat cards
+   become metre-tall slabs with a number stranded in the middle. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));
+  gap:clamp(.5rem,1.2vw,.95rem);align-content:center}
+.kpi{
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:clamp(.65rem,1.5vw,1.15rem);box-shadow:var(--shadow-sm);
+  display:flex;flex-direction:column;justify-content:center;
 }
-.slide.dark .card { background: #1b1b1d; border-color: rgba(251,251,249,.16); }
-.card .ct { font-family: 'Archivo', sans-serif; font-weight: 800; font-size: var(--body-size); }
-.card .cd { font-size: var(--small-size); color: var(--muted); line-height: 1.45; }
-.card.flag { border-left: 3px solid var(--signal); }
+.kpi .n{font-size:clamp(1.7rem,4.2vw,3.4rem);font-weight:800;letter-spacing:-.05em;line-height:1}
+.kpi .n .u{font-size:.42em;font-weight:700;letter-spacing:-.01em;margin-left:.1em}
+.kpi .l{font-size:var(--micro);color:var(--muted);margin-top:.55em;line-height:1.4;font-weight:600}
+.kpi.hero{border-color:rgba(47,95,255,.3);background:linear-gradient(165deg,var(--accent-wash),var(--surface) 70%)}
+.kpi.hero .n{color:var(--accent)}
+.slide.dark .kpi.hero{background:linear-gradient(165deg,rgba(47,95,255,.2),rgba(255,255,255,.04) 75%);border-color:rgba(109,148,255,.42)}
+.slide.dark .kpi.hero .n{color:var(--accent-2)}
 
-/* Horizontal bar chart — data viz as part of the system, not an afterthought. */
-.bars { display: flex; flex-direction: column; gap: clamp(.4rem, 1.4vh, .9rem); }
-.bar-row { display: grid; grid-template-columns: clamp(4.5rem,9vw,8rem) 1fr auto; align-items: center; gap: clamp(.5rem,1.5vw,1rem); }
-.bar-row .bn { font-family: 'Archivo Narrow', sans-serif; font-size: var(--small-size); letter-spacing: .08em; text-transform: uppercase; }
-.bar-track { height: clamp(14px, 2.4vh, 26px); background: var(--wash); position: relative; overflow: hidden; }
-.slide.dark .bar-track { background: #232326; }
-.bar-fill { height: 100%; background: var(--ink); width: 0; transition: width 900ms cubic-bezier(.16,1,.3,1); }
-.slide.dark .bar-fill { background: var(--paper); }
-.bar-fill.hot { background: var(--signal); }
-.bar-row .bv { font-family: 'Archivo', sans-serif; font-weight: 800; font-variant-numeric: tabular-nums; font-size: var(--body-size); min-width: 3.2ch; text-align: right; }
-.is-visible .bar-fill { width: var(--w); }
+/* ---------- Bars ---------- */
+.bars{display:flex;flex-direction:column;gap:clamp(.4rem,1.5vh,1rem);justify-content:center}
+.bar{display:grid;grid-template-columns:clamp(4.6rem,9vw,8rem) 1fr auto;align-items:center;gap:clamp(.55rem,1.4vw,1.1rem)}
+.bar .bn{font-size:var(--small);font-weight:700;color:var(--muted)}
+.track{height:clamp(13px,2.4vh,24px);background:#e9ecf2;border-radius:99px;overflow:hidden}
+/* display:block is load-bearing. .track is a grid item so it blockifies, but
+   .fill is a plain <span> inside it — left inline, width and height silently do
+   nothing and every bar renders as an empty track. */
+.fill{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  transition:width 1s cubic-bezier(.16,1,.3,1)}
+.fill.t{background:linear-gradient(90deg,#0d9488,#2dd4bf)}
+.fill.q{background:linear-gradient(90deg,#9aa5b8,#cbd5e1)}
+.is-visible .fill{width:var(--w)}
+.bar .bv{font-size:var(--h3);font-weight:800;min-width:4.2ch;text-align:right;letter-spacing:-.03em}
+.bar .bv small{font-weight:600;color:var(--muted);font-size:.6em;margin-left:.25em}
 
-/* Lists */
-ul.bullet-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: clamp(0.4rem, 1vh, 1rem); }
-ul.bullet-list li { font-size: var(--body-size); line-height: 1.4; padding-left: 1.4em; position: relative; }
-ul.bullet-list li::before {
-  content: ''; position: absolute; left: 0; top: .55em;
-  width: .55em; height: .55em; background: var(--signal);
-}
-ul.checks li::before { background: none; content: '?'; color: var(--signal); font-weight: 800; top: 0; font-family: 'Archivo', sans-serif; }
+/* ---------- Segmented bar ---------- */
+.segbar{display:flex;height:clamp(18px,3.2vh,32px);border-radius:99px;overflow:hidden;background:#e9ecf2}
+.segbar span{display:block;height:100%;width:0;transition:width 1.05s cubic-bezier(.16,1,.3,1)}
+.is-visible .segbar span{width:var(--w)}
+.legend{display:flex;flex-wrap:wrap;gap:.5rem 1.1rem;font-size:var(--small);color:var(--muted);font-weight:600}
+.legend i{display:inline-block;width:.66em;height:.66em;border-radius:3px;margin-right:.45em}
 
-.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: clamp(1rem, 3vw, 2.5rem); align-items: start; }
+/* ---------- Timeline ---------- */
+.tl{position:relative;padding:clamp(.7rem,2.5vh,1.6rem) 0}
+.tl .axis{height:3px;background:var(--line);border-radius:3px;position:relative}
+.slide.dark .tl .axis{background:rgba(255,255,255,.15)}
+.tl .win{position:absolute;top:-2px;height:7px;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+.tl .win.late{background:linear-gradient(90deg,#3d4761,#59657f)}
+.tl .marks{display:flex;justify-content:space-between;margin-top:.9em;font-size:var(--micro);color:var(--muted);font-weight:700;letter-spacing:.04em}
+.tl .pin{position:absolute;top:-8px;width:15px;height:15px;border-radius:50%;background:var(--ink);border:3px solid var(--accent-2);transform:translateX(-50%)}
 
-.tag {
-  display: inline-block; font-family: 'Archivo Narrow', sans-serif; font-size: var(--small-size);
-  letter-spacing: .1em; text-transform: uppercase; border: 1px solid currentColor;
-  padding: .18em .6em; color: var(--signal);
-}
-.note {
-  border-left: 3px solid var(--signal); padding: .5em 0 .5em .9em;
-  font-size: var(--small-size); color: var(--muted); max-width: 70ch;
-}
-.inference { font-size: var(--small-size); color: var(--muted); font-style: italic; }
+/* ---------- Table ---------- */
+table.data{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--small)}
+table.data th,table.data td{padding:clamp(.34rem,1.1vh,.65rem) .7rem;text-align:right}
+table.data th:first-child,table.data td:first-child{text-align:left}
+table.data thead th{font-size:var(--micro);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;border-bottom:1px solid var(--line)}
+table.data tbody td{border-bottom:1px solid var(--line);font-weight:600}
+table.data tbody tr.now td{background:var(--accent-wash);font-weight:800;border-bottom-color:rgba(47,95,255,.2)}
+table.data tbody tr.now td:first-child{border-radius:10px 0 0 10px}
+table.data tbody tr.now td:last-child{border-radius:0 10px 10px 0}
+table.data .dn{color:#b42318;font-weight:800}
 
-/* Reveal animation */
-.reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
-.is-visible .reveal { opacity: 1; transform: none; }
-.is-visible .reveal:nth-child(2) { transition-delay: .07s; }
-.is-visible .reveal:nth-child(3) { transition-delay: .14s; }
-.is-visible .reveal:nth-child(4) { transition-delay: .21s; }
-.is-visible .reveal:nth-child(5) { transition-delay: .28s; }
+/* ---------- Lists ---------- */
+ul.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:clamp(.3rem,1.2vh,.8rem)}
+ul.list li{font-size:var(--body);line-height:1.45;padding-left:1.6em;position:relative}
+ul.list li::before{
+  content:'';position:absolute;left:0;top:.45em;width:.6em;height:.6em;border-radius:3px;
+  background:var(--accent-wash);border:1.5px solid var(--accent);
+}
+.slide.dark ul.list li::before{background:rgba(109,148,255,.22);border-color:var(--accent-2)}
+ul.list.num{counter-reset:i}
+ul.list.num li{counter-increment:i;padding-left:2.1em}
+ul.list.num li::before{
+  content:counter(i);width:1.5em;height:1.5em;top:.05em;border-radius:8px;
+  display:grid;place-items:center;font-size:.72em;font-weight:800;color:var(--accent);
+  background:var(--accent-wash);border:1px solid rgba(47,95,255,.2);
+}
+.slide.dark ul.list.num li::before{color:var(--accent-2);background:rgba(109,148,255,.16);border-color:rgba(109,148,255,.3)}
 
-/* Progress + nav */
-.progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--signal); width: 0; z-index: 50; transition: width .25s ease; }
-.deck-nav {
-  position: fixed; bottom: clamp(.6rem, 2vh, 1.4rem); left: var(--slide-padding);
-  display: flex; gap: .45em; z-index: 50;
+.split{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:clamp(1rem,3vw,2.6rem);align-items:center}
+.split.top{align-items:start}
+.callout{
+  border-left:3px solid var(--accent);background:var(--accent-wash);
+  padding:.75em 1.05em;border-radius:0 12px 12px 0;font-size:var(--small);color:#344054;max-width:88ch;
 }
-.deck-nav button {
-  width: 9px; height: 9px; padding: 0; border: 1px solid var(--muted); background: transparent;
-  cursor: pointer; border-radius: 0;
-}
-.deck-nav button[aria-current="true"] { background: var(--signal); border-color: var(--signal); }
+.slide.dark .callout{background:rgba(109,148,255,.13);color:#c5cfe4;border-left-color:var(--accent-2)}
+.callout.warn{border-left-color:var(--amber);background:#fffaf0;color:#7c4a03}
+.footnote{font-size:var(--micro);color:var(--faint);font-style:italic}
 
-@media (max-height: 700px) {
-  :root { --slide-padding: clamp(0.75rem, 3vw, 2rem); --content-gap: clamp(0.4rem, 1.5vw, 1rem);
-          --title-size: clamp(1.25rem, 4.5vw, 2.5rem); --h2-size: clamp(1rem, 3vw, 1.75rem); }
+/* ---------- Reveal ---------- */
+.reveal{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1)}
+.is-visible .reveal{opacity:1;transform:none}
+.is-visible .head .reveal:nth-child(2){transition-delay:.05s}
+.is-visible .head .reveal:nth-child(3){transition-delay:.1s}
+.is-visible .body{transition-delay:.14s}
+.is-visible .body .reveal:nth-child(2){transition-delay:.2s}
+.is-visible .foot .reveal{transition-delay:.26s}
+
+/* ---------- Chrome ---------- */
+.progress{position:fixed;top:0;left:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:0;z-index:60;transition:width .3s ease}
+.deck-nav{position:fixed;bottom:clamp(.5rem,1.7vh,1.2rem);left:50%;transform:translateX(-50%);
+  display:flex;gap:.32rem;z-index:60;background:rgba(255,255,255,.72);backdrop-filter:blur(12px);
+  padding:.4rem .55rem;border-radius:999px;border:1px solid var(--line);box-shadow:var(--shadow-sm)}
+.deck-nav button{width:7px;height:7px;padding:0;border:0;border-radius:99px;background:#cfd5e0;cursor:pointer;transition:all .28s cubic-bezier(.16,1,.3,1)}
+.deck-nav button[aria-current="true"]{background:var(--accent);width:22px}
+.deck-nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+@media (max-height:800px){
+  :root{--pad-y:clamp(1rem,4vh,2.2rem);--title:clamp(1.4rem,4.2vw,2.9rem);--h2:clamp(1.12rem,2.7vw,1.9rem)}
 }
-@media (max-height: 600px) {
-  :root { --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem); --content-gap: clamp(0.3rem, 1vw, 0.75rem);
-          --title-size: clamp(1.1rem, 4vw, 2rem); --body-size: clamp(0.7rem, 1.2vw, 0.95rem); }
-  .deck-nav, .slide-no { display: none; }
-  .stat .num { font-size: clamp(1.6rem, 5vw, 3rem); }
+@media (max-height:660px){
+  :root{--pad:clamp(.7rem,2.6vw,1.8rem);--pad-y:clamp(.7rem,3vh,1.3rem);--gap:clamp(.35rem,1.2vh,.75rem);
+        --title:clamp(1.15rem,3.6vw,2.1rem);--body:clamp(.74rem,1.02vw,.92rem)}
+  .deck-nav,.slide-no{display:none}
+  .kpi .n{font-size:clamp(1.3rem,3.2vw,2.1rem)}
 }
-@media (max-height: 500px) {
-  :root { --slide-padding: clamp(0.4rem, 2vw, 1rem); --title-size: clamp(1rem, 3.5vw, 1.5rem);
-          --h2-size: clamp(0.9rem, 2.5vw, 1.25rem); --body-size: clamp(0.65rem, 1vw, 0.85rem); }
+@media (max-height:520px){
+  :root{--pad:clamp(.45rem,2vw,1.1rem);--pad-y:.5rem;--title:clamp(1rem,3vw,1.5rem);
+        --h2:clamp(.9rem,2.3vw,1.25rem);--body:clamp(.67rem,.96vw,.84rem);--small:clamp(.61rem,.82vw,.74rem)}
+  .footnote,.legend{display:none}
 }
-@media (max-width: 600px) {
-  :root { --title-size: clamp(1.25rem, 7vw, 2.5rem); }
-  .grid { grid-template-columns: 1fr; }
+@media (max-width:640px){
+  :root{--title:clamp(1.35rem,7vw,2.3rem)}
+  .g2,.g3{grid-template-columns:1fr}
+  .bar{grid-template-columns:clamp(3.6rem,21vw,5rem) 1fr auto}
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .2s !important; }
-  html { scroll-behavior: auto; }
-  .reveal { opacity: 1; transform: none; }
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.2s !important}
+  html,body{scroll-behavior:auto}
+  .reveal{opacity:1;transform:none}
 }
-@media print { .slide { page-break-after: always; height: auto; } .deck-nav, .progress { display: none; } }
+@media print{.slide{page-break-after:always;height:auto}.deck-nav,.progress{display:none}}
 </style>
 </head>
 <body>
 
 <div class="progress" id="progress" role="presentation"></div>
-
 <main>
 
-<!-- 1 — TITLE -->
-<section class="slide" aria-labelledby="s1">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Calibration session &middot; 26 July 2026</div>
-    <h1 id="s1" class="reveal">Solis Interiors<br><span class="sig">&times;</span> One Trade Network</h1>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal">Interior work in your metro, found before the GC picks its subs &mdash;
-      scored, timed, and traceable to the public record it came from.</p>
-    <p class="lede reveal" style="max-width:58ch">
-      Today is a <strong>confirm-or-correct</strong> pass. We have been running with settings we
-      set on your behalf. You have never been asked. That is what we are here to fix.</p>
+<!-- 01 TITLE -->
+<section class="slide dark" aria-labelledby="s1">
+  <div class="slide-content">
+    <div class="head">
+      <div class="chip-row reveal">
+        <span class="chip">Calibration session</span>
+        <span class="chip neutral">26 July 2026</span>
+        <span class="chip neutral">45 minutes</span>
+      </div>
+    </div>
+    <div class="body">
+      <h1 id="s1" class="reveal">Solis Interiors</h1>
+      <p class="lede big reveal">Interior work in your metro, found before the general contractor
+        picks its subs &mdash; scored, timed, and traceable to the public record it came from.</p>
+    </div>
+    <div class="foot">
+      <hr class="divider reveal">
+      <div class="grid g3 reveal">
+        <div class="card"><span class="idx">Part one</span><div class="ct">What we see</div>
+          <div class="cd">Where the work comes from, and why it arrives earlier than the permit list.</div></div>
+        <div class="card"><span class="idx">Part two</span><div class="ct">What it is worth</div>
+          <div class="cd">Your pool today, measured this morning &mdash; including what does not work.</div></div>
+        <div class="card lead"><span class="idx">Part three</span><div class="ct">What we need from you</div>
+          <div class="cd">Seven settings to confirm, eight questions only you can answer.</div></div>
+      </div>
+    </div>
   </div>
   <div class="slide-no">01</div>
 </section>
 
-<!-- 2 — THE PROBLEM -->
-<section class="slide dark" aria-labelledby="s2">
-  <div class="slide-content stack">
-    <div class="kicker reveal">The problem</div>
-    <h2 id="s2" class="reveal">By the time a permit is public,<br>the GC has already picked its subs.</h2>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal" style="max-width:64ch">
-      Everyone can buy the issued-permit list. It is the same list, at the same time, for every
-      sub in the state. On commercial work the buyout happens during plan review &mdash;
-      <strong>months before issuance</strong>. A lead that arrives at issuance is not early.
-      It is late, and it looks like everyone else's.</p>
-    <p class="inference reveal">Timing statements throughout this deck are inferences from a
-      domain model over public dates &mdash; not facts asserted by the permit office.</p>
+<!-- 02 HOW THIS RUNS -->
+<section class="slide" aria-labelledby="s2">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">How this session runs</span>
+      <h2 id="s2" class="reveal">A confirm-or-correct pass &mdash;<br>not a blank-slate interview.</h2>
+      <p class="lede reveal">We have been running your feed on settings we chose for you. They came from
+        knowing your business, not from your instruction. Today each one gets a yes or a fix.</p>
+    </div>
+    <div class="body">
+      <div class="grid g3 tall reveal">
+        <div class="card"><span class="idx">01 &middot; 15 min</span><div class="ct">Walk the product</div>
+          <div class="cd">Where leads come from, what reaches you, and on what clock. Interrupt freely &mdash;
+            the questions you ask here are worth more than the slides.</div></div>
+        <div class="card"><span class="idx">02 &middot; 15 min</span><div class="ct">Confirm seven settings</div>
+          <div class="cd">Live in your scoring right now. Each is either right, or it changes today at no cost.</div></div>
+        <div class="card lead"><span class="idx">03 &middot; 15 min</span><div class="ct">Answer eight unknowns</div>
+          <div class="cd">Scope, capacity, constraints, and the general contractors you already know by name.</div></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Nothing in your scoring changes until you say so &mdash; and when it changes it is
+        versioned and dated, so a shift in what you receive always traces back to something you actually said.</p>
+    </div>
   </div>
   <div class="slide-no">02</div>
 </section>
 
-<!-- 3 — THE NUMBER -->
-<section class="slide" aria-labelledby="s3">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Measured, not asserted</div>
-    <h2 id="s3" class="reveal">Nearly half of what scores well<br>is already past bidding.</h2>
-    <div class="statline reveal">
-      <div class="stat hot"><div class="num">217</div>
-        <div class="lbl">of 477 priority opportunities flagged <em>commercial bid window likely closed</em></div></div>
-      <div class="stat"><div class="num">45<span style="font-size:.5em">%</span></div>
-        <div class="lbl">of the priority pool, unbiddable on arrival</div></div>
+<!-- 03 THE PROBLEM -->
+<section class="slide dark" aria-labelledby="s3">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">The problem</span>
+      <h2 id="s3" class="reveal">By the time a permit is public,<br>the subs are already chosen.</h2>
     </div>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal">That is the cost of starting at issuance &mdash; and the entire reason
-      we source the pre-permit stages.</p>
+    <div class="body">
+      <p class="lede reveal" style="max-width:70ch">Everyone can buy the issued-permit list &mdash; the same
+        list, at the same moment, for every sub in the state. On commercial work the buyout happens during
+        plan review, <em>months before</em> the permit ever becomes public.</p>
+      <div class="tl reveal">
+        <div class="axis">
+          <span class="win" style="left:3%;width:41%"></span>
+          <span class="win late" style="left:63%;width:34%"></span>
+          <span class="pin" style="left:63%"></span>
+        </div>
+        <div class="marks">
+          <span>Application filed</span><span>Plan review</span><span>Permit issued</span><span>Construction</span>
+        </div>
+      </div>
+      <div class="legend reveal">
+        <span><i style="background:var(--accent)"></i>Commercial bid window — live, and invisible on the permit list</span>
+        <span><i style="background:#59657f"></i>Where everyone else starts looking</span>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="footnote reveal">Timing throughout this deck is inference from a domain model over public
+        dates &mdash; not a fact asserted by the permit office.</p>
+    </div>
   </div>
   <div class="slide-no">03</div>
 </section>
 
-<!-- 4 — WHAT WE DO DIFFERENTLY -->
+<!-- 04 THE 45% -->
 <section class="slide" aria-labelledby="s4">
-  <div class="slide-content stack">
-    <div class="kicker reveal">What we do differently</div>
-    <h2 id="s4" class="reveal">We start upstream of the permit.</h2>
-    <div class="grid reveal">
-      <div class="card"><div class="ct">Application stage</div>
-        <div class="cd">Olympia applications &mdash; the project is filed but not issued. Commercial buyout is live here.</div></div>
-      <div class="card"><div class="ct">Design &amp; entitlement</div>
-        <div class="cd">Tumwater design review + SEPA. Earlier still: the project exists, the team is forming.</div></div>
-      <div class="card"><div class="ct">Issued permits</div>
-        <div class="cd">Nine counties. The commodity layer &mdash; useful for residential timing, late for commercial.</div></div>
-      <div class="card flag"><div class="ct">Only genuine bytes</div>
-        <div class="cd">Public records, captured the way a person would. No bot-driving, no bypassing access controls, ever.</div></div>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Measured this morning</span>
+      <h2 id="s4" class="reveal">Nearly half of what scores well<br>is already past bidding.</h2>
     </div>
-    <p class="note reveal">Every captured report self-reconciles &mdash; each category total must match
-      the report's printed grand total, or we suppress the source rather than ship a mis-parse.</p>
+    <div class="body">
+      <div class="kpis reveal">
+        <div class="kpi hero"><div class="n">217</div><div class="l">flagged <em>bid window likely closed</em></div></div>
+        <div class="kpi"><div class="n">477</div><div class="l">standing priority opportunities</div></div>
+        <div class="kpi"><div class="n">45<span class="u">%</span></div><div class="l">unbiddable the moment they arrive</div></div>
+        <div class="kpi"><div class="n">182</div><div class="l">at application stage — the live window</div></div>
+      </div>
+      <div class="stack s reveal">
+        <div class="segbar">
+          <span style="--w:45.5%;background:linear-gradient(90deg,#8e9bb0,#c3ccda)"></span>
+          <span style="--w:38.2%;background:linear-gradient(90deg,var(--accent),var(--accent-2))"></span>
+          <span style="--w:16.3%;background:linear-gradient(90deg,#0d9488,#2dd4bf)"></span>
+        </div>
+        <div class="legend">
+          <span><i style="background:#a8b3c4"></i>Window likely closed — 217</span>
+          <span><i style="background:var(--accent)"></i>Application stage, live — 182</span>
+          <span><i style="background:var(--teal)"></i>Issued, residential clock running — 78</span>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">That gap is the whole argument for sourcing upstream of the permit. It is also
+        why a lead list bought from an aggregator feels busy and converts badly &mdash; the volume is real,
+        the timing is not.</p>
+    </div>
   </div>
   <div class="slide-no">04</div>
 </section>
 
-<!-- 5 — BID WINDOW MODEL -->
-<section class="slide dark" aria-labelledby="s5">
-  <div class="slide-content stack">
-    <div class="kicker reveal">The clock, per trade</div>
-    <h2 id="s5" class="reveal">Drywall and paint do not<br>get bought at the same moment.</h2>
-    <div class="two-col reveal">
-      <div class="stack tight">
-        <span class="tag">Residential &mdash; after issuance</span>
-        <ul class="bullet-list">
-          <li><strong>Drywall</strong> &mdash; 4 to 8 weeks after the permit issues</li>
-          <li><strong>Paint</strong> &mdash; 6 to 12 weeks after issuance</li>
-          <li>Exterior paint landing Nov&ndash;Apr carries a PNW season caveat</li>
-        </ul>
-      </div>
-      <div class="stack tight">
-        <span class="tag">Commercial &mdash; before issuance</span>
-        <ul class="bullet-list">
-          <li><strong>2 to 6 months ahead</strong> of issuance, during GMP buyout</li>
-          <li>Application and plan review is the <em>only</em> live window</li>
-          <li>At issuance the package is generally gone</li>
-        </ul>
+<!-- 05 WHERE WE SOURCE -->
+<section class="slide" aria-labelledby="s5">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Where the work comes from</span>
+      <h2 id="s5" class="reveal">Three stages upstream, one downstream.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g2 tall reveal">
+        <div class="card lead"><span class="idx">Earliest</span><div class="ct">Design review &amp; environmental</div>
+          <div class="cd">Tumwater design review and SEPA filings. The project exists and the team is still
+            forming &mdash; relationship territory, not yet bidding territory.</div></div>
+        <div class="card lead"><span class="idx">Live window</span><div class="ct">Permit applications</div>
+          <div class="cd">Olympia application-stage filings. Filed, not issued. For commercial work this is the
+            only moment the interior package is genuinely biddable.</div></div>
+        <div class="card"><span class="idx">Baseline</span><div class="ct">Issued permits</div>
+          <div class="cd">Nine counties. The commodity layer everyone has &mdash; still useful for residential
+            timing, generally too late for commercial.</div></div>
+        <div class="card"><span class="idx">Discipline</span><div class="ct">Genuine records only</div>
+          <div class="cd">Captured the way a person would, from public sources. No bot-driving, no bypassing
+            access controls, no exceptions &mdash; including when it would be convenient.</div></div>
       </div>
     </div>
-    <p class="inference reveal">Each opportunity carries its own window line on the correct track &mdash;
-      &ldquo;bid now&rdquo;, &ldquo;opens in N weeks&rdquo;, or &ldquo;likely closed&rdquo;.</p>
+    <div class="foot">
+      <p class="callout reveal">Every captured report must reconcile against its own printed totals before a
+        single record is emitted. If the arithmetic disagrees we suppress the source rather than ship a
+        mis-parse &mdash; a wrong lead costs you more than a missing one.</p>
+    </div>
   </div>
   <div class="slide-no">05</div>
 </section>
 
-<!-- 6 — WHAT YOU RECEIVE -->
-<section class="slide" aria-labelledby="s6">
-  <div class="slide-content stack">
-    <div class="kicker reveal">What lands in your inbox</div>
-    <h2 id="s6" class="reveal">One email a week. Ten minutes.</h2>
-    <div class="grid reveal">
-      <div class="card flag"><div class="ct">&#9889; Winnable now</div>
-        <div class="cd">At most three. Closest first, recently changed, inside your radius.</div></div>
-      <div class="card"><div class="ct">&#129517; Decisions</div>
-        <div class="cd">Pre-permit projects still forming &mdash; the relationship window.</div></div>
-      <div class="card"><div class="ct">&#128337; Deadlines</div>
-        <div class="cd">Bid invitations you forward us, with their due dates.</div></div>
-      <div class="card"><div class="ct">Priority &amp; changes</div>
-        <div class="cd">New at-or-above your threshold, plus projects that moved a stage.</div></div>
-      <div class="card"><div class="ct">Who is across the table</div>
-        <div class="cd">The GC as a resolved company &mdash; not a name string on a permit.</div></div>
-      <div class="card"><div class="ct">Coverage caveats</div>
-        <div class="cd">What we could <em>not</em> see this week, stated plainly. Never silently dropped.</div></div>
+<!-- 06 BID WINDOW -->
+<section class="slide dark" aria-labelledby="s6">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">The clock, per trade</span>
+      <h2 id="s6" class="reveal">Drywall and paint are not bought<br>at the same moment.</h2>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <div class="stack s">
+          <span class="chip">Residential &mdash; after issuance</span>
+          <ul class="list">
+            <li><strong>Drywall</strong> — 4 to 8 weeks after the permit issues</li>
+            <li><strong>Paint</strong> — 6 to 12 weeks after issuance</li>
+            <li>Exterior paint landing Nov–Apr carries a Pacific Northwest season caveat</li>
+          </ul>
+        </div>
+        <div class="stack s">
+          <span class="chip">Commercial &mdash; before issuance</span>
+          <ul class="list">
+            <li><strong>2 to 6 months ahead</strong> of issuance, during guaranteed-price buyout</li>
+            <li>Application and plan review is the <em>only</em> live window</li>
+            <li>By issuance the interior package is generally spoken for</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Every opportunity carries its own window line on the correct track &mdash;
+        <strong>bid now</strong>, <strong>opens in N weeks</strong>, or <strong>likely closed</strong> &mdash;
+        so the feed tells you when to act, not merely what exists.</p>
     </div>
   </div>
   <div class="slide-no">06</div>
 </section>
 
-<!-- 7 — THE POOL -->
+<!-- 07 THE DIGEST -->
 <section class="slide" aria-labelledby="s7">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Your pool today</div>
-    <h2 id="s7" class="reveal">477 standing. Thirteen a week.</h2>
-    <div class="statline reveal">
-      <div class="stat"><div class="num">1,263</div><div class="lbl">tracked opportunities scoring 65+</div></div>
-      <div class="stat"><div class="num">477</div><div class="lbl">standing at your priority threshold of 80</div></div>
-      <div class="stat hot"><div class="num">13</div><div class="lbl">changed in the last week &mdash; what actually reaches you</div></div>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">What lands in your inbox</span>
+      <h2 id="s7" class="reveal">One email a week. Ten minutes.</h2>
     </div>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal">The 477 is a two-year backlog, not a weekly ask. Thirteen a week is
-      reviewable. Raising the bar to 90 would drop it to two &mdash; too quiet to build
-      relationships on.</p>
+    <div class="body">
+      <div class="grid g3 tall reveal">
+        <div class="card lead"><div class="ct">⚡ Winnable now</div>
+          <div class="cd">At most three. Nearest first, recently changed, inside your radius.</div></div>
+        <div class="card"><div class="ct">🧭 Decisions</div>
+          <div class="cd">Pre-permit projects still forming — the relationship window, before bidding opens.</div></div>
+        <div class="card"><div class="ct">🕐 Deadlines</div>
+          <div class="cd">Bid invitations you forward us, with their due dates tracked.</div></div>
+        <div class="card"><div class="ct">Priority &amp; movement</div>
+          <div class="cd">New work at or above your threshold, plus projects that changed stage this week.</div></div>
+        <div class="card"><div class="ct">Who is across the table</div>
+          <div class="cd">The general contractor as a resolved company — not a name string on a permit.</div></div>
+        <div class="card"><div class="ct">Coverage caveats</div>
+          <div class="cd">What we could <em>not</em> see this week, stated plainly. Never silently dropped.</div></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Every item is one tap from <strong>pursue</strong> or <strong>dismiss</strong>,
+        straight from the email. No login, no portal to remember, nothing to keep up to date.</p>
+    </div>
   </div>
   <div class="slide-no">07</div>
 </section>
 
-<!-- 8 — WHERE THE WORK IS -->
+<!-- 08 THE POOL -->
 <section class="slide" aria-labelledby="s8">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Where the work actually is</div>
-    <h2 id="s8" class="reveal">Priority opportunities by county</h2>
-    <div class="bars reveal">
-      <div class="bar-row"><span class="bn">Pierce</span><span class="bar-track"><span class="bar-fill" style="--w:100%"></span></span><span class="bv">270</span></div>
-      <div class="bar-row"><span class="bn">King</span><span class="bar-track"><span class="bar-fill" style="--w:52.6%"></span></span><span class="bv">142</span></div>
-      <div class="bar-row"><span class="bn">Thurston</span><span class="bar-track"><span class="bar-fill hot" style="--w:14.1%"></span></span><span class="bv">38</span></div>
-      <div class="bar-row"><span class="bn">Lewis</span><span class="bar-track"><span class="bar-fill" style="--w:10%"></span></span><span class="bv">27</span></div>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Your pool today</span>
+      <h2 id="s8" class="reveal">477 standing. Thirteen a week.</h2>
+      <p class="lede reveal">The standing figure is a two-year backlog, not a weekly ask. The number that
+        actually reaches you is the <em>changed</em> column &mdash; and that is the one worth tuning.</p>
     </div>
-    <p class="note reveal"><strong>Straight talk:</strong> we weighted your home metro up, and
-      Thurston is still only 8% of the pool. The weighting is working &mdash; the Thurston
-      <em>volume</em> is thin. If your appetite is home-metro-first, that is a coverage problem
-      for us to solve, and we would rather say so than dress it up.</p>
+    <div class="body">
+      <div class="split top reveal">
+        <div class="kpis" style="grid-template-columns:1fr 1fr">
+          <div class="kpi"><div class="n">1,263</div><div class="l">tracked at score 65 and above</div></div>
+          <div class="kpi hero"><div class="n">13</div><div class="l">changed last week at your threshold</div></div>
+        </div>
+        <table class="data">
+          <thead><tr><th>Threshold</th><th>Standing</th><th>Per week</th><th>Per month</th></tr></thead>
+          <tbody>
+            <tr><td>70</td><td>1,074</td><td>46</td><td>431</td></tr>
+            <tr><td>75</td><td>678</td><td>23</td><td>279</td></tr>
+            <tr class="now"><td>80 &middot; current</td><td>477</td><td>13</td><td>185</td></tr>
+            <tr><td>85</td><td>205</td><td>9</td><td>103</td></tr>
+            <tr><td>90</td><td>32</td><td class="dn">2</td><td>14</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Raising the bar to 90 leaves roughly two a week &mdash; too quiet to build
+        relationships on. But it is your call, and it is question six on the form.</p>
+    </div>
   </div>
   <div class="slide-no">08</div>
 </section>
 
-<!-- 9 — EASY WINS -->
+<!-- 09 COUNTY -->
 <section class="slide" aria-labelledby="s9">
-  <div class="slide-content stack">
-    <div class="kicker reveal">&#9889; Winnable now</div>
-    <h2 id="s9" class="reveal">Close, recent, and no job too small.</h2>
-    <div class="bars reveal">
-      <div class="bar-row"><span class="bn">&le; 20 mi</span><span class="bar-track"><span class="bar-fill hot" style="--w:23.5%"></span></span><span class="bv">23</span></div>
-      <div class="bar-row"><span class="bn">&le; 35 mi</span><span class="bar-track"><span class="bar-fill" style="--w:92.9%"></span></span><span class="bv">91</span></div>
-      <div class="bar-row"><span class="bn">&le; 50 mi</span><span class="bar-track"><span class="bar-fill" style="--w:100%"></span></span><span class="bv">98</span></div>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Where the work actually is</span>
+      <h2 id="s9" class="reveal">Priority opportunities by county</h2>
     </div>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal">Measured from Lacey, changed in the last 60 days, no minimum job size.
-      The 35-mile ring holds the mass &mdash; going out to 50 adds only seven.
-      <strong>How far do you actually take work?</strong></p>
+    <div class="body">
+      <div class="bars reveal">
+        <div class="bar"><span class="bn">Pierce</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="bv">270<small>57%</small></span></div>
+        <div class="bar"><span class="bn">King</span><span class="track"><span class="fill" style="--w:52.6%"></span></span><span class="bv">142<small>30%</small></span></div>
+        <div class="bar"><span class="bn">Thurston</span><span class="track"><span class="fill t" style="--w:14.1%"></span></span><span class="bv">38<small>8%</small></span></div>
+        <div class="bar"><span class="bn">Lewis</span><span class="track"><span class="fill q" style="--w:10%"></span></span><span class="bv">27<small>6%</small></span></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout warn reveal"><strong>Straight talk.</strong> We weighted your home metro up, and Thurston
+        is still only 8% of the pool. The weighting is doing its job &mdash; the Thurston <em>volume</em> is
+        genuinely thin. If your appetite is home-metro-first, that is a coverage problem for us to solve, and
+        we would rather name it than dress it up.</p>
+    </div>
   </div>
   <div class="slide-no">09</div>
 </section>
 
-<!-- 10 — WHAT WE ASSUMED -->
-<section class="slide dark" aria-labelledby="s10">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Confirm or correct</div>
-    <h2 id="s10" class="reveal">Seven settings we chose for you<br>without asking.</h2>
-    <p class="lede reveal">These are live in your scoring right now. They came from knowing your
-      business, not from your instruction. Any one of them can be wrong.</p>
-    <ul class="bullet-list reveal">
-      <li>Your territory is Thurston, Pierce, Lewis and King</li>
-      <li>Home metro ranks above King commercial; Pierce sits about even</li>
-      <li>Application-stage projects rank <em>above</em> issued ones</li>
-      <li>A GC you already work with gives a small lift</li>
-      <li>Proximity bands of 20, 35 and 50 miles from Lacey</li>
-      <li>No minimum job size &mdash; no job is too small</li>
-      <li>King jobs under $10k go to the digest, not to priority</li>
-    </ul>
+<!-- 10 EASY WINS -->
+<section class="slide" aria-labelledby="s10">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">⚡ Winnable now</span>
+      <h2 id="s10" class="reveal">Close, recent, and no job too small.</h2>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <div class="bars">
+          <div class="bar"><span class="bn">≤ 20 miles</span><span class="track"><span class="fill" style="--w:23.5%"></span></span><span class="bv">23</span></div>
+          <div class="bar"><span class="bn">≤ 35 miles</span><span class="track"><span class="fill" style="--w:92.9%"></span></span><span class="bv">91</span></div>
+          <div class="bar"><span class="bn">≤ 50 miles</span><span class="track"><span class="fill q" style="--w:100%"></span></span><span class="bv">98</span></div>
+        </div>
+        <ul class="list">
+          <li>Measured from <strong>Lacey</strong>, nearest band shown first</li>
+          <li>Changed within the last <strong>60 days</strong></li>
+          <li><strong>No minimum job size</strong> — capped at $2M</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">The 35-mile ring holds nearly all of it &mdash; stretching to 50 adds seven jobs.
+        So the real question is not how far we <em>can</em> look, but how far you actually take work.</p>
+    </div>
   </div>
   <div class="slide-no">10</div>
 </section>
 
-<!-- 11 — WHAT WE DON'T KNOW -->
-<section class="slide" aria-labelledby="s11">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Genuinely unknown</div>
-    <h2 id="s11" class="reveal">Eight things only you can answer.</h2>
-    <div class="two-col reveal">
-      <ul class="bullet-list checks">
-        <li>Your exact drywall and paint scope</li>
-        <li>Crew and subcontract capacity</li>
-        <li>Preferred and blocked GCs</li>
-        <li>Public work, bonding, prevailing wage</li>
-      </ul>
-      <ul class="bullet-list checks">
-        <li>Which invitation platforms you use</li>
-        <li>Licence renewal &mdash; yours runs to 11 Aug</li>
-        <li>Does 13 a week feel right?</li>
-        <li>Winnable-now window: 30 or 60 days?</li>
-      </ul>
+<!-- 11 ASSUMPTIONS -->
+<section class="slide dark" aria-labelledby="s11">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Confirm or correct</span>
+      <h2 id="s11" class="reveal">Seven settings we chose for you<br>without asking.</h2>
+      <p class="lede reveal">Live in your scoring right now. Any one of them can be wrong, and correcting
+        one costs nothing today.</p>
     </div>
-    <p class="note reveal">Answering these is the whole session. The questionnaire alongside this
-      deck captures them and writes straight into your configuration.</p>
+    <div class="body">
+      <div class="split reveal">
+        <ul class="list num">
+          <li>Your territory is Thurston, Pierce, Lewis and King</li>
+          <li>Home metro outranks King commercial; Pierce sits about even</li>
+          <li>Application-stage projects rank <em>above</em> issued ones</li>
+          <li>A contractor you already work with gives a small lift</li>
+        </ul>
+        <ul class="list num" style="counter-reset:i 4">
+          <li>Proximity bands of 20, 35 and 50 miles from Lacey</li>
+          <li>No minimum job size — no job is too small</li>
+          <li>King jobs under $10k go to the digest, not to priority</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">These are the first seven questions on the form &mdash; and the fastest part
+        of the session, because you already know the answers.</p>
+    </div>
   </div>
   <div class="slide-no">11</div>
 </section>
 
-<!-- 12 — WHAT WE CAN'T DO YET -->
+<!-- 12 UNKNOWNS -->
 <section class="slide" aria-labelledby="s12">
-  <div class="slide-content stack">
-    <div class="kicker reveal">What is not working yet</div>
-    <h2 id="s12" class="reveal">The verified-GC signal<br>fires zero times.</h2>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal">We built two trust signals &mdash; &ldquo;this GC is a confirmed real
-      company&rdquo; and &ldquo;you already work with this GC&rdquo;. Across your entire pool,
-      neither has ever fired. Not rare. <strong>Zero.</strong></p>
-    <p class="lede reveal">The reason is coverage: we have to confirm a GC's identity before we can
-      tell you anything about them. That work is underway on our side. We are telling you now so
-      that when you see it in the product later, you know it was earned rather than switched on.</p>
-    <p class="note reveal">You will not be asked today how much that signal should be worth.
-      Pricing a signal that has never appeared would be guesswork.</p>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Genuinely unknown</span>
+      <h2 id="s12" class="reveal">Eight things only you can answer.</h2>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <ul class="list">
+          <li>Your exact drywall and paint scope</li>
+          <li>Crew size and subcontract capacity</li>
+          <li>Preferred and blocked general contractors</li>
+          <li>Public work, bonding, prevailing wage</li>
+        </ul>
+        <ul class="list">
+          <li>Which invitation platforms you use</li>
+          <li>Licence renewal — yours runs to 11 August</li>
+          <li>Does thirteen a week feel right?</li>
+          <li>Winnable-now window: 30 days or 60?</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Answering these <em>is</em> the session. The form alongside this deck captures
+        them and writes straight into your configuration &mdash; nothing gets re-typed on the way in.</p>
+    </div>
   </div>
   <div class="slide-no">12</div>
 </section>
 
-<!-- 13 — THE LOOP -->
+<!-- 13 WHAT DOESN'T WORK -->
 <section class="slide dark" aria-labelledby="s13">
-  <div class="slide-content stack">
-    <div class="kicker reveal">How it gets sharper</div>
-    <h2 id="s13" class="reveal">Every tap is a calibration.</h2>
-    <div class="grid reveal">
-      <div class="card"><div class="ct">1 &middot; You decide</div>
-        <div class="cd">Pursue or dismiss, one tap from the email. No login needed.</div></div>
-      <div class="card"><div class="ct">2 &middot; We snapshot</div>
-        <div class="cd">We record what the score and evidence said <em>at the moment you decided</em>.</div></div>
-      <div class="card"><div class="ct">3 &middot; We recalibrate</div>
-        <div class="cd">After two cycles the pattern in your dismissals reshapes the scoring.</div></div>
-      <div class="card flag"><div class="ct">4 &middot; Never silently</div>
-        <div class="cd">Weights change only in a session like this one, versioned, with you present.</div></div>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">What is not working yet</span>
+      <h2 id="s13" class="reveal">The verified-contractor signal<br>fires zero times.</h2>
     </div>
-    <p class="lede reveal">Dismiss reasons are the highest-value thing you can give us. One extra
-      tap teaches more than ten pursued leads.</p>
+    <div class="body">
+      <div class="split reveal">
+        <div class="stack s">
+          <p class="lede">We built two trust signals &mdash; <em>this contractor is a confirmed real company</em>
+            and <em>you already work with them</em>. Across your entire pool, neither has ever fired.
+            Not rare. Zero.</p>
+          <p class="lede">The cause is coverage: we must confirm a company's identity before we can tell you
+            anything about it. That work is underway on our side.</p>
+        </div>
+        <div class="kpis" style="grid-template-columns:1fr">
+          <div class="kpi"><div class="n">0</div><div class="l">times <em>verified contractor</em> has fired</div></div>
+          <div class="kpi"><div class="n">0</div><div class="l">times <em>you already work together</em> has fired</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">So you will not be asked today what that signal should be worth. Pricing
+        something that has never appeared would be guesswork &mdash; and we would rather tell you now than
+        have you discover it later.</p>
+    </div>
   </div>
   <div class="slide-no">13</div>
 </section>
 
-<!-- 14 — CLOSE -->
+<!-- 14 THE LOOP -->
 <section class="slide" aria-labelledby="s14">
-  <div class="slide-content stack">
-    <div class="kicker reveal">Today</div>
-    <h1 id="s14" class="reveal">Four things<br>and we are calibrated.</h1>
-    <ul class="bullet-list reveal">
-      <li>Walk the seven assumptions &mdash; confirm or correct each one</li>
-      <li>Answer the eight unknowns in the questionnaire</li>
-      <li>Name ten to fifteen GCs: worked with, want to, never again</li>
-      <li>Confirm the forwarding address so bid invitations start flowing</li>
-    </ul>
-    <div class="rule-line reveal"></div>
-    <p class="lede reveal">Nothing changes in your scoring until you say so &mdash; and when it
-      changes, it is versioned, dated, and attributable to something you actually said.</p>
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">How it gets sharper</span>
+      <h2 id="s14" class="reveal">Every tap is a calibration.</h2>
+    </div>
+    <div class="body">
+      <div class="grid g2 tall reveal">
+        <div class="card"><span class="idx">Step one</span><div class="ct">You decide</div>
+          <div class="cd">Pursue or dismiss, one tap from the email. No login required.</div></div>
+        <div class="card"><span class="idx">Step two</span><div class="ct">We snapshot</div>
+          <div class="cd">We record what the score and the evidence said <em>at the moment you decided</em> —
+            not what they say later.</div></div>
+        <div class="card"><span class="idx">Step three</span><div class="ct">We recalibrate</div>
+          <div class="cd">After two cycles the pattern in your dismissals reshapes the scoring itself.</div></div>
+        <div class="card lead"><span class="idx">Always</span><div class="ct">Never silently</div>
+          <div class="cd">Weights change only in a session like this one — versioned, dated, with you present.</div></div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal">Dismiss <em>reasons</em> are the most valuable thing you can give us. One extra
+        tap teaches the system more than ten leads you pursued.</p>
+    </div>
   </div>
   <div class="slide-no">14</div>
+</section>
+
+<!-- 15 CLOSE -->
+<section class="slide dark" aria-labelledby="s15">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">Today</span>
+      <h1 id="s15" class="reveal">Four things<br>and we are calibrated.</h1>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <ul class="list num">
+          <li>Walk the seven assumptions — confirm or correct each one</li>
+          <li>Answer the eight unknowns on the form</li>
+          <li>Name ten to fifteen contractors: worked with, want to, never again</li>
+          <li>Confirm the forwarding address so invitations start flowing</li>
+        </ul>
+        <div class="stack s">
+          <div class="kpi hero"><div class="n">~30<span class="u">min</span></div>
+            <div class="l">and your feed stops being our best guess</div></div>
+          <p class="lede">Everything after that is measurement &mdash; two digest cycles, then the first real
+            recalibration against decisions you actually made.</p>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <hr class="divider reveal">
+      <p class="footnote reveal">Numbers regenerated 26 July 2026 against live data. Every figure in this deck
+        is reproducible from the same query set.</p>
+    </div>
+  </div>
+  <div class="slide-no">15</div>
 </section>
 
 </main>
@@ -498,9 +768,10 @@ ul.checks li::before { background: none; content: '?'; color: var(--signal); fon
 
 <script>
 /**
- * Deck controller — keyboard, wheel, touch, and dot navigation.
- * Slides are real scroll-snap sections, so browser scrolling stays the source of
- * truth; this class only drives programmatic jumps and the reveal/progress state.
+ * Deck controller — keyboard, wheel, touch and dot navigation.
+ * Slides are real scroll-snap sections, so the browser's own scrolling stays the
+ * source of truth; this class only drives programmatic jumps, reveal state and
+ * the progress indicator.
  */
 class Deck {
   constructor() {
@@ -524,8 +795,8 @@ class Deck {
     this.dots = Array.from(this.nav.children);
   }
 
-  /* Reveal on enter + progress/dot sync, driven by intersection rather than
-     scroll math so it stays correct after resize or a direct hash jump. */
+  /* Intersection rather than scroll math, so state stays correct after a resize
+     or a direct jump. */
   observe() {
     const io = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
@@ -561,8 +832,8 @@ class Deck {
       else if (k === 'End') { e.preventDefault(); this.go(this.slides.length - 1); }
     });
 
-    // Wheel: one gesture = one slide. Scroll-snap alone lets a trackpad fling
-    // skip several slides mid-presentation, which reads as a glitch.
+    // One gesture = one slide. Scroll-snap alone lets a trackpad fling skip
+    // several slides mid-presentation, which reads as a glitch from the room.
     window.addEventListener('wheel', (e) => {
       if (this.locked || Math.abs(e.deltaY) < 12) return;
       this.locked = true;
