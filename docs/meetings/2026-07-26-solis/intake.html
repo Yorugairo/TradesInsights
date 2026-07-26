@@ -318,19 +318,23 @@ details.out pre{
 <!-- ================= SECTION 4 — RELATIONSHIPS ================= -->
 <section class="block">
   <div class="section-head"><span class="idx">04</span><h2>The GCs</h2></div>
-  <p class="section-note">The highest-value ten minutes of this session. Naming even a dozen general
-  contractors immediately sharpens which projects rank &mdash; and tells us who never to surface again.</p>
+  <p class="section-note">The highest-value ten minutes of this session &mdash; because it is the one thing
+  we cannot derive. Permit records show us who is <em>building</em>; only you know who you actually
+  <em>work with</em>. Naming a dozen GCs tells us who to stop surfacing immediately, and is the raw material
+  for the relationship signal we have not been able to build.</p>
 
   <div class="q">
     <div class="qn">Who do you work with, want to work with, or avoid?</div>
-    <p class="why">&ldquo;Worked with&rdquo; gives their projects a lift. &ldquo;Avoid&rdquo; removes
-    them from your feed outright. Blank rows are ignored.</p>
+    <p class="why">&ldquo;Avoid&rdquo; removes them from your feed outright &mdash; that works today.
+    &ldquo;Worked with&rdquo; we record, but be aware it does <b>not</b> move your score yet: nothing in
+    the scorer reads it. Your answers here are what let us build that, and we would rather say so than
+    let you assume it already works. Blank rows are ignored.</p>
     <table class="gc">
       <thead><tr><th style="width:58%">General contractor</th><th>Relationship</th></tr></thead>
       <tbody id="gcRows"></tbody>
     </table>
     <p style="margin:.6rem 0 0"><button type="button" class="ghost" id="addGc">+ Add rows</button></p>
-    <span class="path">relationships &rarr; warm_gc_active / exclusion</span>
+    <span class="path">relationships &rarr; exclusion (live) &middot; relationship lift (not wired yet)</span>
   </div>
 
   <div class="q">
@@ -390,8 +394,8 @@ const ASSUMPTIONS = [
   },
   {
     id: 'warm_gc',
-    setting: 'A GC you already work with gives the job a small lift.',
-    why: 'Small on purpose &mdash; a nudge, not a reordering. Tell us if an existing relationship should count for much more, or nothing at all.',
+    setting: 'A GC that is active near you, on your kind of work, gives the job +3 points.',
+    why: 'Note what this is NOT: it does not mean you have worked with them &mdash; we have never asked, so we do not know. It means the same verified company keeps turning up in your territory on relevant jobs (2+ projects). Small on purpose: a nudge, not a reordering. Until this week it had never once fired, so today is the first run where it moved anything. Is +3 right, too shy, or too much?',
     yamlPath: 'score_components &rarr; warm_gc_active',
   },
   {
