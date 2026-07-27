@@ -108,7 +108,17 @@
 | M0.5 pg-boss jobs/retries/dead-letter/logs | ✅ 2026-07-15 | `apps/worker/test/jobs.test.ts` |
 | M0.6 manifest loader + fixture harness | ✅ 2026-07-15 | `fake_source` adapter + fixtures |
 | **M0 exit gate** | ✅ | `apps/worker/test/m0-exit-gate.test.ts` — 24/24 tests, E2E 1/1 |
-| De-route sweep + delivery version guard | ✅ 2026-07-26 | `apps/worker/test/score-run-deroute.test.ts` — 9/9; full suite 1076/1076, 108 files; lint + typecheck clean |
+| De-route sweep + delivery version guard | ✅ 2026-07-26 | **Code is in `fb200c5`, whose subject says `docs(plan): reconcile counts to three sightings` — see the provenance note below.** `apps/worker/test/score-run-deroute.test.ts` — 9/9; full suite 1076/1076, 108 files; lint + typecheck clean; `eval:run` GATES PASS byte-identical |
+
+## Commit provenance (read before trusting `git log --oneline` here)
+
+Two sessions were writing this repo concurrently on 2026-07-26, and one committed with a catch-all `add`. The result is a commit whose subject describes one change and whose contents are mostly another. History was deliberately NOT rewritten (the commit was already pushed to the shared trunk, and force-pushing under an active concurrent writer risked destroying its work) — so the mapping is recorded here instead.
+
+| Commit | Subject says | Also actually contains |
+|---|---|---|
+| `fb200c5` | `docs(plan): reconcile counts to three sightings` | **The entire de-route sweep + delivery algorithm-version guard** — 12 files, 771 insertions: `scoring.ts` (`scoredByCurrentAlgorithm`, `hasRouter`), `score-run.ts` (the sweep, `DEROUTE_REASON`, `deroutedOpportunities`, `opts.projectIds`), `digest.ts`/`render.ts`/`alerts.ts` (the guard + its disclosure), `score-run-deroute.test.ts` (new, 380 lines), three fixture files, and these docs. Only the 14-line `pooler-durability-pass.plan.md` hunk matches the subject. |
+
+Rule of thumb for anyone (human or agent) walking this history: `fb200c5` is a **merged** commit in the informal sense — `git show fb200c5 --stat` is the honest description, not its subject line. `aa986ad` (durability pass) later moved `withConnectionRetry` into `@otn/db` and migrated the sweep's two call sites; the de-route tests were re-run green after it.
 
 ## Open blockers
 
