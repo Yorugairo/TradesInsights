@@ -208,6 +208,55 @@ export function crossNameKey(raw: string): string {
     .trim();
 }
 
+/**
+ * TRUNCATED legal suffixes — L&I clips its business-name field at a fixed width,
+ * so the suffix survives as a fragment `LEGAL_SUFFIXES` does not recognise:
+ *
+ *   LIMITLESS HEATING COOLING **LL**    (LLC)
+ *   WEST COAST LIGHTING ENERGY **I**    (INC)
+ *   EJ S IDEAL HEATING COOLING **CRP**  (CORP)
+ *   KOALA T POOL SPA **SERVS**          (SERVICES)
+ *
+ * Measured against live data 2026-07-26: these fragments survive as real tokens
+ * and drag similarity against the untruncated Google listing to 0.75-0.83 —
+ * just under the 0.85 confirmation bar — so identical businesses are rejected
+ * on a chopped suffix.
+ *
+ * SERVICES is included even though it is not a legal suffix: the same clipping
+ * produces it, and it is just as often the only difference between the names.
+ */
+const TRUNCATED_LEGAL_SUFFIXES = new Set([
+  "I", "IN", "INCO", "INCOR", "INCORP",          // INCORPORATED
+  "COR", "CORPO", "CORPOR", "CRP",               // CORPORATION
+  "L", "LL", "LIM", "LIMITE", "LTDA", "PLL",     // LLC / LIMITED / PLLC
+  "COMP", "COMPA", "COMPAN", "CMP", "CMPY",      // COMPANY
+  "SERV", "SERVS", "SERVI", "SERVIC", "SVC", "SVCS", // SERVICES
+]);
+
+/**
+ * `crossNameKey` with trailing truncated-suffix fragments removed — the key used
+ * when comparing an L&I name against an OUTSIDE system's name (a Google Business
+ * listing), where only one side is clipped.
+ *
+ * Separate from `crossNameKey` ON PURPOSE. That key is load-bearing for the
+ * resolver, the alias lane, org-activity grouping and the `binding_name_*`
+ * rules; silently re-keying all of them to fix Google matching would be a much
+ * larger change than the evidence supports. This is additive — nothing that
+ * calls `crossNameKey` today changes behaviour.
+ *
+ * Fragments are dropped ONLY in trailing position, and never the last remaining
+ * token. A leading or medial `I`/`LL`/`CO` is part of the name ("I 5 GLASS");
+ * a trailing one is the clipped suffix. That positional rule is what makes an
+ * otherwise aggressive list safe. Stripping repeats, so "… SERVS I" folds too.
+ */
+export function crossNameKeyLoose(raw: string): string {
+  const tokens = crossNameKey(raw).split(" ").filter(Boolean);
+  while (tokens.length > 1 && TRUNCATED_LEGAL_SUFFIXES.has(tokens[tokens.length - 1]!)) {
+    tokens.pop();
+  }
+  return tokens.join(" ");
+}
+
 // ── Name compatibility ───────────────────────────────────────────────────────
 
 /** Project names too generic to support a match on their own (spec §10). */

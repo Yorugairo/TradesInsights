@@ -32,6 +32,7 @@
  * simply never picked up.
  */
 import type { GooglePlaceScoreSummary, ScoredGooglePlaceObservation } from "./google-place-scrape.js";
+import type { NameAgreementBasis } from "./registry-identifiers.js";
 import type { RegistryWriterLike } from "./registry-observations.js";
 
 /** `partner_observations.observation_type`; must match the registry CHECK
@@ -58,6 +59,26 @@ export const GOOGLE_PLACE_CONFIRMED_TRUST = 0.95;
  */
 export const GOOGLE_PLACE_CONTESTED_TRUST = 0.4;
 
+/**
+ * Trust for a CONTAINMENT-derived confirmation — one name is a whole-token
+ * subsequence of the other (`ENCORE ELECTRIC WA` / `ENCORE ELECTRIC`), with the
+ * phones agreeing and at least two shared tokens.
+ *
+ * Below `GOOGLE_PLACE_CONFIRMED_TRUST` on purpose, even though the owner's read
+ * of this class is "99%". Measured 2026-07-26 it very nearly is — only 34 of
+ * 7,843 exact-or-containment pairs are contested once contests are counted by
+ * ENTITY rather than by licence. But containment is strictly weaker evidence
+ * than an exact key match: it accepts every extra token the longer name carries,
+ * and `SCHUFF STEEL` ⊂ `SCHUFF STEEL FABRICATION FACILITY` is the same shape as
+ * a parent company against a subsidiary. Ranking it level with exact would erase
+ * a distinction the reviewer needs.
+ *
+ * These are STAGED FOR REVIEW, not auto-accepted (owner decision 2026-07-26):
+ * the band orders the queue, and `nameBasis` on the payload lets a reviewer take
+ * them as one group. Promote the constant once the accept rate justifies it.
+ */
+export const GOOGLE_PLACE_CONTAINMENT_TRUST = 0.9;
+
 /** Written into `decided_by`; this lane is machine-derived, not a human click. */
 export const GOOGLE_PLACE_DECIDED_BY = "otn_insights_google_place_rescore";
 
@@ -74,6 +95,9 @@ export interface GooglePlaceExportRow {
   /** The other entities claiming this place, when contested. Provenance for the
    * registry's conflict resolution — never a claim that they are related. */
   competingEntityIds: string[];
+  /** How the names agreed (`exact` | `close` | `contained`). Staged so the
+   * reviewer can group and judge a whole basis at once. */
+  nameBasis: NameAgreementBasis;
   trustScore: number;
   dedupeKey: string;
 }
@@ -120,7 +144,14 @@ export function buildGooglePlaceExports(summary: GooglePlaceScoreSummary): Googl
       sharedLicenceCount: c.sharedLicenceCount,
       contested: isContested,
       competingEntityIds: competing,
-      trustScore: isContested ? GOOGLE_PLACE_CONTESTED_TRUST : GOOGLE_PLACE_CONFIRMED_TRUST,
+      nameBasis: c.nameBasis,
+      // A contest is the "other conflict" that overrides everything: at most one
+      // claimant can be right, so it outranks how well the names matched.
+      trustScore: isContested
+        ? GOOGLE_PLACE_CONTESTED_TRUST
+        : c.nameBasis === "contained"
+          ? GOOGLE_PLACE_CONTAINMENT_TRUST
+          : GOOGLE_PLACE_CONFIRMED_TRUST,
       dedupeKey: googlePlaceDedupeKey(c.entityId, c.googlePlaceId),
     };
   });
@@ -174,6 +205,10 @@ export async function recordGooglePlaceConfirmations(
       contested: row.contested,
       competing_entity_ids: row.competingEntityIds,
       verdict: "phone_and_name",
+      // HOW the names agreed, so the registry's reviewer can group the batch by
+      // basis instead of adjudicating a mixed queue row by row. `contained` is
+      // the newer, weaker class and is the one worth eyeballing first.
+      name_basis: row.nameBasis,
     };
     const res = await writer.query(
       `INSERT INTO registry_partner.partner_observations

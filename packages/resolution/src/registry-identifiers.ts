@@ -24,7 +24,7 @@
  * rethrows — a permission failure must never masquerade as "no identifiers",
  * which would silently flatten every score back to the neutral fallback.
  */
-import { crossNameKey, nameSimilarity } from "./normalize.js";
+import { crossNameKeyLoose, nameSimilarity } from "./normalize.js";
 import type { RegistryPoolLike } from "./registry-link.js";
 
 export const REGISTRY_IDENTIFIERS_VIEW = "registry_public.trades_identifiers_v1";
@@ -189,6 +189,68 @@ export type GoogleConfirmation = "phone_and_name" | "phone_only" | "name_only" |
  * without being key-identical (`Smith Fire Systems` vs `Smith Fire Systems Co`). */
 export const GOOGLE_NAME_CLOSE_THRESHOLD = 0.85;
 
+/**
+ * HOW the two names agreed. The verdict above says whether to trust the pair;
+ * this says on what basis, so the review queue can group a batch of one kind
+ * together and judge them as a class rather than one at a time.
+ */
+export type NameAgreementBasis = "exact" | "close" | "contained" | "none";
+
+/**
+ * Minimum shared tokens for a CONTAINMENT match.
+ *
+ * Two is the whole safety margin. At one token the live data offers
+ * `AECON TECHNICAL SERVICES` ↔ `AECON` and `SEAFAB` ↔ `SEAFAB CUSTOM METAL
+ * FABRICATION` — probably right, but indistinguishable in form from a generic
+ * first word shared by unrelated firms. Combined with the shared-switchboard
+ * phones this lane already knows about (384 links agree on phone with an
+ * unrelated name), one token plus a phone is exactly how a false bind is made.
+ * Measured cost of the guard: it declines 161 of 1,027 candidates.
+ */
+export const GOOGLE_NAME_CONTAINMENT_MIN_TOKENS = 2;
+
+/**
+ * Whole-token containment: every token of the shorter name appears, in order,
+ * in the longer one. Token-wise, never substring — a substring test matches
+ * `AIR` inside `FAIRWAY` and would invent relationships out of spelling.
+ *
+ * Returns the shared-token count; 0 when not contained or when the names are
+ * equal (equality is `exact`, reported separately so the two never double-count).
+ */
+export function nameContainmentTokens(a: string, b: string): number {
+  if (a === b) return 0;
+  const ta = a.split(" ").filter(Boolean);
+  const tb = b.split(" ").filter(Boolean);
+  const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  if (short.length === 0) return 0;
+  let i = 0;
+  for (const tok of long) if (i < short.length && tok === short[i]) i += 1;
+  return i === short.length ? short.length : 0;
+}
+
+/**
+ * On what basis (if any) an L&I name and a Google listing name are the same
+ * business. Pure; exported so the scorer can record the basis alongside the
+ * verdict.
+ *
+ * Both sides fold through `crossNameKeyLoose`, which additionally drops L&I's
+ * TRUNCATED legal-suffix fragments (`LL`, `I`, `CRP`, `SERVS`). Without that,
+ * `LIMITLESS HEATING COOLING LL` scores 0.75 against `LIMITLESS HEATING
+ * COOLING` and is rejected as a different company.
+ */
+export function classifyNameAgreement(
+  lniName: string | null | undefined,
+  googleName: string | null | undefined,
+): NameAgreementBasis {
+  const lk = lniName ? crossNameKeyLoose(lniName) : "";
+  const gk = googleName ? crossNameKeyLoose(googleName) : "";
+  if (lk.length === 0 || gk.length === 0) return "none";
+  if (lk === gk) return "exact";
+  if (nameSimilarity(lk, gk) >= GOOGLE_NAME_CLOSE_THRESHOLD) return "close";
+  if (nameContainmentTokens(lk, gk) >= GOOGLE_NAME_CONTAINMENT_MIN_TOKENS) return "contained";
+  return "none";
+}
+
 const phoneDigits = (raw: string | null | undefined): string | null => {
   const d = String(raw ?? "").replace(/\D/g, "");
   const t = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
@@ -205,12 +267,7 @@ export function classifyGoogleConfirmation(input: {
   const gp = phoneDigits(input.googlePhone);
   const phoneAgrees = lp !== null && lp === gp;
 
-  const lniKey = input.lniName ? crossNameKey(input.lniName) : "";
-  const gKey = input.googleName ? crossNameKey(input.googleName) : "";
-  const nameAgrees =
-    lniKey.length > 0 &&
-    gKey.length > 0 &&
-    (lniKey === gKey || nameSimilarity(lniKey, gKey) >= GOOGLE_NAME_CLOSE_THRESHOLD);
+  const nameAgrees = classifyNameAgreement(input.lniName, input.googleName) !== "none";
 
   if (phoneAgrees && nameAgrees) return "phone_and_name";
   if (phoneAgrees) return "phone_only";

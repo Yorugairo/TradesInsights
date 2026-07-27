@@ -31,7 +31,12 @@
  * rethrows — a permission failure must never masquerade as "no observations",
  * which would silently report zero confirmations and read as "nothing matched".
  */
-import { classifyGoogleConfirmation, type GoogleConfirmation } from "./registry-identifiers.js";
+import {
+  classifyGoogleConfirmation,
+  classifyNameAgreement,
+  type GoogleConfirmation,
+  type NameAgreementBasis,
+} from "./registry-identifiers.js";
 import type { RegistryIdentityRow, RegistryPoolLike } from "./registry-link.js";
 
 export const GOOGLE_PLACE_SCRAPE_VIEW = "registry_public.google_place_scrape_v1";
@@ -109,6 +114,10 @@ export interface ScoredGooglePlaceObservation {
   scrapedPhone: string | null;
   sharedLicenceCount: number;
   confirmation: GoogleConfirmation;
+  /** HOW the names agreed. Carried so the review queue can group a batch of one
+   * basis and judge it as a class — a reviewer can clear 500 `exact` rows far
+   * faster than they can adjudicate 500 mixed ones. */
+  nameBasis: NameAgreementBasis;
 }
 
 export interface GooglePlaceScoreSummary {
@@ -193,6 +202,7 @@ export function scoreGooglePlaceObservations(
         scrapedPhone: row.scrapedPhone,
         sharedLicenceCount: row.sharedLicenceCount,
         confirmation,
+        nameBasis: classifyNameAgreement(identity.canonicalName, row.scrapedName),
       });
       // Entity id, never the licence number: the question is "do two different
       // COMPANIES claim this listing", and one company's second licence is not

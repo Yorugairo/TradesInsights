@@ -16,6 +16,7 @@ const confirmed = (over: Partial<ScoredGooglePlaceObservation>): ScoredGooglePla
   scrapedPhone: "253-555-0100",
   sharedLicenceCount: 1,
   confirmation: "phone_and_name",
+  nameBasis: "close",
   ...over,
 });
 
