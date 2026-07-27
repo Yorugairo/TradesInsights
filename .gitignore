@@ -3,9 +3,12 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
-.env
-.env.local
-.env.*.local
+# Enumerating variants missed anything not named exactly `.env`/`.env.local`.
+# Hit for real on 2026-07-27: a `.env.bak-preminio` written while repointing
+# object storage was NOT ignored and would have committed live Supabase service
+# credentials. Default to ignoring every .env* and opt the template back in.
+.env*
+!.env.example
 playwright-report/
 test-results/
 .DS_Store
