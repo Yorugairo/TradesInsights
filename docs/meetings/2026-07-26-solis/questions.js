@@ -1,3 +1,4 @@
+/* global window */
 /**
  * The calibration question set — the ONE definition, read by both surfaces.
  *

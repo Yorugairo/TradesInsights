@@ -38,11 +38,6 @@
  *   OTN_CAPTURE_DIR=$(pwd)/artifacts/captures \
  *     pnpm --filter @otn/worker source:run:operator-local
  */
-/* global console, process, setTimeout */
-// Declared at the source rather than by widening eslint.config.mjs: these are
-// Node globals, genuinely defined here, and the flat config simply does not
-// declare an environment for scripts/. A file-level declaration is the honest
-// fix — it asserts what is true of THIS file instead of relaxing a rule repo-wide.
 import { spawn } from "node:child_process";
 import { readdirSync, existsSync, mkdirSync } from "node:fs";
 
