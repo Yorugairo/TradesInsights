@@ -227,6 +227,34 @@ async function upsertOrganizationsAndRoles(
   }
 }
 
+/**
+ * DELIBERATELY NOT WRAPPED IN `withConnectionRetry`.
+ *
+ * `project_events` carries no unique constraint — only two NON-unique indexes
+ * (`project_events_project_ix`, `project_events_type_ix`). This INSERT is
+ * therefore not idempotent, and a replay would duplicate the event.
+ *
+ * Nor can it borrow the trick `velocity.ts` uses (a SELECT guard on
+ * project/type/source_record, retried together with the insert): there, a
+ * repeat of that triple is always redundant. Here it is LEGITIMATE.
+ * `applyRecordUpdates` re-processes a record whose content drifted — a Seattle
+ * application becoming an issued permit on the same row — and that genuinely
+ * emits a second event with the same (projectId, sourceRecordId, eventType).
+ * Deduping on it would silently discard real stage changes, a worse failure
+ * than the one being prevented.
+ *
+ * What protects this path instead: the pool keep-alive (the prevention layer),
+ * and the per-record try/catch in `resolveUnresolved`, which records the error
+ * and continues — the record keeps no active resolution, so the next run
+ * reprocesses it.
+ *
+ * KNOWN GAP, pre-existing and unchanged by this pass: because `resolveRecord`
+ * is not transactional, a crash BETWEEN this insert and the resolution write
+ * already leaves the event committed and the record unresolved, so the next run
+ * emits it a second time. Closing that needs a transaction around
+ * `resolveRecord`, which needs `Db` to accept a drizzle transaction type — a
+ * real change, out of scope for a durability pass, tracked separately.
+ */
 async function emitEvent(
   db: Db,
   projectId: string,

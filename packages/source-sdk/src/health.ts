@@ -3,6 +3,7 @@ import type { Db } from "@otn/db";
 import { coverageEntries, sourceRuns, sources } from "@otn/db";
 import { getSourceConfig } from "@otn/config";
 import type { SourceHealthState } from "@otn/domain";
+import { isOrphanedRun, ORPHAN_REASON } from "./reap.js";
 
 const CADENCE_MS: Record<string, number> = {
   daily: 24 * 60 * 60 * 1000,
@@ -77,8 +78,12 @@ export async function evaluateSourceHealth(
   let state: SourceHealthState = "green";
 
   const completed = runs.filter((r) => r.status !== "running");
+  // D4 — a REAPED run carries `completed_with_errors`, which would otherwise
+  // count as a success and refresh `lastSuccessAt`, defeating the staleness
+  // check below: a source whose process dies every night would look freshly
+  // successful forever. An orphan is the absence of an outcome, not a good one.
   const successes = completed.filter(
-    (r) => r.status === "succeeded" || r.status === "completed_with_errors",
+    (r) => (r.status === "succeeded" || r.status === "completed_with_errors") && !isOrphanedRun(r),
   );
   const lastSuccessAt = successes[0]?.completedAt ?? null;
 
@@ -95,15 +100,36 @@ export async function evaluateSourceHealth(
     reasons.push("latest run failed");
   }
 
+  // D4 — a run that never wrote its terminal row. The process died mid-run
+  // (pooler drop, OOM, kill, watchdog relaunch) and the ledger was left saying
+  // "running" until the reaper closed it. Two in a row is a source that cannot
+  // complete, which is as broken as one that fails outright.
+  const latestOrphaned = latest ? isOrphanedRun(latest) : false;
+  if (latestOrphaned) {
+    if (previous && isOrphanedRun(previous)) {
+      state = "red";
+      reasons.push("two consecutive runs died without writing a terminal row (orphaned)");
+    } else {
+      if (state === "green") state = "amber";
+      reasons.push(`latest run never wrote a terminal row (${ORPHAN_REASON}) — process died mid-run`);
+    }
+  }
+
   const cadenceMs = CADENCE_MS[source.cadence];
   if (cadenceMs && lastSuccessAt && now.getTime() - lastSuccessAt.getTime() > 2 * cadenceMs) {
     state = "red";
     reasons.push(`stale: no success within 2x ${source.cadence} cadence`);
   }
 
+  // `!latestOrphaned`: a reaped run's counters were never written, so they are
+  // UNKNOWN rather than zero. Reading them as observations would report
+  // "unexpected zero usable records" about a run that may well have parsed
+  // thousands before its process died — a fabricated diagnosis that also
+  // outranks (red) the accurate one (amber, orphaned).
   if (
     latest &&
     latest.status !== "failed" &&
+    !latestOrphaned &&
     latest.discoveredCount > 0 &&
     latest.parsedCount === 0 &&
     latest.unchangedCount === 0 &&
@@ -191,11 +217,14 @@ export async function evaluateSourceHealth(
   //    fetched window after a wide first run; duplicates prove the source is
   //    still serving consistent records rather than collapsing.
   // A genuine collapse (zero usable records) is caught red above.
+  // Same reason as above: an orphan's zero `parsedCount` is an unwritten column,
+  // not a collapsed harvest, and would trip this as a 100% volume drop.
   if (
     state === "green" &&
     previous &&
     previous.parsedCount > 0 &&
     latest &&
+    !latestOrphaned &&
     latest.unchangedCount === 0 &&
     latest.duplicateCount === 0
   ) {

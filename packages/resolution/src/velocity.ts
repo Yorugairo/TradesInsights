@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { Db } from "@otn/db";
+import { withConnectionRetry, type Db } from "@otn/db";
 
 /**
  * M2.6 — permit-cluster velocity (spec §10/§21): a subdivision-scale permit
@@ -66,7 +66,7 @@ export async function computeClusterVelocity(
   opts: {
     windowDays?: number;
     minPermits?: number;
-    logger?: { info(o: unknown, m?: string): void };
+    logger?: { info(o: unknown, m?: string): void; warn?(o: unknown, m?: string): void };
   } = {},
 ): Promise<VelocitySummary> {
   const windowDays = opts.windowDays ?? VELOCITY_WINDOW_DAYS;
@@ -117,21 +117,42 @@ export async function computeClusterVelocity(
   }[]) {
     // Idempotency: one velocity event per (anchor, latest permit record) —
     // a new permit in the cluster moves latest_record_id and re-signals.
-    const existing = await db.execute(sql`
-      SELECT 1 FROM project_events
-      WHERE project_id = ${r.anchor_project_id}
-        AND event_type = 'cluster_velocity'
-        AND source_record_id = ${r.latest_record_id}
-      LIMIT 1`);
-    if (existing.rows.length > 0) continue;
+    //
+    // The guard and the INSERT are retried AS ONE UNIT, deliberately.
+    // `project_events` carries no unique constraint (only two non-unique
+    // indexes), so the INSERT is not self-idempotent — it is idempotent only
+    // BECAUSE this SELECT precedes it. Retrying the INSERT alone would replay
+    // the write without re-checking and duplicate the velocity signal, which is
+    // worse than the dropped connection it was meant to survive: a duplicated
+    // cluster_velocity event inflates a signal the digest ranks on.
+    const inserted = await withConnectionRetry(
+      async () => {
+        const existing = await db.execute(sql`
+          SELECT 1 FROM project_events
+          WHERE project_id = ${r.anchor_project_id}
+            AND event_type = 'cluster_velocity'
+            AND source_record_id = ${r.latest_record_id}
+          LIMIT 1`);
+        if (existing.rows.length > 0) return false;
 
-    await db.execute(sql`
-      INSERT INTO project_events
-        (project_id, source_record_id, event_type, event_date, observed_at,
-         prior_stage, resulting_stage, material_change, confirmed, confidence)
-      VALUES
-        (${r.anchor_project_id}, ${r.latest_record_id}, 'cluster_velocity',
-         ${r.latest_at}, now(), NULL, NULL, true, true, NULL)`);
+        await db.execute(sql`
+          INSERT INTO project_events
+            (project_id, source_record_id, event_type, event_date, observed_at,
+             prior_stage, resulting_stage, material_change, confirmed, confidence)
+          VALUES
+            (${r.anchor_project_id}, ${r.latest_record_id}, 'cluster_velocity',
+             ${r.latest_at}, now(), NULL, NULL, true, true, NULL)`);
+        return true;
+      },
+      {
+        onRetry: (attempt, err) =>
+          opts.logger?.warn?.(
+            { anchorProjectId: r.anchor_project_id, attempt, err: String(err) },
+            "transient fault emitting cluster velocity event — retrying (guard re-runs)",
+          ),
+      },
+    );
+    if (!inserted) continue;
     emitted++;
     opts.logger?.info(
       {
@@ -167,7 +188,7 @@ export async function computeCampusVelocity(
     prefixLen?: number;
     /** Restrict to one county (per-county production runs; test isolation). */
     county?: string;
-    logger?: { info(o: unknown, m?: string): void };
+    logger?: { info(o: unknown, m?: string): void; warn?(o: unknown, m?: string): void };
   } = {},
 ): Promise<CampusVelocitySummary> {
   const windowDays = opts.windowDays ?? CAMPUS_WINDOW_DAYS;
@@ -250,21 +271,38 @@ export async function computeCampusVelocity(
   for (const r of campuses) {
     // Idempotent: one campus_velocity per (anchor, latest permit record) — a new
     // permit on the block moves latest_record_id and re-signals.
-    const existing = await db.execute(sql`
-      SELECT 1 FROM project_events
-      WHERE project_id = ${r.anchor_project_id}
-        AND event_type = 'campus_velocity'
-        AND source_record_id = ${r.latest_record_id}
-      LIMIT 1`);
-    if (existing.rows.length > 0) continue;
+    //
+    // Guard + INSERT retried as one unit, for the same reason as
+    // cluster_velocity above: `project_events` has no unique constraint, so
+    // replaying the INSERT without re-running the guard would duplicate.
+    const inserted = await withConnectionRetry(
+      async () => {
+        const existing = await db.execute(sql`
+          SELECT 1 FROM project_events
+          WHERE project_id = ${r.anchor_project_id}
+            AND event_type = 'campus_velocity'
+            AND source_record_id = ${r.latest_record_id}
+          LIMIT 1`);
+        if (existing.rows.length > 0) return false;
 
-    await db.execute(sql`
-      INSERT INTO project_events
-        (project_id, source_record_id, event_type, event_date, observed_at,
-         prior_stage, resulting_stage, material_change, confirmed, confidence)
-      VALUES
-        (${r.anchor_project_id}, ${r.latest_record_id}, 'campus_velocity',
-         ${r.latest_at}, now(), NULL, NULL, true, true, NULL)`);
+        await db.execute(sql`
+          INSERT INTO project_events
+            (project_id, source_record_id, event_type, event_date, observed_at,
+             prior_stage, resulting_stage, material_change, confirmed, confidence)
+          VALUES
+            (${r.anchor_project_id}, ${r.latest_record_id}, 'campus_velocity',
+             ${r.latest_at}, now(), NULL, NULL, true, true, NULL)`);
+        return true;
+      },
+      {
+        onRetry: (attempt, err) =>
+          opts.logger?.warn?.(
+            { anchorProjectId: r.anchor_project_id, attempt, err: String(err) },
+            "transient fault emitting campus velocity event — retrying (guard re-runs)",
+          ),
+      },
+    );
+    if (!inserted) continue;
     emitted++;
     opts.logger?.info(
       {

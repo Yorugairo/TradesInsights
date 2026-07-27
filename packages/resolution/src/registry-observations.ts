@@ -38,7 +38,7 @@
  * (`decided_by = 'auto:rule-history'`). No model calls anywhere in this module.
  */
 import { sql } from "drizzle-orm";
-import type { Db } from "@otn/db";
+import { withConnectionRetry, type Db } from "@otn/db";
 import {
   addressMatchKeyCandidates,
   backfeedAcceptedIdentity,
@@ -2289,7 +2289,7 @@ const PARTNER_OBSERVATION_TYPE: Record<string, string> = {
 export async function exportRegistryObservations(
   db: Db,
   writer: RegistryWriterLike | null,
-  opts: { logger?: { info: (obj: unknown, msg?: string) => void } } = {},
+  opts: { logger?: { info: (obj: unknown, msg?: string) => void; warn?: (obj: unknown, msg?: string) => void } } = {},
 ): Promise<ExportSummary> {
   const summary: ExportSummary = { skipped: false, observationsExported: 0, projectFactsExported: 0 };
   if (writer === null) {
@@ -2308,24 +2308,54 @@ export async function exportRegistryObservations(
   for (const r of pendingExport.rows as Record<string, unknown>[]) {
     const observationType = PARTNER_OBSERVATION_TYPE[String(r["observation_type"])];
     if (!observationType) continue;
-    await writer.query(
-      `INSERT INTO registry_partner.partner_observations
-         (source_system, entity_id, observation_type, payload, trust_score, reviewed_by, reviewed_at, dedupe_key)
-       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
-       ON CONFLICT (dedupe_key) DO NOTHING`,
-      [
-        SOURCE_SYSTEM,
-        r["registry_entity_id"],
-        observationType,
-        JSON.stringify(r["payload_json"] ?? {}),
-        Number(r["trust_score"]),
-        r["decided_by"],
-        r["decided_at"],
-        `${SOURCE_SYSTEM}:${r["dedupe_key"]}`,
-      ],
+    // Both halves are naturally keyed, so both are safe to replay: the partner
+    // insert dedupes on `dedupe_key`, the local mark is an UPDATE by primary
+    // key. They are retried SEPARATELY because they live in two different
+    // databases — one retry spanning both would replay a committed
+    // cross-database write in order to recover a local one.
+    //
+    // The existing order is what makes a mid-pair crash safe: the partner row
+    // lands FIRST, `exported_at` second. Losing the connection between them
+    // leaves the observation unexported, and the next run re-sends it straight
+    // into DO NOTHING. The reverse order would silently drop the export.
+    await withConnectionRetry(
+      () =>
+        writer.query(
+          `INSERT INTO registry_partner.partner_observations
+             (source_system, entity_id, observation_type, payload, trust_score, reviewed_by, reviewed_at, dedupe_key)
+           VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+           ON CONFLICT (dedupe_key) DO NOTHING`,
+          [
+            SOURCE_SYSTEM,
+            r["registry_entity_id"],
+            observationType,
+            JSON.stringify(r["payload_json"] ?? {}),
+            Number(r["trust_score"]),
+            r["decided_by"],
+            r["decided_at"],
+            `${SOURCE_SYSTEM}:${r["dedupe_key"]}`,
+          ],
+        ),
+      {
+        onRetry: (attempt, err) =>
+          opts.logger?.warn?.(
+            { observationId: r["id"], attempt, err: String(err) },
+            "transient fault writing partner observation — retrying",
+          ),
+      },
     );
-    await db.execute(sql`
-      UPDATE registry_observations SET exported_at = now(), updated_at = now() WHERE id = ${r["id"]}`);
+    await withConnectionRetry(
+      () =>
+        db.execute(sql`
+          UPDATE registry_observations SET exported_at = now(), updated_at = now() WHERE id = ${r["id"]}`),
+      {
+        onRetry: (attempt, err) =>
+          opts.logger?.warn?.(
+            { observationId: r["id"], attempt, err: String(err) },
+            "transient fault marking observation exported — retrying",
+          ),
+      },
+    );
     summary.observationsExported += 1;
   }
 

@@ -7,3 +7,4 @@ export * from "./http.js";
 export * from "./runner.js";
 export * from "./replay.js";
 export * from "./health.js";
+export * from "./reap.js";

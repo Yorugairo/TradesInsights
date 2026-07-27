@@ -327,3 +327,44 @@ retry helper; it is that the shared factory carries the lesson.
 **2026-07-27 — v1.** Written after THREE same-day production failures (`scoreAll` mid-loop,
 `thurston_active_notices` terminal write) and a search that found six more exposed paths
 plus a bare shared pool factory.
+
+**2026-07-27 — v2, after implementing Tasks 4–6.** Three of the plan's own premises were
+wrong, and measuring beat guessing every time:
+
+1. **Task 4's threshold precedent was understated.** The plan cited `king_permit_reports`
+   at 3,082 records as the slowest run. Measuring all 80 completed runs found
+   `pierce_permits_arcgis` at **8.8 min / 6,145 records** — double. Threshold set at
+   **60 min** (~7x the true maximum). Also found: reaping early is SELF-HEALING, because
+   both terminal writes in `runner.ts` are unconditional `UPDATE ... WHERE id`, so a live
+   process overwrites a premature reap with the truth. That asymmetry justified a
+   decisive threshold rather than a timid one.
+
+2. **Task 6's diagnosis was wrong in both halves.** The plan said the Google Place driver
+   "simply has no retry to use" its `ENOTFOUND` classification. In fact the driver HAS an
+   8-attempt `withRetry` and it already wrapped *every* DB call in the loop
+   (`claimBatch`, `writeResult`, `parkMissing`, `parkExhausted`). The real defect was the
+   predicate: its `TRANSIENT` regex listed `ECONNRESET|ETIMEDOUT|EPIPE|…` but **not**
+   `ENOTFOUND`. Proof: the crash logs contain **zero `db_retry` events** — the retry never
+   fired once. A transient DNS failure was classified permanent and rethrown on attempt 1.
+   *A retry is only as good as its predicate.*
+
+3. **Task 6 pointed at the wrong file, in the opposite direction.** The plan said to fix
+   the OneTradeNetwork copy because that is "the one the watchdog actually launches". The
+   watchdog's **default** `-RepoRoot` was in fact the `trades-google-place-integration-v2`
+   worktree; only the registered scheduled task's explicit argument made OneTradeNetwork
+   correct. Default and reality now agree (default changed to OneTradeNetwork); the
+   diverged near-copy is tracked separately.
+
+**Task 5 outcome — retry applied to 3 of 4 call sites, deliberately.**
+
+| Call site | Verdict | Why |
+|---|---|---|
+| `geocode.ts` (4 branches) | **retried** | single `UPDATE … WHERE id`; replay writes identical bytes |
+| `geocode.ts` `materializeProjectGeometry` | **not retried** | set-based; its WHERE excludes rows it already filled, so a replay would report `projectsFilled: 0` for work that happened — retry would corrupt the metric it protects |
+| `velocity.ts` (cluster + campus) | **retried, guard+insert as ONE unit** | `project_events` has no unique constraint; retrying the INSERT alone would skip the guard and duplicate the signal |
+| `registry-observations.ts` export | **retried, two SEPARATE retries** | the pair spans two databases; one retry across both would replay a committed cross-DB write to recover a local one |
+| `resolver.ts` `emitEvent` | **NOT retried** | no natural key, and dedup is impossible: `applyRecordUpdates` legitimately re-emits the same (project, record, type) when a record's stage advances. Deduping would silently discard real stage changes |
+
+Also surfaced while verifying: `resolveRecord` is **not transactional**, so a crash between
+the event insert and the resolution write already duplicates events on the next run —
+pre-existing, unchanged by this pass, tracked separately.

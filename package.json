@@ -29,6 +29,7 @@
     "maintenance:run": "pnpm --filter @otn/worker maintenance:run",
     "cycle:run": "pnpm --filter @otn/worker cycle:run",
     "artifacts:audit": "pnpm --filter @otn/worker artifacts:audit",
+    "runs:reap": "pnpm --filter @otn/worker runs:reap",
     "geocode:run": "pnpm --filter @otn/worker geocode:run",
     "review": "pnpm --filter @otn/worker review",
     "score:run": "pnpm --filter @otn/worker score:run",

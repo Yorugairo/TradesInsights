@@ -22,6 +22,7 @@ import {
   materializeProjectGeometry,
   resolveUnresolved,
 } from "@otn/resolution";
+import { reapOrphanedRuns } from "@otn/source-sdk";
 import { computeStageLagStats, scoreAll } from "@otn/intelligence";
 import { buildDigest, cleanupActionTokens, deliverDigest, runAlerts } from "@otn/delivery";
 import { SOURCE_RUN_DEAD_LETTER, executeSourceRun } from "./jobs.js";
@@ -117,6 +118,14 @@ export async function runMaintenance(logger: Logger): Promise<void> {
   const pool = createPool();
   const db = createDb(pool);
   try {
+    // FIRST, before anything reads source health: close out runs whose process
+    // died without writing a terminal row. Until this happens they sit at
+    // `status='running'` where `evaluateSourceHealth` cannot see them at all,
+    // so a dead feed reads green — which is how bellevue_permits_arcgis stayed
+    // "healthy" for 77 minutes on 2026-07-27 having fetched nothing. Running it
+    // ahead of the chain means this run's alerts judge reality.
+    const reapedRuns = await reapOrphanedRuns(db, { logger });
+
     const resolved = await resolveUnresolved(db, { logger });
     const updates = await applyRecordUpdates(db, { logger });
     const developments = await buildDevelopments(db, { logger });
@@ -215,6 +224,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
 
     logger.info(
       {
+        reapedRuns: reapedRuns.length,
         resolved,
         updates,
         developments,

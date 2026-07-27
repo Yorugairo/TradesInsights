@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { EnvHttpProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
-import type { Db } from "@otn/db";
+import { withConnectionRetry, type Db } from "@otn/db";
 
 /**
  * #3 — project geometry, two deterministic passes:
@@ -52,6 +52,12 @@ export async function materializeProjectGeometry(
   db: Db,
   opts: { logger?: { info(o: unknown, m?: string): void } } = {},
 ): Promise<MaterializeSummary> {
+  // Deliberately NOT retried. This is one set-based statement whose WHERE
+  // clause excludes rows it has already filled, so a replay legitimately
+  // matches zero rows and would report `projectsFilled: 0` for work that DID
+  // happen — a retry here would corrupt the metric it is meant to protect. The
+  // pool keep-alive covers this one; there is no long loop for a connection to
+  // go idle inside.
   const res = await db.execute(sql`
     UPDATE projects p
     SET geometry = ST_SetSRID(ST_GeomFromGeoJSON(g.geom), 4326),
@@ -153,6 +159,24 @@ export async function geocodeProjects(
         ...extra,
       });
 
+    /**
+     * Persist one attempt's outcome, surviving a transient pooler drop.
+     *
+     * Safe to replay: every branch below is a single UPDATE keyed by primary
+     * key writing computed values, so a second execution writes identical
+     * bytes. Worth replaying: each row costs an HTTP round trip to the Census
+     * geocoder that a lost write would throw away, and the nightly batch is 500
+     * rows long — plenty of time for an idle connection to be reaped.
+     */
+    const persist = (stmt: ReturnType<typeof sql>) =>
+      withConnectionRetry(() => db.execute(stmt), {
+        onRetry: (attempt, err) =>
+          opts.logger?.warn?.(
+            { projectId: row.id, attempt, err: String(err) },
+            "transient fault writing geocode result — retrying",
+          ),
+      });
+
     try {
       const res = await fetcher(url);
       if (res.status !== 200) {
@@ -166,11 +190,11 @@ export async function geocodeProjects(
 
       if (matches.length === 0) {
         summary.noMatch++;
-        await db.execute(sql`
+        await persist(sql`
           UPDATE projects SET geocode_meta_json = ${meta("no_match")}::jsonb WHERE id = ${row.id}`);
       } else if (matches.length > 1) {
         summary.ambiguous++;
-        await db.execute(sql`
+        await persist(sql`
           UPDATE projects SET geocode_meta_json = ${meta("ambiguous", { matches: matches.length })}::jsonb
           WHERE id = ${row.id}`);
       } else {
@@ -178,7 +202,7 @@ export async function geocodeProjects(
         const countyName = m.geographies?.Counties?.[0]?.BASENAME ?? null;
         if (countyName !== row.county) {
           summary.countyMismatch++;
-          await db.execute(sql`
+          await persist(sql`
             UPDATE projects SET geocode_meta_json = ${meta("county_mismatch", {
               matchedAddress: m.matchedAddress ?? null,
               returnedCounty: countyName,
@@ -186,7 +210,7 @@ export async function geocodeProjects(
             WHERE id = ${row.id}`);
         } else {
           summary.matched++;
-          await db.execute(sql`
+          await persist(sql`
             UPDATE projects
             SET geometry = ST_SetSRID(ST_MakePoint(${m.coordinates.x}, ${m.coordinates.y}), 4326),
                 geometry_source = 'census_geocoder',
