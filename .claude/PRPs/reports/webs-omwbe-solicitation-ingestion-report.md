@@ -200,6 +200,59 @@ adapter emitting `recordType: "solicitation"` on a permit-shaped record, and
 
 ---
 
+---
+
+## Live shadow runs (local DB, real network)
+
+Both adapters were run end to end against the live sites with
+`source:run --shadow`, writing to the **local** Postgres/MinIO — production's
+schema is untouched, so nothing here required a prod migration.
+
+### WEBS — green
+
+```
+discovered 6  fetched 6  parsed 131  rejected 0  duplicate 0  errors 0
+invariantViolations 0   status succeeded   health green
+webs: page walk complete — pages 6, pagerTargets 5, hadCookie true
+```
+
+Persisted shape, which is the point of the whole record class:
+
+| rows | with deadline | with county | with agency | amended | distinct ids |
+|---:|---:|---:|---:|---:|---:|
+| 131 | **131** | **0** | **0** | 48 | 131 |
+
+Every row has a typed `bid_due_at`. Zero have a county, and zero have an agency
+— both correct, both impossible to represent in the permit record, and the
+second is why `procuring_agency` had to become nullable. 48 rows carry an
+amendment date and are stored as `status = 'amended'`.
+
+### A real bug this run caught, and the migrator trap behind it
+
+The first live run failed all six artifacts at the persist stage with a
+`NOT NULL` violation on `procuring_agency` — the column the WEBS evidence had
+just forced me to relax. The migration file was already correct; **the local
+database was not**, because of how the drizzle migrator decides what to apply.
+
+`drizzle-orm/node-postgres/migrator` reads the newest `created_at` in
+`drizzle.__drizzle_migrations` and applies only migrations whose journal `when`
+is **greater**. It does not compare per-file hashes. So editing a migration that
+has already been applied is a **silent no-op** — the file says one thing and the
+database keeps doing another, and every `IF NOT EXISTS` in the DDL makes the
+re-run look successful. Recovering meant deleting the ledger row and re-running.
+
+Production is unaffected: it sits at 35 migrations and has never seen 0036, so
+it will apply the corrected version. But the trap is worth recording — it is the
+same shape as the other silent-success failures this codebase keeps finding.
+
+### Idempotency
+
+A second WEBS run returned `unchanged 6, parsed 0` — the artifact hash
+short-circuit fired, so the pages were not re-parsed at all. The
+`duplicate`/amend paths are covered by
+`apps/worker/test/solicitations.test.ts`, which varies the bytes deliberately to
+reach them.
+
 ## Acceptance criteria
 
 | Criterion | Status |
