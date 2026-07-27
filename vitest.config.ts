@@ -15,18 +15,10 @@ loadEnv();
 // the local Docker default below — unless ALLOW_REMOTE_TEST_DB=1 is set
 // explicitly. PG_PORT (compose override) keeps the local fallback correct on
 // machines where a native Postgres shadows 5432.
-const LOCAL_TEST_DB = `postgres://otn:otn@localhost:${process.env.PG_PORT || "5432"}/otn?options=-csearch_path%3Dinsights%2Cpublic%2Cextensions`;
-function testDatabaseUrl(): string {
-  const configured = process.env.DATABASE_URL;
-  if (!configured) return LOCAL_TEST_DB;
-  const isLocal = /localhost|127\.0\.0\.1/.test(configured);
-  if (isLocal || process.env.ALLOW_REMOTE_TEST_DB === "1") return configured;
-  console.warn(
-    "[vitest] DATABASE_URL is non-local — tests run against the LOCAL Docker DB instead " +
-      "(set ALLOW_REMOTE_TEST_DB=1 to override; tests truncate data and must not touch production).",
-  );
-  return LOCAL_TEST_DB;
-}
+// Moved to ./vitest.test-db.ts so vitest.global-setup.ts pre-flights the SAME
+// database this injects. When the two disagreed, the pre-flight checked the
+// hosted DB (always up) and passed while the local container was stopped.
+import { testDatabaseUrl } from "./vitest.test-db.js";
 
 export default defineConfig({
   test: {
@@ -39,6 +31,9 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**"],
     testTimeout: 30_000,
     hookTimeout: 60_000,
+    // Report "the database is down" ONCE and legibly, instead of as 40 failed
+    // files with ECONNREFUSED buried in each stack. See vitest.global-setup.ts.
+    globalSetup: ["./vitest.global-setup.ts"],
     // Integration files share the fake_source DB fixture (resetSource);
     // parallel files would clear each other's records mid-run.
     fileParallelism: false,
