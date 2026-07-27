@@ -25,7 +25,7 @@ One task is blocked by a repo protection hook and was not worked around.
 | # | Task | Status | Notes |
 |---|---|---|---|
 | 1.1 | Verify PG ≥ 15 | Complete | Local 16.4, **prod 17.6** — `NULLS NOT DISTINCT` available both sides |
-| 1.2 | Migration 0035 | Complete (local only) | **Not applied to production** — deletes 2,861 rows, owner call |
+| 1.2 | Migration 0035 | Complete | Applied to local **and production** (owner instruction, 2026-07-27) |
 | 1.3 | `emitEvent` idempotent | Complete | Also added to `createProject`'s two inserts for uniformity |
 | 1.4 | Drizzle schema | Complete — deviated | drizzle 0.44 cannot express `NULLS NOT DISTINCT`; documented drift |
 | 2.1 | `previewResolution` | Complete — deviated | Extracted `decideResolution` instead of writing a parallel ladder |
@@ -46,7 +46,7 @@ One task is blocked by a repo protection hook and was not worked around.
 |---|---|---|
 | Typecheck | Pass | `pnpm typecheck`, zero errors, all 9 packages |
 | Unit/integration | Pass | 1135/1135, 111 files |
-| Migration | Pass | Applied to local; index verified `NULLS NOT DISTINCT`; production confirmed untouched |
+| Migration | Pass | Applied to local **and production**; index verified `NULLS NOT DISTINCT` on both — see below |
 | Production dry-runs | Pass | `review reevaluate` and `review name-audit`, both read-only |
 | Lint | Blocked | 97 errors, unchanged — see below |
 
@@ -146,13 +146,32 @@ decision the loader has acted on is a retroactive edit rather than a backfill, s
 | `apps/worker/test/bid-inbox.test.ts` | UPDATED (assertion shape) |
 | `docs/architecture.md`, `docs/STATUS.md` | UPDATED |
 
+## Production migration (applied 2026-07-27 on owner instruction)
+
+Prod was at 35/35 migrations beforehand, so 0035 was the only pending one and no
+unrelated DDL rode along with it. The predicted numbers held exactly:
+
+| | Before | After |
+|---|---|---|
+| `project_events` rows | 44,111 | **41,250** (−2,861, as predicted) |
+| duplicates on the 5-column key | 2,861 | **0** |
+| duplicates on the naive 4-column key | 2,997 | **136** |
+| rows with null `event_date` | 383 | 377 |
+
+That third row is the safety property, and it is the one worth checking: the 4-column
+key still reports 136 because those are the legitimate `applyRecordUpdates` re-emits.
+Every one survived; only same-instant repeats collapsed. Had `observed_at` been left
+out of the key, those 136 real stage changes would have been deleted instead.
+
+The null-`event_date` count moving 383 → 377 means 6 of the collapsed pairs were
+precisely the rows a unique index without `NULLS NOT DISTINCT` would have let
+duplicate forever.
+
 ## Open, owner-gated
 
-1. **Apply migration 0035 to production.** It deletes 2,861 rows. Until it runs, prod
-   keeps duplicating: `ON CONFLICT DO NOTHING` without a target index needs no arbiter
-   and simply never dedupes, so the code is safe but inert there.
-2. **`pnpm review reevaluate --apply` against production** — 15 reviews, previewed
-   clean. The nightly chain will do this automatically on the next `maintenance:run`.
+1. **`pnpm review reevaluate --apply` against production** — 15 reviews, previewed
+   clean. The nightly chain now does this automatically on the next `maintenance:run`,
+   so no manual action is needed unless you want it sooner.
 3. **`--restage` against the registry** to backfill `name_basis` on 3,578 rows.
 4. **Phase 5.3** needs the `config-protection` hook disabled, or an owner edit to
    `eslint.config.mjs`.
