@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "OTN Insights",
@@ -10,20 +11,14 @@ export const metadata: Metadata = {
 // scroll inside themselves on phones instead of forcing page-level overflow.
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
-const GLOBAL_CSS = `
-  body { font-family: system-ui, sans-serif; margin: 1rem; }
-  @media (min-width: 768px) { body { margin: 2rem; } }
-  table { display: block; overflow-x: auto; max-width: 100%; }
-  @media (min-width: 900px) { table { display: table; } }
-  input, select, button { font-size: 1rem; }
-`;
-
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        <style dangerouslySetInnerHTML={{ __html: GLOBAL_CSS }} />
-      </head>
+    // DARK is the default register: Insights is a login-gated operator cockpit,
+    // so there is no public-page reason to start light. [data-theme="light"]
+    // switches registers at runtime and DensityToggle (Phase 2) owns
+    // [data-density]. Both live on <html> rather than <body> so the custom
+    // properties reach portals and dialogs too.
+    <html lang="en" data-theme="dark" data-density="comfortable">
       <body>{children}</body>
     </html>
   );

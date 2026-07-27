@@ -61,8 +61,47 @@ await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisibl
 
 **Consequence: a total visual rebuild is safe as long as every `data-testid` and every
 asserted heading string survives.** That converts this from a risky rewrite into a
-mechanical one with a live regression net. It is also the acceptance gate — `pnpm
-test:e2e` green after each page conversion, with zero edits to the spec files.
+mechanical one with a live regression net. It is also the acceptance gate — no NEW
+failures after each page conversion, with zero edits to the spec files.
+
+### BASELINE — now **21/21 green** (was 20 pass / 1 fail; fixed in Phase 0)
+
+The pre-existing failure described below was closed during Phase 0 by building the
+missing coverage feature. **The gate for every later task is 21/21.**
+
+> Flake note: `app.spec.ts:46` (login) asserts `toHaveURL` with a 5s timeout and can
+> flake on a cold/loaded dev server — it failed once in a 3.1m run and passed in the
+> 1.5m re-run. If it fails alone, re-run before treating it as a regression.
+
+<details><summary>The original finding, kept for provenance</summary>
+
+**20 pass, 1 pre-existing failure**
+
+An earlier draft of this plan asserted "20/20 green". That was wrong, and a false
+baseline would have made every later phase misread its own regressions. Measured by
+stashing all changes and re-running:
+
+```
+e2e/app.spec.ts:341 › admin surface › admin sees sources with health and the review queue
+  → app.spec.ts:352  await request.get("/api/admin/coverage")  — route does not exist
+1 failed, 20 passed
+```
+
+**The "coverage" feature is referenced in three places and implemented in none:**
+
+| Reference | State |
+|---|---|
+| `layout.tsx:43` nav link → `/app/admin/coverage` | page route does not exist — 404 |
+| `app.spec.ts:352` → `GET /api/admin/coverage` | API route does not exist — **this failure** |
+| `app.spec.ts:357` asserts `geometry-coverage-table` | unreachable, never evaluated |
+
+So the Phase 2 nav-bug task was larger than "fix a link": the feature was never built.
+
+**RESOLVED in Phase 0 (owner asked for it mid-implementation).** Built rather than
+deleted — `lib/queries.ts` already had `listCoverage` and `geometryCoverage`, so only
+the route and the page were missing. Cockpit was added to the nav in the same change.
+
+</details>
 
 **Rule: never change a testid or an asserted heading string to suit a layout.** If a
 redesign wants different wording, the copy stays and the visual treatment changes.

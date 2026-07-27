@@ -1,0 +1,207 @@
+@import "tailwindcss";
+
+/**
+ * Insights cockpit token layer.
+ *
+ * The palette is ported VERBATIM from OneTradeNetwork
+ * (apps/registry/src/app/globals.css) rather than invented. Insights is the SaaS
+ * product connected to OTN, and identical hex values are what keep the two
+ * looking like one company rather than two teams who both like green.
+ *
+ * Two registers:
+ *   - DARK is the default. Insights is an operator's cockpit behind a login;
+ *     the deep-evergreen/gold register is the premium one and there is no
+ *     public-page reason to start light.
+ *   - LIGHT is available via [data-theme="light"], ported from OTN's --lt-*
+ *     "clinical light-template" register.
+ *
+ * WHY THE INDIRECTION. Tailwind v4's `@theme` normally bakes values into the
+ * generated utilities, which would freeze one register at build time. Declaring
+ * the tokens as `var(--x)` inside `@theme inline` makes each utility emit the
+ * variable reference instead, so flipping [data-theme] on <html> re-themes the
+ * whole app with no rebuild and no class churn.
+ *
+ * CONTRAST. Every ratio below is computed, not eyeballed, and recorded inline —
+ * the discipline OTN's own token file demonstrates, where a subtle-text value
+ * is annotated with the 4.43:1 measurement that FAILED before it was corrected.
+ * AA body text needs 4.5:1. Do not add a colour pair here without its number.
+ */
+
+:root {
+  /* ── Dark register (default) — OTN "Premium Dark" ───────────────────────
+     Values verbatim from OTN globals.css:1-32. */
+  --canvas: #061109;            /* Deep WA Evergreen / Black */
+  --surface: #0a1f12;
+  --surface-raised: #0e2717;    /* Insights addition: cards need a third step */
+  --ink: #f8f9fa;               /* 18.9:1 on canvas */
+  --ink-muted: #a8b8b0;         /*  9.3:1 on canvas */
+  --ink-subtle: #7f918a;        /*  6.4:1 on canvas */
+  --accent: #d4af37;            /* WA/Brazil Gold — 9.2:1 on canvas */
+  --accent-ink: #d4af37;        /* accent used AS text: same on dark */
+  --evergreen: #009b3a;         /* Brazilian Green / WA Evergreen */
+  --line: rgba(212, 175, 55, 0.1);
+  --line-strong: rgba(212, 175, 55, 0.22);
+
+  /* Status. Ratios on --canvas #061109. */
+  --ok: #2fbf6b;                /*  8.1:1 */
+  --warn: #e5b769;              /* 10.4:1 */
+  --bad: #f2777a;               /*  7.1:1 */
+
+  /* Proof-primitive contract. Same names OTN's StatTile / SourceChip /
+     RangeBar consume, so the ported components need no edits to work in
+     either register. */
+  --surface-bg: var(--surface);
+  --surface-ink: var(--ink);
+  --surface-muted: var(--ink-muted);
+  --surface-accent-ink: var(--accent);
+  --surface-track: var(--line-strong);
+  --chip-bg: rgba(212, 175, 55, 0.08);
+  --chip-border: rgba(212, 175, 55, 0.35);
+
+  /* Density. The cockpit is a working tool; operators want more rows per
+     screen than a buyer does. DensityToggle flips [data-density]. */
+  --row-pad-y: 0.55rem;
+  --row-pad-x: 0.75rem;
+  --stack: 1rem;
+}
+
+:root[data-theme="light"] {
+  /* ── Light register — OTN's --lt-* clinical template ────────────────────
+     Values verbatim from OTN globals.css:48-72. */
+  --canvas: #f4f5f6;
+  --surface: #ffffff;
+  --surface-raised: #fafafa;
+  --ink: #111111;               /* 17.3:1 on canvas */
+  --ink-muted: #4b5563;         /*  7.5:1 on canvas */
+  --ink-subtle: #636a75;        /*  5.0:1 on canvas — OTN's corrected value.
+                                   #6b7280 was 4.43 and FAILED AA. Do not
+                                   "simplify" this back to a Tailwind gray. */
+  --accent: #d4af37;            /* gold as a SURFACE/border accent only */
+  --accent-ink: #8a6a15;        /*  5.1:1 on white — gold as TEXT must darken */
+  --evergreen: #15803d;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
+
+  /* Status. Ratios on --surface #ffffff. */
+  --ok: #15803d;                /*  5.0:1 */
+  --warn: #92660a;              /*  5.1:1 */
+  --bad: #b42318;               /*  6.6:1 */
+
+  --surface-bg: var(--surface);
+  --surface-ink: var(--ink);
+  --surface-muted: var(--ink-subtle);
+  --surface-accent-ink: var(--accent-ink);
+  --surface-track: var(--line);
+  --chip-bg: rgba(212, 175, 55, 0.08);
+  --chip-border: rgba(160, 124, 32, 0.4);
+}
+
+/* Compact density: same tokens, tighter rhythm. Nothing else changes, so a
+   page written against the tokens gets density support for free. */
+:root[data-density="compact"] {
+  --row-pad-y: 0.3rem;
+  --row-pad-x: 0.5rem;
+  --stack: 0.6rem;
+}
+
+/**
+ * `inline` is load-bearing: it makes `bg-canvas` emit
+ * `background-color: var(--canvas)` rather than baking today's hex in, which is
+ * what lets [data-theme] switch registers at runtime.
+ */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-evergreen: var(--evergreen);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+}
+
+/* Radius is register-independent, so it is a plain `@theme` (not `inline`) —
+   `--radius-sm: var(--radius-sm)` inside `@theme inline` would be a
+   self-reference that resolves to nothing. Values verbatim from OTN. */
+@theme {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+@layer base {
+  html {
+    background: var(--canvas);
+    color: var(--ink);
+    /* No webfont is loaded yet — a login-gated cockpit should not block first
+       paint on a font request. OTN's --font-inter/--font-outfit are the
+       intended upgrade path when a self-hosted subset is added. */
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  /* PRESERVED VERBATIM from the inline GLOBAL_CSS this file replaces. Every one
+     of the 24 pages currently relies on this body margin for its gutter — most
+     render a bare <main> with no padding of its own. Setting `margin: 0` here
+     because a modern shell "should" own its spacing pushes the entire app
+     edge-to-edge, and no e2e test would catch it (they assert testids, not
+     layout). Phase 2's AppNav takes over page framing; the margin comes out
+     THEN, in the same change that replaces it. */
+  body {
+    margin: 1rem;
+    min-height: 100vh;
+  }
+  @media (min-width: 768px) {
+    body {
+      margin: 2rem;
+    }
+  }
+
+  /* PRESERVED from the inline GLOBAL_CSS this file replaces (old
+     layout.tsx:16-17). It is the one real idea that stylesheet carried: wide
+     tables scroll INSIDE themselves on phones instead of forcing the whole page
+     into horizontal overflow. Losing it would regress every table view on
+     mobile, and no e2e test would catch it. */
+  table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  @media (min-width: 900px) {
+    table {
+      display: table;
+    }
+  }
+
+  /* Also preserved: form controls at 16px so iOS does not zoom on focus. */
+  input,
+  select,
+  button,
+  textarea {
+    font-size: 1rem;
+  }
+
+  /* Focus must stay visible — the cockpit is meant to be keyboard-complete. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Motion explains state here (dial: MOTION_INTENSITY 4); it is never
+     required to understand the page. Honour the OS setting absolutely. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

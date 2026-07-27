@@ -38,6 +38,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         )}
         {session.role === "admin" && (
           <>
+            {/* Cockpit first: it is the declared front door to every
+                identity/enrichment review lane, and until 2026-07-27 it was
+                reachable ONLY by "← cockpit" back-links from the five pages it
+                is supposed to be the front door for. You could find the map
+                only once you were already lost. */}
+            <Link href="/app/admin/cockpit">Cockpit</Link>
             <Link href="/app/admin/sources">Sources</Link>
             <Link href="/app/admin/review">Review queue</Link>
             <Link href="/app/admin/coverage">Coverage</Link>
