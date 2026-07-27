@@ -25,7 +25,9 @@ that is otherwise locked inside BuildingConnected invitation lists.
 
 ## Metadata
 
-- **Complexity**: Medium (OMWBE) + Large (WEBS) — recommend splitting; see Scope
+- **Complexity**: Phase 0 Small–Medium (record class + pipeline union + table) ·
+  Phase 1 Medium (OMWBE) · Phase 2 Large (WEBS ViewState) · Phase 3 Small (port Tacoma).
+  Phases 1–3 are independently shippable once Phase 0 lands.
 - **Source PRD**: N/A — from the 2026-07-27 competitive brief on WA bid channels
 - **Estimated Files**: ~8 (2 adapters + 2 tests + config + taxonomy + index + docs)
 
@@ -49,7 +51,91 @@ data but is the commodity everyone already has, and is the harder scrape.
 
 ---
 
-## BLOCKERS — resolve in Task 0 before writing either adapter
+## ARCHITECTURE DECISION (owner, 2026-07-27): solicitations are a first-class record class
+
+**Bids are not permits and will not be stored as them.** A new
+`NormalizedSolicitationRecord` type and an `insights.solicitations` table, carried through
+the *existing* source pipeline as a second record kind. `NormalizedSourceRecord` is not
+widened — this decision **dissolves both blockers below rather than resolving them**, and
+they are retained only as the evidence for it.
+
+### Why the permit shape fails for bids
+
+| Property | Permit record | Solicitation |
+|---|---|---|
+| County | required, enum | **routinely absent** — statewide procurement |
+| Parcel / address | central | often none at all |
+| Defining date | application / issue | **bid due date** — no column exists |
+| Lifecycle | stage ladder | open → amended → closed → **awarded** |
+| Outcome | permit issued | **a winner** — nowhere to record one |
+
+The decisive case is a real WEBS row: *"Maintenance and Service of Gas Chromatography
+Laboratory Equipment — WSP-RFQQ-GasChro3"*. No parcel, no building, no jurisdiction, no
+county. Pushing that through the resolver injects non-construction procurement into the
+project graph. And two event types that already exist —
+`bid_deadline_changed`, `award_published` — **can never fire** in the permit model,
+because there is no typed deadline to diff and no field for a winner.
+
+### Shape
+
+```
+insights.solicitations
+  id, source_key, external_id            -- dedupe key, mirrors source_records
+  solicitation_number, title, description
+  procuring_agency                       -- WEBS: the agency. OMWBE: agency or prime
+  prime_contractor            nullable   -- set for "SUB-BIDS REQUESTED" posts
+  bid_due_at      timestamptz            -- FIRST CLASS. the whole point
+  issued_at       timestamptz nullable
+  status                                 -- open | amended | closed | awarded
+  county          nullable               -- null is CORRECT, not missing
+  city            nullable
+  scope_raw, trade_tags[]
+  url, observed_at
+  project_id      nullable FK            -- ONLY when evidence links it
+```
+
+`project_id` stays null for most WEBS rows and that is the correct outcome. It is
+populated when a solicitation names a project the graph already knows — which is where
+the product value is: permit → solicitation → award as one thread.
+
+### What this costs — measured against the existing pipeline
+
+The expensive 80% of `source-sdk` is record-type-agnostic and reused unchanged:
+`discover()`, `fetch()`, fetch-policy and rate limiting, the artifact store, replay,
+backfill, the `source_runs` lifecycle and its counters, health evaluation, orphan reaping,
+config and the activation checklist, alerting.
+
+What actually changes:
+
+1. `NormalizedSolicitationRecord` zod type — one new file
+2. `ParsedSourceRecord` becomes a discriminated union on `kind: "permit" | "solicitation"`
+3. `runner.ts` persist routes on `kind` — one branch
+4. One migration for `insights.solicitations`
+5. Per-adapter parse logic — unavoidable in any design
+
+After (1)–(4), **each bid adapter costs exactly what any adapter costs.** Item 2 is the
+only invasive one: `ParsedSourceRecord` is consumed by every existing adapter, so the
+union must default such that existing adapters compile untouched.
+
+### Same platform, not a separate product
+
+Bids may eventually get their own surface — that is a product decision and is **not** in
+this plan. But the ingestion belongs in this repo, on this fleet, in this database.
+Splitting it into a standalone product would duplicate the scrape fleet, which is the
+genuinely valuable asset; the OTN extraction already produced a recorded instance of that
+failure mode (loader + migrations copied into two apps, drift risk). A second record class
+buys the plug-in separation without paying for the infrastructure twice.
+
+### Porting `tacoma_solicitations`
+
+It **has** run — 2 runs, 2 succeeded, 15 records parsed — so this is a real port, not a
+greenfield rewrite. But 15 rows is negligible, the adapter is small, and leaving it on the
+permit shape would mean two representations of one concept. Port it in the same
+workstream; do not leave it behind.
+
+---
+
+## Blockers, retained as evidence only — both dissolved by the decision above
 
 ### B1. `county` is required and enum-constrained
 
@@ -260,14 +346,21 @@ block records the robots/terms verification in prose — match that discipline.
 
 | File | Action | Why |
 |---|---|---|
-| `packages/domain/src/normalized-record.ts` | UPDATE | B2: optional `bidDueDate` (pending owner call) |
-| `packages/adapters/src/omwbe-bid-opportunities.ts` | CREATE | Adapter 1 |
-| `packages/adapters/src/omwbe-bid-opportunities.test.ts` | CREATE | Fixture-driven parse test |
-| `packages/adapters/src/webs-bid-calendar.ts` | CREATE | Adapter 2 (phase 2) |
-| `packages/adapters/src/webs-bid-calendar.test.ts` | CREATE | Fixture-driven parse test |
-| `packages/adapters/src/index.ts` | UPDATE | Register both |
+| `packages/domain/src/normalized-solicitation.ts` | CREATE | The new record class + zod schema |
+| `packages/domain/src/normalized-solicitation.test.ts` | CREATE | Schema tests, incl. null county accepted |
+| `packages/domain/src/index.ts` | UPDATE | Export it |
+| `packages/domain/src/normalized-record.ts` | **UNCHANGED** | Explicitly not widened — the point of the decision |
+| `packages/source-sdk/src/types.ts` | UPDATE | `ParsedSourceRecord` → discriminated union on `kind` |
+| `packages/source-sdk/src/runner.ts` | UPDATE | Persist branch routes on `kind` |
+| `packages/db/migrations/00XX_solicitations.sql` | CREATE | `insights.solicitations` |
+| `packages/db/migrations/meta/_journal.json` | UPDATE | Hand-written journal entry (drizzle-kit generate is unused here) |
+| `packages/db/src/schema.ts` | UPDATE | Declare the table |
+| `packages/adapters/src/omwbe-bid-opportunities.ts` (+ `.test.ts`) | CREATE | Phase 1 |
+| `packages/adapters/src/webs-bid-calendar.ts` (+ `.test.ts`) | CREATE | Phase 2 |
+| `packages/adapters/src/tacoma-solicitations.ts` (+ `.test.ts`) | UPDATE | Phase 3 — port off the permit shape |
+| `packages/adapters/src/index.ts` | UPDATE | Register both new adapters |
 | `config/sources.yaml` | UPDATE | Two entries, `enabled: false` |
-| `docs/STATUS.md`, `docs/architecture.md` | UPDATE | Record the new record class + any schema divergence |
+| `docs/STATUS.md`, `docs/architecture.md` | UPDATE | Record the second record class and where the seam sits |
 
 ## NOT Building
 
@@ -286,11 +379,46 @@ block records the robots/terms verification in prose — match that discipline.
 
 ## Step-by-Step Tasks
 
-### Task 0: Resolve the two blockers (do this first — it gates everything)
-- **ACTION**: Read `CountySchema` and enumerate accepted counties. Decide B1 (derive-and-skip
-  vs. nullable) and B2 (`bidDueDate` vs. documented debt).
-- **VALIDATE**: Both decisions written into this plan's Notes before Task 1 starts. If B1
-  option 2 is chosen, first grep every consumer of `.county` and list them here.
+## PHASE 0 — the second record class (gates everything else)
+
+### Task 0.1: `NormalizedSolicitationRecord`
+- **ACTION**: Create `packages/domain/src/normalized-solicitation.ts` with the zod schema
+  from the Shape section; export from `packages/domain/src/index.ts`.
+- **MIRROR**: `packages/domain/src/normalized-record.ts:26-75` — same zod style, same
+  comment discipline about what is never fabricated.
+- **IMPLEMENT**: `bidDueAt` is required and typed; `county` / `city` / `primeContractor` /
+  `projectId` are nullable; `status` is an enum.
+- **GOTCHA**: Do **not** import or extend `NormalizedSourceRecordSchema`. Sharing a base
+  is how the permit shape leaks back in. Duplicate the three or four common fields.
+- **VALIDATE**: Test asserts a record with `county: null` parses, and one missing
+  `bidDueAt` does not.
+
+### Task 0.2: Discriminated union in the pipeline
+- **ACTION**: Widen `ParsedSourceRecord` (`packages/source-sdk/src/types.ts:30-33`) to
+  `{ kind: "permit"; record: NormalizedSourceRecord; rawFields }
+   | { kind: "solicitation"; record: NormalizedSolicitationRecord; rawFields }`.
+- **GOTCHA**: **Every existing adapter constructs this type.** Default `kind` to
+  `"permit"` (optional field, or a factory) so all 36 adapters compile untouched. If this
+  change requires editing existing adapters, the union is wrong — redo it.
+- **VALIDATE**: `pnpm typecheck` clean with **zero** edits to any existing adapter.
+
+### Task 0.3: Table + persist branch
+- **ACTION**: Migration for `insights.solicitations`; declare it in
+  `packages/db/src/schema.ts`; add the routing branch in `runner.ts`.
+- **MIRROR**: Migration style and the hand-written `meta/_journal.json` entry from
+  `0035_project_events_unique.sql` — `drizzle-kit generate` is unused in this repo.
+- **IMPLEMENT**: Unique index on `(source_key, external_id)` so re-runs upsert rather than
+  duplicate. Include `observed_at` in the key **only if** re-emits are expected — the
+  `project_events` lesson: the obvious key destroyed 136 legitimate re-emits.
+- **GOTCHA**: `parsed_count` / `rejected_count` must increment for solicitations too, or
+  the health checks silently exempt the whole class. The fleet audit found
+  `rejected_count` at 0 across every source — do not add a second dead counter.
+- **VALIDATE**: A solicitation record round-trips; counters move; re-running the same
+  record does not duplicate.
+
+---
+
+## PHASE 1 — OMWBE
 
 ### Task 1: Capture fixtures
 - **ACTION**: Save one real OMWBE listing page + 2–3 detail pages, and one WEBS
@@ -352,6 +480,34 @@ block records the robots/terms verification in prose — match that discipline.
 
 ---
 
+## PHASE 3 — port `tacoma_solicitations` off the permit shape
+
+### Task 8: Re-emit Tacoma as a solicitation record
+- **ACTION**: Change `packages/adapters/src/tacoma-solicitations.ts` to emit
+  `kind: "solicitation"`; move `dueDate` + `timeDue` out of `rawFields`/`statusRaw` into
+  the typed `bidDueAt`; drop the hardcoded `county: "Pierce"` in favour of the real value
+  (Tacoma genuinely is Pierce, so set it — it just is no longer *required* to be).
+- **GOTCHA**: Keep the column-drift invariant
+  (`tacoma-solicitations.ts:141-153`). It is the only thing standing between a reordered
+  HTML table and silent garbage, and it must survive the port.
+- **GOTCHA**: The existing 15 rows live in the permit-shaped store. Decide explicitly:
+  backfill them into `insights.solicitations`, or leave them and note the discontinuity.
+  15 rows makes backfill cheap — prefer it over a split history.
+- **VALIDATE**: Existing `tacoma-solicitations.test.ts` updated and green; a live run
+  writes to `insights.solicitations`; the drift test still trips on a corrupted fixture.
+
+### Task 9: Retire the permit-shaped solicitation path
+- **ACTION**: Confirm no adapter still emits `recordType: "solicitation"` on a
+  `NormalizedSourceRecord`, and that `bidding_confirmed` is now set from the solicitation
+  table rather than from a permit-shaped record.
+- **GOTCHA**: `config/sources.yaml:465` records that a published public solicitation is
+  *"the only PUBLIC signal permitted to set `bidding_confirmed`"*. That rule must keep
+  holding after the port — it now flows from the new table.
+- **VALIDATE**: Grep returns no permit-shaped solicitation emitters; a linked solicitation
+  still moves its project to `bidding_confirmed`.
+
+---
+
 ## Testing Strategy
 
 | Test | Input | Expected |
@@ -396,12 +552,16 @@ EXPECT: records parsed, nothing written while disabled
 ---
 
 ## Acceptance Criteria
-- [ ] B1 and B2 decided and recorded before any adapter code
+- [ ] `NormalizedSourceRecord` is **unmodified** — no `bidDueDate`, no nullable county
+- [ ] The union lands with **zero edits to any of the 36 existing adapters**
+- [ ] A solicitation with `county: null` persists successfully — null is valid, not a skip
+- [ ] `bidDueAt` is a typed column, so `bid_deadline_changed` becomes implementable
+- [ ] `parsed_count` and `rejected_count` increment for solicitations, not just permits
 - [ ] Both sources ship `enabled: false` with real `terms_reviewed_at` / `robots_reviewed_at`
 - [ ] OMWBE distinguishes sub-bid requests from agency solicitations
 - [ ] Every adapter has a drift invariant that a corrupted fixture trips
-- [ ] No county is ever fabricated; skips are counted and logged
-- [ ] `bid_deadline_changed` is either implementable (B2 accepted) or explicitly logged as debt
+- [ ] `tacoma_solicitations` is ported and its 15 rows are backfilled or the gap is documented
+- [ ] A published solicitation still sets `bidding_confirmed` on a linked project
 - [ ] v1.12.0 timing model untouched
 
 ## Risks
