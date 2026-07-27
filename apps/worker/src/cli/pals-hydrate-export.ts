@@ -50,6 +50,12 @@ import { createLogger } from "@otn/source-sdk";
 // Lookup-class hard rule (spec §5): this list only ever contains permits we
 // already hold — the capture script must never crawl or discover on its own.
 // Ordering changes which of those we ask about first; it never widens the set.
+//
+// ...and "we already hold it" is not the same as "it has a project". A permit
+// whose open-data record is parked in the review queue has neither a project
+// nor a registered external id, so a PALS record for it matches nothing and
+// CREATES one — a second project for a permit we already hold. Those are
+// excluded here and counted as `deferredParkedInReview`. See the pool CTE.
 
 /** Score at or above which an opportunity is a priority row (spec §18 bands). */
 const PRIORITY_SCORE = 80;
@@ -100,6 +106,22 @@ async function main() {
             SELECT 1 FROM source_records e
             JOIN sources es ON es.id = e.source_id
             WHERE es.key = 'pierce_pals_contractor' AND e.external_id = sr.external_id)
+          -- A permit whose OWN open-data record is still parked in the review
+          -- queue has no project yet, so it has registered no external id — and
+          -- matchByIds therefore cannot see it. Hydrating it anyway makes the
+          -- PALS record fall through id AND parcel matching and CREATE A SECOND
+          -- PROJECT for a permit we already hold. Measured live 2026-07-27: 31
+          -- of 408 PALS records did exactly that, and all 31 point at a
+          -- different project than the pending review's candidate, so accepting
+          -- any of those reviews splits one permit across two projects
+          -- permanently.
+          --
+          -- Deferred, not dropped: once a reviewer adjudicates the record it
+          -- gets a project, registers its id, and re-enters this pool on the
+          -- next export. The count is reported so the deferral is visible.
+          AND NOT EXISTS (
+            SELECT 1 FROM resolution_reviews rv
+            WHERE rv.source_record_id = sr.id AND rv.status = 'pending')
       ),
       scored AS (
         SELECT p.external_id, p.permit_type, p.d,
@@ -141,6 +163,26 @@ async function main() {
       tier: number;
     }[];
 
+    // What the review-queue guard held back. Counted and reported rather than
+    // silently absent: a pool that quietly shrank would read as "we are nearly
+    // done hydrating Pierce" when the truth is that some of it is waiting on a
+    // human. It was a fifth of the pool when the guard landed (1,232 of 6,015
+    // on 2026-07-27), so this is not a rounding error.
+    const deferred = await db.execute(sql`
+      SELECT count(*)::int AS n
+      FROM source_records sr
+      JOIN sources s ON s.id = sr.source_id
+      WHERE s.key = 'pierce_permits_arcgis'
+        AND sr.external_id ~ '^[0-9]+$'
+        AND NOT EXISTS (
+          SELECT 1 FROM source_records e
+          JOIN sources es ON es.id = e.source_id
+          WHERE es.key = 'pierce_pals_contractor' AND e.external_id = sr.external_id)
+        AND EXISTS (
+          SELECT 1 FROM resolution_reviews rv
+          WHERE rv.source_record_id = sr.id AND rv.status = 'pending')`);
+    const deferredParkedInReview = Number((deferred.rows[0] as { n: number } | undefined)?.n ?? 0);
+
     const byPermitType: Record<string, number> = {};
     for (const r of rows) byPermitType[r.permit_type] = (byPermitType[r.permit_type] ?? 0) + 1;
     const batch = limit === null ? rows : rows.slice(0, limit);
@@ -163,6 +205,7 @@ async function main() {
       ordering: recentFirst ? "recent_first" : "value_first",
       account: account ?? null,
       remainingPool: rows.length,
+      deferredParkedInReview,
       batchSize: batch.length,
       byPermitType,
       poolByTier: byTier,
@@ -178,6 +221,7 @@ async function main() {
         ordering: payload.ordering,
         account,
         remainingPool: rows.length,
+        deferredParkedInReview,
         batchSize: batch.length,
         batchByTier,
       },
