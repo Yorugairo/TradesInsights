@@ -39,6 +39,19 @@ export interface FetchPolicyOptions {
   timeoutMs?: number;
   maxRetries?: number;
   baseDelayMs?: number;
+  /**
+   * Minimum gap between the START of consecutive requests through this policy,
+   * for a host that publishes a `Crawl-delay`.
+   *
+   * Lives here rather than in the adapter deliberately: a per-adapter `sleep()`
+   * is invisible to the policy that owns concurrency, so the two can disagree
+   * and the pacing silently stops applying. Enforcing it at the same choke
+   * point as `maxConcurrency` means one place decides how hard a host is hit.
+   *
+   * Set it and `maxConcurrency: 1` together — spacing request starts is
+   * meaningless if two are still in flight at once.
+   */
+  minIntervalMs?: number;
 }
 
 export interface PolicedResponse {
@@ -48,6 +61,23 @@ export interface PolicedResponse {
   headers: Record<string, string>;
   /** True for a 304 conditional-request hit — body is empty and content unchanged. */
   notModified: boolean;
+  /**
+   * `Set-Cookie` values, exposed ONLY here. They are stripped from `headers`
+   * (which is persisted onto `raw_artifacts`) so a session token never lands in
+   * the database, but an ASP.NET form source cannot page without them: WEBS
+   * returns page 1 forever if the postback arrives with a valid ViewState and
+   * no `ASP.NET_SessionId`. Measured 2026-07-27 — with the cookie the same
+   * request returns a page with zero overlap; without it, an identical page 1.
+   */
+  setCookie: string[];
+}
+
+/** A non-GET request through the policy (ASP.NET postbacks). */
+export interface PolicedRequest {
+  method: "GET" | "POST";
+  body?: string;
+  /** Merged over the policy's own headers. */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -57,6 +87,8 @@ export interface PolicedResponse {
 export class FetchPolicy {
   private readonly limit: ReturnType<typeof pLimit>;
   private readonly opts: Required<FetchPolicyOptions>;
+  /** Monotonic gate for `minIntervalMs`: when the next request may start. */
+  private nextAllowedStart = 0;
 
   constructor(options: FetchPolicyOptions) {
     this.opts = {
@@ -64,6 +96,7 @@ export class FetchPolicy {
       timeoutMs: 30_000,
       maxRetries: 3,
       baseDelayMs: 1_000,
+      minIntervalMs: 0,
       ...options,
     };
     this.limit = pLimit(this.opts.maxConcurrency);
@@ -73,14 +106,32 @@ export class FetchPolicy {
     url: string,
     logger: Logger,
     conditional?: { etag?: string; lastModified?: string },
+    request?: PolicedRequest,
   ): Promise<PolicedResponse> {
-    return this.limit(() => this.fetchWithRetry(url, logger, conditional));
+    return this.limit(async () => {
+      await this.awaitCrawlDelay();
+      return this.fetchWithRetry(url, logger, conditional, request);
+    });
+  }
+
+  /**
+   * Hold inside the concurrency slot so the gap is between request STARTS
+   * regardless of how long each response takes. Reserving `nextAllowedStart`
+   * before awaiting keeps it correct when several callers queue at once.
+   */
+  private async awaitCrawlDelay(): Promise<void> {
+    if (this.opts.minIntervalMs <= 0) return;
+    const now = Date.now();
+    const startAt = Math.max(now, this.nextAllowedStart);
+    this.nextAllowedStart = startAt + this.opts.minIntervalMs;
+    if (startAt > now) await new Promise((r) => setTimeout(r, startAt - now));
   }
 
   private async fetchWithRetry(
     url: string,
     logger: Logger,
     conditional?: { etag?: string; lastModified?: string },
+    request?: PolicedRequest,
   ): Promise<PolicedResponse> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.opts.maxRetries; attempt++) {
@@ -90,7 +141,7 @@ export class FetchPolicy {
         await new Promise((r) => setTimeout(r, delay));
       }
       try {
-        return await this.fetchOnce(url, conditional);
+        return await this.fetchOnce(url, conditional, request);
       } catch (err) {
         lastError = err;
         if (err instanceof FetchError && err.retryClass === "fatal") throw err;
@@ -104,18 +155,28 @@ export class FetchPolicy {
   private async fetchOnce(
     url: string,
     conditional?: { etag?: string; lastModified?: string },
+    request?: PolicedRequest,
   ): Promise<PolicedResponse> {
     const headers: Record<string, string> = { "user-agent": this.opts.userAgent };
     if (conditional?.etag) headers["if-none-match"] = conditional.etag;
     if (conditional?.lastModified) headers["if-modified-since"] = conditional.lastModified;
+    for (const [k, v] of Object.entries(request?.headers ?? {})) headers[k] = v;
+
+    const method = request?.method ?? "GET";
+    const init = {
+      method,
+      headers,
+      ...(request?.body !== undefined ? { body: request.body } : {}),
+    };
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs);
     try {
       const dispatcher = proxyDispatcher();
       const res = dispatcher
-        ? await undiciFetch(url, { headers, signal: controller.signal, dispatcher })
-        : await fetch(url, { headers, signal: controller.signal });
+        ? await undiciFetch(url, { ...init, signal: controller.signal, dispatcher })
+        : await fetch(url, { ...init, signal: controller.signal });
+      const setCookie = res.headers.getSetCookie?.() ?? [];
       const responseHeaders: Record<string, string> = {};
       res.headers.forEach((v, k) => {
         if (!["set-cookie", "authorization"].includes(k.toLowerCase())) {
@@ -129,6 +190,7 @@ export class FetchPolicy {
           contentType: responseHeaders["content-type"] ?? "application/octet-stream",
           headers: responseHeaders,
           notModified: true,
+          setCookie,
         };
       }
       if (!res.ok) {
@@ -145,6 +207,7 @@ export class FetchPolicy {
         contentType: responseHeaders["content-type"] ?? "application/octet-stream",
         headers: responseHeaders,
         notModified: false,
+        setCookie,
       };
     } catch (err) {
       if (err instanceof FetchError) throw err;

@@ -62,11 +62,19 @@ export const NormalizedSolicitationRecordSchema = z
     title: z.string().min(1),
     description: z.string().nullable(),
     /**
-     * WEBS: the procuring agency. OMWBE: the agency, or the prime running the
-     * sub-bid call. This is the solicitation's analogue of the permit record's
-     * `permittingJurisdiction` — keep that reading consistent.
+     * The agency, or the prime running a sub-bid call. The solicitation's
+     * analogue of the permit record's `permittingJurisdiction` — keep that
+     * reading consistent.
+     *
+     * NULLABLE, on evidence rather than convenience. The WEBS public bid
+     * calendar publishes close date, title, reference number, contact person,
+     * amendment date, description, pre-bid conference and inclusion plan — and
+     * NOT the procuring organization. That is only on `Search_BidDetails.aspx`,
+     * which returns the vendor LOGIN page (verified 2026-07-27). A required
+     * field here would force either dropping every WEBS row or inventing an
+     * agency, and "never fabricated" outranks schema tidiness.
      */
-    procuringAgency: z.string().min(1),
+    procuringAgency: z.string().min(1).nullable(),
     /** Set only for "SUB-BIDS REQUESTED" posts; null for agency solicitations. */
     primeContractor: z.string().min(1).nullable(),
     documentType: SolicitationDocumentTypeSchema,

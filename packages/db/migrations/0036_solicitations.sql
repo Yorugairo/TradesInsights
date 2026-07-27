@@ -32,9 +32,14 @@ CREATE TABLE IF NOT EXISTS solicitations (
   solicitation_number text,
   title text NOT NULL,
   description text,
-  -- WEBS: the procuring agency. OMWBE: the agency, or the prime running the
-  -- sub-bid call. The solicitation's analogue of permitting_jurisdiction.
-  procuring_agency text NOT NULL,
+  -- The agency, or the prime running a sub-bid call. The solicitation's
+  -- analogue of permitting_jurisdiction.
+  --
+  -- NULLABLE on evidence: the WEBS PUBLIC bid calendar does not publish the
+  -- procuring organization at all (it is behind the vendor login on
+  -- Search_BidDetails.aspx, verified 2026-07-27). Requiring it would mean
+  -- dropping every WEBS row or inventing an agency.
+  procuring_agency text,
   -- Set only for "SUB-BIDS REQUESTED" posts.
   prime_contractor text,
   -- 'solicitation' | 'sub_bid_request'. The sub-bid class is the

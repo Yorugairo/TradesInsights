@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import { FetchPolicy } from "./fetch-policy.js";
+import { FetchPolicy, type PolicedRequest, type PolicedResponse } from "./fetch-policy.js";
 import type { DiscoveredArtifact, RawArtifact, RunContext } from "./types.js";
 
 // WeakMap so per-run policies are GC'd with the RunContext in a long-lived worker.
@@ -11,7 +11,7 @@ const policies = new WeakMap<RunContext, FetchPolicy>();
  */
 export function policyForRun(
   ctx: RunContext,
-  options?: { maxConcurrency?: number; timeoutMs?: number },
+  options?: { maxConcurrency?: number; timeoutMs?: number; minIntervalMs?: number },
 ): FetchPolicy {
   const existing = policies.get(ctx);
   if (existing) return existing;
@@ -44,6 +44,25 @@ export async function httpFetchArtifact(
     headers: res.headers,
     retrievedAt: new Date(),
   };
+}
+
+/**
+ * A full policed request, including POST, returning the whole response.
+ *
+ * `httpGet` throws away the status and `Set-Cookie`, which is right for a
+ * static discovery page and wrong for an ASP.NET form: WEBS pages via
+ * `__doPostBack`, and the postback needs both the ViewState from the previous
+ * response body AND the session cookie from its headers. Concurrency, retry
+ * classification, timeout and crawl-delay all still apply — the point of
+ * routing it through the policy rather than calling fetch() directly.
+ */
+export async function httpRequest(
+  url: string,
+  ctx: RunContext,
+  options?: { policy?: FetchPolicy; request?: PolicedRequest },
+): Promise<PolicedResponse> {
+  const policy = options?.policy ?? policyForRun(ctx);
+  return policy.fetch(url, ctx.logger, undefined, options?.request);
 }
 
 /** Fetch a plain URL (discovery pages) through the run's policy. */

@@ -29,7 +29,11 @@ describe("sources.yaml", () => {
       "tumwater_development_arcgis",
       "bellevue_permits_arcgis", // activated 2026-07-22 (Wave3 Puget Sound densification; King #2 job market, generic ArcgisPermitsAdapter)
       "everett_permits_socrata", // activated 2026-07-23 (Wave3; first genuine Snohomish source, generic SocrataPermitsAdapter, contractor on ~94%)
-      "spokane_permits_arcgis", // activated 2026-07-23 (Wave3; eastern-WA demand/stage source, generic ArcgisPermitsAdapter; distance-de-rated for Solis)
+      // spokane_permits_arcgis — activated 2026-07-23, DEACTIVATED 2026-07-27.
+      // services.spokanegis.org blocks our user agent with a self-redirect
+      // loop (200 with a browser UA, 302-to-itself with ours; no robots.txt).
+      // Three runs, three failures, zero records ever. Not worked around by
+      // spoofing the UA — that is evading a deliberate block.
       "pierce_permits_arcgis", // activated 2026-07-17 (Batch2 #1, ledger entry)
       "pierce_pals_contractor", // activated 2026-07-24 — capture-fed hydration, owner-approved scale (queue-cockpit Phase A0)
       "olympia_smartgov_reports", // activated 2026-07-20 (capture-ready Exago PDF; Thurston-metro P1 permit-stage gap; on_demand capture-fed)

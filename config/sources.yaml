@@ -913,3 +913,83 @@ sources:
     permitting_jurisdiction: null
     enabled: false
     notes: Lookup/verification only — never show cached registration status without verified_at.
+
+  - key: omwbe_bid_opportunities
+    name: OMWBE Bid Opportunities (agency solicitations + prime sub-bid requests)
+    authority: WA Office of Minority and Women's Business Enterprises
+    priority: P1
+    landing_url: https://omwbe.wa.gov/small-business-assistance/bids-contracting-opportunities
+    access_url: https://omwbe.wa.gov/small-business-assistance/bids-contracting-opportunities
+    format: html
+    access_class: html
+    cadence: daily
+    # Statewide board, and several postings are out-of-state reposts. County is
+    # resolved per listing where stated and is otherwise NULL — which is the
+    # correct value, not a missing one. Solicitations are their own record
+    # class (insights.solicitations) precisely so this is expressible.
+    county: null
+    # Procuring agency (or prime contractor) varies per listing; set on the record.
+    permitting_jurisdiction: null
+    enabled: false
+    terms_reviewed_at: "2026-07-27"
+    robots_reviewed_at: "2026-07-27"
+    required_fields: []
+    notes: >-
+      Verified 2026-07-27. robots.txt is stock Drupal boilerplate (36 Disallow
+      rules, all /admin/, /user/, /misc/ and friends); neither
+      /small-business-assistance/ nor /bid-opportunities/ is disallowed. It
+      declares "Crawl-delay: 10", which the adapter honours through
+      FetchPolicy minIntervalMs with maxConcurrency 1 — not a hand-rolled sleep.
+      URL CORRECTION: the competitive brief named
+      /about-omwbe/omwbe-bid-opportunities as the index. It is not — that page
+      is "Contracting with OMWBE", the agency's own procurement. The real board
+      is the URL above, carrying 160 live postings on 2026-07-27.
+      Two distinct classes ride on it. Agency solicitations, and "SUB-BIDS
+      REQUESTED"/"Subcontractor Bid Invitation" posts from primes (Skanska,
+      RAM Construction, Lease Crutcher Lewis) driven by MWBE/apprenticeship
+      outreach obligations on WA public works. The sub-bid class is the
+      differentiated signal and is stored as document_type='sub_bid_request':
+      it is the only public window into GC bid boards that otherwise live
+      behind BuildingConnected invitation lists, and no competing aggregator
+      indexes it. OMWBE states these are third-party submissions listed as a
+      courtesy, so formatting is inconsistent and the parser emits nulls rather
+      than guesses.
+      Discovery is checkpointed on (slug -> closing date) so only new or
+      amended postings are fetched after the first run, and the per-run detail
+      cap logs what it deferred rather than dropping it silently.
+      STILL DISABLED pending the §5 activation checklist — one real run,
+      inspected output, then enabled with a ledger entry.
+
+  - key: webs_bid_calendar
+    name: WEBS Public Bid Calendar (statewide agency solicitations)
+    authority: WA Department of Enterprise Services
+    priority: P1
+    landing_url: https://des.wa.gov/sell/bid-opportunities
+    access_url: https://pr-webs-vendor.des.wa.gov/BidCalendar.aspx
+    format: html
+    access_class: html
+    cadence: daily
+    county: null
+    permitting_jurisdiction: null
+    enabled: false
+    terms_reviewed_at: "2026-07-27"
+    robots_reviewed_at: "2026-07-27"
+    required_fields: []
+    notes: >-
+      Verified 2026-07-27. pr-webs-vendor.des.wa.gov serves NO robots.txt (404),
+      so nothing is disallowed. The bid calendar itself is public with no login;
+      Search_BidDetails.aspx and the awarded-contracts area both return the
+      vendor LOGIN page and are out of scope. One consequence is recorded in the
+      schema rather than papered over: the public calendar never publishes the
+      procuring organization, so procuring_agency is NULL on every WEBS record.
+      TRANSPORT WARNING, measured not assumed. ASP.NET DataGrid, 6 pages of 25,
+      paged by __doPostBack with __VIEWSTATE / __VIEWSTATEGENERATOR /
+      __EVENTVALIDATION round-tripped from the previous response. The ViewState
+      alone is NOT sufficient: a postback carrying a valid ViewState and no
+      ASP.NET_SessionId cookie returns HTTP 200 with a full, well-formed grid
+      that is PAGE ONE AGAIN — no error, no redirect. A cookie-less scraper
+      would look healthy and collect page 1 six times. The adapter threads the
+      whole cookie jar and asserts pages do not repeat (webs_page_repeat), on
+      top of a minimum-row-count invariant for the expired-ViewState error page
+      that parses as zero rows.
+      STILL DISABLED pending the §5 activation checklist.

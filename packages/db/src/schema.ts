@@ -164,7 +164,8 @@ export const solicitations = pgTable(
     solicitationNumber: text("solicitation_number"),
     title: text("title").notNull(),
     description: text("description"),
-    procuringAgency: text("procuring_agency").notNull(),
+    /** Nullable: the WEBS public calendar does not publish it. See 0036. */
+    procuringAgency: text("procuring_agency"),
     primeContractor: text("prime_contractor"),
     /** 'solicitation' | 'sub_bid_request' — a column, not a title substring. */
     documentType: text("document_type").notNull(),

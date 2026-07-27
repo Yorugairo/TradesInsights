@@ -28,7 +28,9 @@ import { ThurstonLandUseRezoneAdapter } from "./thurston-land-use-rezone.js";
 import { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 import { SeattleSourceCanaryAdapter } from "./seattle-source-canary.js";
 import { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
+import { OmwbeBidOpportunitiesAdapter } from "./omwbe-bid-opportunities.js";
 import { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
+import { WebsBidCalendarAdapter } from "./webs-bid-calendar.js";
 import { ThurstonActiveNoticesAdapter } from "./thurston-active-notices.js";
 import { TumwaterDevelopmentArcgisAdapter } from "./tumwater-arcgis.js";
 import { TumwaterDevelopmentReviewAdapter } from "./tumwater-development-review.js";
@@ -98,6 +100,8 @@ const REGISTRY: Record<string, () => SourceAdapter> = {
   tumwater_sepa: () => new TumwaterSepaAdapter(),
   tacoma_permits_arcgis: () => new TacomaPermitsArcgisAdapter(),
   tacoma_solicitations: () => new TacomaSolicitationsAdapter(),
+  omwbe_bid_opportunities: () => new OmwbeBidOpportunitiesAdapter(),
+  webs_bid_calendar: () => new WebsBidCalendarAdapter(),
 };
 export { ArcgisPermitsAdapter, BELLEVUE_CONFIG, SPOKANE_CONFIG } from "./arcgis-permits.js";
 export { SocrataPermitsAdapter, EVERETT_CONFIG, AUBURN_CONFIG } from "./socrata-permits.js";
@@ -112,6 +116,8 @@ export { ThurstonLandUseRezoneAdapter } from "./thurston-land-use-rezone.js";
 export { TumwaterSepaAdapter } from "./tumwater-sepa.js";
 export { TacomaPermitsArcgisAdapter } from "./tacoma-permits-arcgis.js";
 export { TacomaSolicitationsAdapter } from "./tacoma-solicitations.js";
+export { OmwbeBidOpportunitiesAdapter } from "./omwbe-bid-opportunities.js";
+export { WebsBidCalendarAdapter } from "./webs-bid-calendar.js";
 
 export function getAdapter(key: string): SourceAdapter {
   const factory = REGISTRY[key];
