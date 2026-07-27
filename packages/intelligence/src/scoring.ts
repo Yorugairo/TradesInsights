@@ -42,7 +42,12 @@ import { bidTrackFor, type BidTrack } from "./bid-window.js";
 // (unknown distance is not evidence of proximity). The four pilot counties keep
 // their exact calibrated values, and the frozen eval set contains only those
 // four — so this is eval byte-identical by construction.
-export const SCORING_ALGORITHM_VERSION = "1.11.0";
+// 1.12.0 — issued permits demoted hard on both tracks (owner 2026-07-26: an
+// issued permit is mostly relationship-graph/job-history material, not a live
+// bid) and a freshness gradient added INSIDE the application stage, which until
+// now scored 496 Solis opportunities identically regardless of whether they were
+// filed last week or last year. See timingInterior / appliedFreshness.
+export const SCORING_ALGORITHM_VERSION = "1.12.0";
 
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
@@ -91,6 +96,16 @@ export interface ProjectFeatures {
   }[];
   aGradeEvidence: number;
   lastMaterialChangeAt: Date | null;
+  /**
+   * When the permit APPLICATION was filed — the earliest confirmed
+   * `permit_applied` project event (same derivation as
+   * migrations/0029_market_aggregates.sql). Drives `appliedFreshness`.
+   *
+   * Optional by design: absent on frozen eval examples, and `appliedFreshness`
+   * returns 1 for a missing date, so the gates stay byte-identical. Absent is
+   * "we don't know when this was filed", never "this is stale".
+   */
+  appliedAt?: Date | null;
   /** Phase 1 flywheel — derived corroboration (projects.corroboration).
    * Absent on frozen eval examples → no signal, no score change; feeds ONLY
    * the score-neutral corroborated_multi_source / lifecycle_progressing /
@@ -381,32 +396,88 @@ function timingResidentialGlass(stage: string): number {
 }
 
 /**
- * Interior-trades timing, per bid track (docs/domain-bid-timing.md, v1.7.0).
- * Residential: drywall bids run 4–8 wks AFTER issuance → issued/construction
- * peak. Commercial: drywall is bought out during plan review, BEFORE the
- * permit → in-review stages peak and an issued commercial project is likely
- * already let (0.5, not 0 — plan-check addendum re-pricing is real). Keeps the
- * digest's 🔨 line and the score telling the same story.
+ * Freshness INSIDE the application stage (v1.12.0).
+ *
+ * The stage maps below treat every `permit_applied` record identically, which
+ * was the single largest distortion in the model: on 2026-07-26 Solis held 496
+ * application-stage opportunities — 147 filed within four weeks and 124 filed
+ * more than twelve weeks earlier — and all 496 scored timing 1.0. At the
+ * priority band that put 46 fresh leads and 44 cold ones side by side.
+ *
+ * `appliedAt === null` returns 1 deliberately. An unstated filing date is not
+ * evidence of staleness (the `recencyFactor` discipline), and it is also what
+ * keeps every frozen eval example byte-identical — none carries the field.
+ *
+ * The curve is DELIBERATELY GENTLE and is an owner-directed starting point, not
+ * a fitted result: `pursuits`, `opportunity_outcomes`, `decision_labels`,
+ * `feedback` and `pursuit_transitions` were all empty when it was set, so there
+ * is no conversion evidence behind any specific number. It also has to survive
+ * the open tension in docs/domain-bid-timing.md — WA commercial land-use runs
+ * 4–12+ months, so a long review can be a LIVE extended bid window rather than
+ * a dead lead. Hence a stale application still scores 0.55, well above an
+ * issued one; it is de-prioritised, never buried. Revisit against real outcomes.
  */
-function timingInterior(stage: string, track: BidTrack): number {
+export function appliedFreshness(appliedAt: Date | null | undefined, now: Date): number {
+  if (!appliedAt) return 1;
+  const weeks = (now.getTime() - appliedAt.getTime()) / (7 * 86_400_000);
+  if (weeks <= 4) return 1; // ITBs typically going out — the strike zone
+  if (weeks <= 8) return 0.9; // bids being levelled — still live, you're on time
+  if (weeks <= 12) return 0.75; // closing; expect to be a backup number
+  return 0.55; // cold, but WA reviews run long — de-prioritised, not dead
+}
+
+/**
+ * Interior-trades timing, per bid track (docs/domain-bid-timing.md).
+ *
+ * v1.7.0 established the inversion: residential drywall bids run 4–8 wks AFTER
+ * issuance, commercial drywall is bought out during plan review BEFORE the
+ * permit. v1.12.0 acts on it much harder, per owner directive 2026-07-26:
+ *
+ *   "issued vs applied should be treated very differently … it should be shaved
+ *    at least 60% to start, we're primarily using it to build the relationship
+ *    graph and job history at this point."
+ *
+ * So an issued permit is now scored as what it mostly is — a record of who built
+ * what, feeding the relationship graph — rather than as a live bid. Commercial
+ * issued 0.5 → 0.2 (a 60% shave; still not 0, because plan-check addendum
+ * re-pricing is real). Residential issued 0.9 → 0.55: shaved, but by less,
+ * because the customer's own 2026-07-17 model says a framed, dried-in house
+ * genuinely is when a homebuilder walks the site to measure — that window is
+ * real, it is just usually already spoken for by a standing sub.
+ *
+ * Residential `approved`/`construction_documents` drop 0.6 → 0.5 to preserve the
+ * model's ordering: those are PRE-permit residential stages ("not biddable yet,
+ * watch for issuance"), so they must stay below issued rather than leapfrog it
+ * as a side effect of the shave.
+ */
+function timingInterior(
+  stage: string,
+  track: BidTrack,
+  appliedAt: Date | null | undefined,
+  now: Date,
+): number {
+  // Freshness applies to the filed-application stage only — it is the one stage
+  // with a filing date behind it (99.8% coverage) and the one the gradient is
+  // about. Other pre-permit stages have no equivalent clock.
+  const fresh = stage === "permit_applied" ? appliedFreshness(appliedAt, now) : 1;
   if (track === "commercial") {
     const map: Record<string, number> = {
       bidding_confirmed: 1, permit_applied: 1, construction_documents: 1, approved: 1,
-      entitlement: 0.9, preapplication: 0.7, permit_issued: 0.5, construction: 0.4,
-      near_final: 0.2, concept: 0.2,
+      entitlement: 0.9, preapplication: 0.7, permit_issued: 0.2, construction: 0.16,
+      near_final: 0.08, complete: 0.05, concept: 0.2,
     };
-    return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
+    return (map[stage] ?? (stage === "unknown" ? 0.5 : 0.1)) * fresh;
   }
   // owner 2026-07-20 directive — earlier stage = more lead time to get in before
   // the GC locks its subs, so permit_applied is weighted ABOVE permit_issued on
   // the residential interior track. The per-track bid-window LINE (bid-window.ts)
   // is unchanged and still reflects the true clock.
   const map: Record<string, number> = {
-    permit_issued: 0.9, construction: 1, bidding_confirmed: 1, permit_applied: 1,
-    approved: 0.6, construction_documents: 0.6, near_final: 0.5, entitlement: 0.4,
+    permit_issued: 0.55, construction: 0.6, bidding_confirmed: 1, permit_applied: 1,
+    approved: 0.5, construction_documents: 0.5, near_final: 0.3, entitlement: 0.4,
     preapplication: 0.2, concept: 0.2,
   };
-  return map[stage] ?? (stage === "unknown" ? 0.5 : 0.1);
+  return (map[stage] ?? (stage === "unknown" ? 0.5 : 0.1)) * fresh;
 }
 
 /**
@@ -684,7 +755,7 @@ export function routeSolis(
           : f.maxValuation <= 2_000_000
             ? 1
             : 0.3,
-    timing: timingInterior(f.stage, track) * recencyFactor(f.lastMaterialChangeAt, now),
+    timing: timingInterior(f.stage, track, f.appliedAt, now) * recencyFactor(f.lastMaterialChangeAt, now),
     geography: solisGeography(f.county),
     // Registry-backed GC/owner identification (spec §12.3 — SIGNAL-ONLY while
     // Solis is provisional: present here for auditability/rationale but absent

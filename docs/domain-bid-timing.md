@@ -137,3 +137,74 @@ Remaining **candidates** (verify-first before any build, standard checklist):
 city-level pre-application meeting logs (Olympia, Lacey), King County unincorporated
 pre-application queue, design-review board agendas (Seattle DRB), hearing-examiner
 calendars. Each is incremental breadth, not a coverage hole.
+
+---
+
+## v1.12.0 — issued demoted, application stage graded (owner directive 2026-07-26)
+
+Two changes, both acting harder on the inversion this document already described.
+
+### 1. An issued permit is mostly history, not a lead
+
+> "issued vs applied should be treated very differently, all of our data supports
+> that issued is reducing job likelihood significantly. it should be shaved at
+> least 60% weight to start, we're primarily using it to build the relationship
+> graph and job history at this point." — owner, 2026-07-26
+
+| Track | `permit_issued` timing | Was | Now |
+|---|---|---:|---:|
+| Commercial | buyout provably done pre-permit | 0.5 | **0.20** |
+| Residential | walk-the-site window is real, but usually already spoken for | 0.9 | **0.55** |
+
+Residential is shaved *less* on purpose: the 2026-07-17 customer model — framed and
+dried-in at 4–8 weeks, sub walks the site to measure — is genuinely how a homebuilder
+buys drywall. It is demoted because the GC usually has a standing sub by then, not
+because the window is fictional. Residential `approved` / `construction_documents`
+drop 0.6 → 0.5 so those pre-permit stages stay *below* issued rather than leapfrogging
+it as a side effect.
+
+**This is a judgement, not a fitted result.** When it was set, `pursuits`,
+`opportunity_outcomes`, `decision_labels`, `feedback` and `pursuit_transitions` were
+all empty — there is no conversion evidence in the system behind any specific number.
+Revisit once outcomes accumulate.
+
+**Measured effect** on the frozen eval set: Solis priority-flagged 38 → 22, with
+priority precision holding at 1.0 and recall at 1.0. Sixteen labelled-good examples
+moved from priority down into the digest band; none were lost.
+
+### 2. The application stage is graded by freshness
+
+Until v1.12.0 every `permit_applied` record scored `timing = 1.0` regardless of age.
+On 2026-07-26 that meant 496 Solis opportunities scored identically — 147 filed within
+four weeks, 124 filed more than twelve weeks earlier — putting 46 fresh priority leads
+level with 44 cold ones. Filed-date coverage is 99.8%, so nothing new had to be sourced.
+
+| Weeks since filed | Factor | Reading |
+|---|---:|---|
+| ≤ 4 | 1.00 | ITBs typically going out — the strike zone |
+| 4–8 | 0.90 | bids being levelled; still on time |
+| 8–12 | 0.75 | closing; expect to be a backup number |
+| > 12 | 0.55 | cold — de-prioritised, **not** dead |
+
+The floor is 0.55 rather than something punitive because of the tension recorded
+earlier in this document: **WA commercial land-use routinely runs 4–12+ months**, so a
+long review can be a live extended bid window rather than a dead lead. A stale
+application therefore still outranks an issued permit on both tracks. Which reading is
+right for Solis is the open `review_depth` calibration question.
+
+An **absent** filing date scores as fresh (factor 1). Unknown is not evidence of
+staleness — the same discipline as `recencyFactor` — and it is also what keeps the
+frozen eval examples byte-identical, since none of them carries the field.
+
+### 3. Two consumers realigned
+
+- **`isEasyWin`** (packages/delivery) predated the bid-track model and contradicted it:
+  a commercial project at `permit_issued` could be flagged
+  `commercial_bid_window_likely_closed` by the scorer and presented as "winnable now"
+  in the same email. It now reads that signal instead of forming a second opinion from
+  the stage string.
+- **The commercial buyout note** now says how far into review the project is, and what
+  to do about it — "call the GC's estimating department for plan-room access" while
+  ITBs are going out, versus "expect to be a backup number" once bids are being
+  levelled. Absent a filing date it falls back to the original wording rather than
+  inventing an age.

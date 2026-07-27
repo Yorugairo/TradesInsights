@@ -258,3 +258,46 @@ describe("drywallBidWindow — invariants", () => {
     for (const w of samples) expect(w.note).toMatch(/typical/i);
   });
 });
+
+/**
+ * v1.12.0 — inside the commercial buyout window the note now says HOW FAR IN,
+ * because "biddable now" read identically for a filing from last week and one
+ * from last autumn. These are the three phases from the customer's own
+ * prospecting model: ITBs going out, bids being levelled, and the long-review
+ * case WA land-use actually produces.
+ */
+describe("commercial buyout note — phase by weeks since filing", () => {
+  const base = { trade: "drywall" as const, track: "commercial" as const, stage: "permit_applied", issuedAt: null, now: NOW };
+
+  it("a fresh filing names the action: call the estimating department", () => {
+    const w = tradeBidWindow({ ...base, appliedAt: weeksAgo(2) });
+    expect(w.status).toBe("open");
+    expect(w.note).toContain("Filed ~2 weeks ago");
+    expect(w.note).toContain("estimating department");
+  });
+
+  it("mid-review says you are likely a backup number", () => {
+    const w = tradeBidWindow({ ...base, appliedAt: weeksAgo(9) });
+    expect(w.status).toBe("open");
+    expect(w.note).toContain("levelled");
+    expect(w.note).toContain("backup number");
+  });
+
+  it("a long review stays OPEN — WA land-use runs 4-12+ months, so it is not a dead lead", () => {
+    const w = tradeBidWindow({ ...base, appliedAt: weeksAgo(30) });
+    expect(w.status).toBe("open");
+    expect(w.note).toContain("4–12+ months");
+    expect(w.note).not.toContain("estimating department");
+  });
+
+  it("no filing date falls back to the original wording, never a fabricated age", () => {
+    const w = tradeBidWindow({ ...base, appliedAt: null });
+    expect(w.status).toBe("open");
+    expect(w.note).toContain("2–6 months");
+    expect(w.note).not.toMatch(/~\d+ weeks?/);
+  });
+
+  it("singular week reads correctly", () => {
+    expect(tradeBidWindow({ ...base, appliedAt: weeksAgo(1) }).note).toContain("~1 week ago");
+  });
+});

@@ -591,13 +591,19 @@ describe("v1.9.0 — owner-directed provisional Solis tweaks (2026-07-20, §12.3
   const warmOrg = { name: "acme builders llc", role: "primary_contractor", registryRef: WARM };
 
   it("warm_gc_active adds exactly +3 when below the ceiling", () => {
-    const f = ti({ county: "Pierce", orgs: [warmOrg] }); // base 96.5 (Pierce geo 0.9)
+    // Base moved 96.5 → 89.5 at v1.12.0 and that is the POINT, not a fudge:
+    // `ti()` defaults to stage permit_issued on the residential track, whose
+    // timing was shaved 0.9 → 0.55 (owner 2026-07-26 — an issued permit is
+    // mostly relationship-graph material). 0.35 × weight 20 = exactly 7.0.
+    // The assertion that matters is unchanged: the nudge is still exactly +3.
+    const f = ti({ county: "Pierce", orgs: [warmOrg] }); // base 89.5 (Pierce geo 0.9)
     const withWarm = solisOf(f, solisWarm(new Set([WARM])));
     const without = solisOf(f, solisWarm());
     expect(without.signals).not.toContain("warm_gc_active");
     expect(withWarm.signals).toContain("warm_gc_active");
-    expect(without.score).toBe(96.5);
-    expect(withWarm.score).toBe(99.5); // exactly +3
+    expect(without.score).toBe(89.5);
+    expect(withWarm.score).toBe(92.5); // exactly +3
+    expect(withWarm.score - without.score).toBe(3);
   });
 
   it("the warm nudge is clamped at 100", () => {
@@ -871,5 +877,86 @@ describe("scope vocabulary — which BOOK of business a record belongs to (§12.
     expect(specialist.score).toBe(plain.score);
     expect(specialist.state).toBe(plain.state);
     expect(specialist.route).toBe(plain.route);
+  });
+});
+
+/**
+ * v1.12.0 — owner directive 2026-07-26: "issued vs applied should be treated
+ * very differently … shaved at least 60% to start, we're primarily using it to
+ * build the relationship graph and job history at this point", plus a gradient
+ * inside the application stage.
+ *
+ * The gradient closed a real distortion: on 2026-07-26 Solis held 496
+ * application-stage opportunities scoring timing 1.0 apiece — 147 filed inside
+ * four weeks, 124 filed more than twelve weeks earlier. At the priority band
+ * that put 46 fresh leads level with 44 cold ones.
+ */
+describe("v1.12.0 — issued demoted, application stage graded by freshness", () => {
+  const NOW = new Date("2026-07-26T00:00:00Z");
+  const weeksAgo = (w: number) => new Date(NOW.getTime() - w * 7 * 86_400_000);
+  const solisOf = (f: ProjectFeatures, acct: AccountScoringInput = ACCOUNTS[2]!) =>
+    routeProject(f, [acct], NOW).find((r) => r.accountKey === "solis_interiors")!;
+  // No commercial/SFR keywords → bidTrackFor defaults to the residential track.
+  const res = (over: Partial<ProjectFeatures>): ProjectFeatures =>
+    features({ text: "interior remodel drywall and paint", maxValuation: 250_000, ...over });
+  // "office" trips RE.commercial → the commercial buyout track.
+  const com = (over: Partial<ProjectFeatures>): ProjectFeatures =>
+    features({
+      text: "tenant improvement office suite interior remodel drywall and paint",
+      maxValuation: 250_000,
+      ...over,
+    });
+
+  it("commercial issued is shaved 60% (0.5 → 0.2)", () => {
+    expect(solisOf(com({ stage: "permit_issued" })).components["timing"]).toBeCloseTo(0.2, 5);
+  });
+
+  it("residential issued is shaved, but less (0.9 → 0.55) — the walk-the-site window is real", () => {
+    expect(solisOf(res({ stage: "permit_issued" })).components["timing"]).toBeCloseTo(0.55, 5);
+  });
+
+  it("pre-permit residential stages stay BELOW issued rather than leapfrogging it", () => {
+    const issued = solisOf(res({ stage: "permit_issued" })).components["timing"]!;
+    for (const stage of ["approved", "construction_documents", "entitlement", "preapplication"]) {
+      expect(solisOf(res({ stage })).components["timing"]!).toBeLessThan(issued);
+    }
+  });
+
+  it("a fresh application still beats an issued permit by a wide margin on both tracks", () => {
+    for (const make of [res, com]) {
+      const applied = solisOf(make({ stage: "permit_applied", appliedAt: weeksAgo(1) }));
+      const issued = solisOf(make({ stage: "permit_issued" }));
+      expect(applied.components["timing"]!).toBeGreaterThan(issued.components["timing"]! * 1.5);
+    }
+  });
+
+  it("the application stage is graded, not flat: fresh > mid > late > cold", () => {
+    const at = (w: number) =>
+      solisOf(com({ stage: "permit_applied", appliedAt: weeksAgo(w) })).components["timing"]!;
+    expect(at(1)).toBeGreaterThan(at(6));
+    expect(at(6)).toBeGreaterThan(at(10));
+    expect(at(10)).toBeGreaterThan(at(30));
+  });
+
+  it("a cold application is de-prioritised but still outranks an issued permit", () => {
+    // docs/domain-bid-timing.md: WA commercial land-use runs 4-12+ months, so a
+    // long review can be a LIVE extended window. Never bury it.
+    const cold = solisOf(com({ stage: "permit_applied", appliedAt: weeksAgo(40) }));
+    const issued = solisOf(com({ stage: "permit_issued" }));
+    expect(cold.components["timing"]!).toBeGreaterThan(issued.components["timing"]!);
+  });
+
+  it("an ABSENT filing date scores as fresh — unknown is not evidence of staleness", () => {
+    // This is also what holds the frozen eval gates byte-identical: no example
+    // carries appliedAt, so none of them may move.
+    const unknown = solisOf(com({ stage: "permit_applied" }));
+    const fresh = solisOf(com({ stage: "permit_applied", appliedAt: weeksAgo(1) }));
+    expect(unknown.components["timing"]).toBe(fresh.components["timing"]);
+  });
+
+  it("freshness applies to the application stage ONLY — no other stage has that clock", () => {
+    const withDate = solisOf(com({ stage: "permit_issued", appliedAt: weeksAgo(40) }));
+    const without = solisOf(com({ stage: "permit_issued" }));
+    expect(withDate.components["timing"]).toBe(without.components["timing"]);
   });
 });

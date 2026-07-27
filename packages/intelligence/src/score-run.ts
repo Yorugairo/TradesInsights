@@ -71,7 +71,8 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       rec.max_valuation,
       COALESCE(ev.a_grade, 0) AS a_grade,
       orgs.orgs AS orgs,
-      evt.last_material_at
+      evt.last_material_at,
+      app.applied_at
     FROM projects p
     LEFT JOIN LATERAL (
       SELECT count(*) AS member_count FROM projects p2 WHERE p2.development_id = p.development_id AND p.development_id IS NOT NULL
@@ -122,6 +123,16 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
       SELECT max(COALESCE(pe.event_date, pe.observed_at)) AS last_material_at
       FROM project_events pe WHERE pe.project_id = p.id
     ) evt ON true
+    -- v1.12.0 — when the application was FILED, for the application-stage
+    -- freshness gradient (scoring.ts appliedFreshness). Same derivation as
+    -- migrations/0029_market_aggregates.sql: earliest CONFIRMED permit_applied
+    -- event. Unconfirmed events are excluded on purpose — an unverified filing
+    -- date would silently age a live opportunity out of the priority band.
+    LEFT JOIN LATERAL (
+      SELECT min(pe.event_date) AS applied_at
+      FROM project_events pe
+      WHERE pe.project_id = p.id AND pe.confirmed AND pe.resulting_stage = 'permit_applied'
+    ) app ON true
     WHERE p.permitting_jurisdiction != 'Test Jurisdiction' ${filter}`);
 
   return (res.rows as Record<string, unknown>[]).map((r) => {
@@ -171,6 +182,10 @@ export async function loadFeatures(db: Db, projectIds?: string[]): Promise<Proje
         }[]) ?? [],
       aGradeEvidence: Number(r["a_grade"] ?? 0),
       lastMaterialChangeAt: r["last_material_at"] ? new Date(r["last_material_at"] as string) : null,
+      // Conditional spread, like campusBlock above: the field stays ABSENT rather
+      // than undefined under exactOptionalPropertyTypes, which is also what keeps
+      // frozen eval examples byte-identical (appliedFreshness treats absent as 1).
+      ...(r["applied_at"] ? { appliedAt: new Date(r["applied_at"] as string) } : {}),
     };
   });
 }

@@ -101,10 +101,17 @@ export function tradeBidWindow(input: {
   track: BidTrack;
   /** Latest permit issue date on record, when stated (null otherwise). */
   issuedAt: Date | null;
+  /**
+   * When the permit APPLICATION was filed, when stated. Optional so every
+   * existing call site compiles unchanged and keeps its current wording; the
+   * commercial buyout note only sharpens when it is supplied.
+   */
+  appliedAt?: Date | null;
   now?: Date;
 }): BidWindow {
   const now = input.now ?? new Date();
   const { trade, stage, track, issuedAt } = input;
+  const appliedAt = input.appliedAt ?? null;
   const win = RES_WINDOWS[trade];
   const range = `${win.open}–${win.close}`;
 
@@ -129,14 +136,28 @@ export function tradeBidWindow(input: {
   if (track === "commercial") {
     // Both trades ride the same GMP buyout: bid off the CDs, pre-permit.
     if (COMMERCIAL_BUYOUT_STAGES.has(stage)) {
-      return {
-        status: "open",
-        note:
-          `Commercial ${trade} is typically bought out during plan review, 2–6 months ` +
-          "before the permit issues — biddable now while this sits in review.",
-        opensAt: null,
-        closesAt: null,
-      };
+      // Inside the buyout window the useful distinction is no longer "open vs
+      // closed" but HOW FAR IN — a filing from last week and one from last
+      // autumn are different calls, and this note used to read identically for
+      // both. Phrased as what to DO: "biddable now" left the owner to work out
+      // the next action himself.
+      const weeksFiled =
+        appliedAt === null ? null : Math.floor((now.getTime() - appliedAt.getTime()) / WEEK_MS);
+      let note =
+        `Commercial ${trade} is typically bought out during plan review, 2–6 months ` +
+        "before the permit issues — biddable now while this sits in review.";
+      if (weeksFiled !== null) {
+        note =
+          weeksFiled <= 4
+            ? `Filed ~${weeksFiled} week${weeksFiled === 1 ? "" : "s"} ago — invitations to bid typically go out ` +
+              "around now. Ask the GC's estimating department for plan-room access before the list closes."
+            : weeksFiled <= 12
+              ? `In review ~${weeksFiled} weeks — bids are typically being levelled by now. Still worth the ` +
+                "call, but expect to be a backup number unless someone dropped out."
+              : `In review ~${weeksFiled} weeks. WA commercial land-use routinely runs 4–12+ months, so this can ` +
+                "still be a live window — but the buyout may already be done. Confirm before you spend time pricing.";
+      }
+      return { status: "open", note, opensAt: null, closesAt: null };
     }
     if (stage === "concept" || stage === "unknown") {
       return {
@@ -228,6 +249,7 @@ export function tradeBidWindows(input: {
   stage: string;
   track: BidTrack;
   issuedAt: Date | null;
+  appliedAt?: Date | null;
   now?: Date;
 }): ({ trade: InteriorTrade } & BidWindow)[] {
   return (["drywall", "paint"] as const).map((trade) => ({

@@ -180,6 +180,10 @@ export interface CandidateRow {
   max_valuation: number | null;
   /** Latest stated permit issue date among active records (null when unstated). */
   latest_issue_date: string | null;
+  /** Earliest CONFIRMED permit-application event date (null when unstated).
+   * Optional: the query always selects it, but absent must mean "unknown filing
+   * date", never "stale" — same discipline as ProjectFeatures.appliedAt. */
+  applied_at?: string | null;
   campus_block: string | null;
   last_material_change_at: string | null;
   has_org: boolean;
@@ -238,6 +242,12 @@ async function loadCandidates(
       p.corroboration, o.last_material_change_at,
       COALESCE(rec.text, lower(p.canonical_name)) AS text, rec.max_valuation,
       rec.latest_issue_date,
+      -- v1.12.0 — filing date for the commercial buyout note ("filed ~2 weeks
+      -- ago, call the estimator" vs "in review ~30 weeks, confirm first").
+      -- Confirmed events only, matching score-run.ts and 0029_market_aggregates.
+      (SELECT min(pe.event_date) FROM project_events pe
+        WHERE pe.project_id = p.id AND pe.confirmed
+          AND pe.resulting_stage = 'permit_applied') AS applied_at,
       EXISTS (SELECT 1 FROM project_roles pr WHERE pr.project_id = p.id
         AND pr.role IN ('applicant', 'owner', 'primary_contractor', 'contractor')) AS has_org,
       ${home} AS dist_m
@@ -265,6 +275,16 @@ async function loadCandidates(
  */
 export function isEasyWin(c: CandidateRow, cfg: EasyWinConfig | null): boolean {
   if (!cfg) return false;
+  // This predicate predates the bid-track model (bid-window.ts) and used to
+  // contradict it: a COMMERCIAL project at permit_issued is past its buyout —
+  // the scorer flags it `commercial_bid_window_likely_closed` and times it at
+  // 0.2 — yet the same record could be presented as an easy win, "winnable
+  // now", in the same email. Read the scorer's own verdict rather than forming
+  // a second opinion from the stage string; bid-window.ts is the one source of
+  // truth for whether a window is open, and this makes the digest a reader of
+  // it rather than a rival to it.
+  const signals = Array.isArray(c.rationale_json?.signals) ? c.rationale_json.signals : [];
+  if (signals.includes("commercial_bid_window_likely_closed")) return false;
   if (!["permit_issued", "approved"].includes(c.current_stage)) return false;
   const lastAt = c.last_material_change_at ? new Date(c.last_material_change_at).getTime() : null;
   if (lastAt === null || Date.now() - lastAt > cfg.max_age_days * 86_400_000) return false;
@@ -660,6 +680,7 @@ async function buildItem(
       stage: c.current_stage,
       track: bidTrackFor(cls),
       issuedAt: c.latest_issue_date ? new Date(c.latest_issue_date) : null,
+      appliedAt: c.applied_at ? new Date(c.applied_at) : null,
     }).map((w) => ({ trade: w.trade, status: w.status, note: w.note }));
   }
 

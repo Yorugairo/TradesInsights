@@ -146,6 +146,16 @@
         ['hide', 'Hide them'], ['demote', 'Show, but lower'],
         ['keep', 'Keep — late calls land'] ] }],
     },
+    {
+      id: 'review_depth', slide: 's4', new: true,
+      ask: 'A permit has been sitting in plan review for three months. Still worth a call?',
+      why: 'We now rank a fresh filing above a stale one — but we had to pick the curve ourselves. Of your 496 application-stage jobs, <b>147</b> were filed in the last month and <b>124</b> have been in review over three months. WA commercial land-use routinely runs 4&ndash;12+ months, so a long review can still be a live window rather than a dead lead — you are the one who knows which.',
+      yamlPath: 'score_components -> timing (application-stage freshness)',
+      controls: [{ type: 'pills', group: 'review_depth', options: [
+        ['live', 'Still live — WA reviews run long'],
+        ['lower', 'Worth less than a fresh filing'],
+        ['dead', 'Dead — stop showing me those'] ] }],
+    },
 
     // ── The books of business ────────────────────────────────────────────────
     {

@@ -162,3 +162,33 @@ describe("WS-G Decisions section (pre-permit)", () => {
     expect(decisionForCandidate(candidate({ current_stage: "construction" }))).toBeNull();
   });
 });
+
+/**
+ * v1.12.0 — `isEasyWin` predates the bid-track model and contradicted it: a
+ * COMMERCIAL project at permit_issued is past its buyout (the scorer flags it
+ * `commercial_bid_window_likely_closed` and times it at 0.2), yet the same
+ * record could still be presented as "winnable now" in the same email.
+ */
+describe("isEasyWin respects the bid track", () => {
+  it("a record the scorer flagged past its commercial buyout is never an easy win", () => {
+    const open = candidate({
+      dist_m: 45 * MILE_M,
+      rationale_json: { signals: ["tenant_improvement"] },
+    });
+    const closed = candidate({
+      dist_m: 45 * MILE_M,
+      rationale_json: { signals: ["tenant_improvement", "commercial_bid_window_likely_closed"] },
+    });
+    // Same stage, same distance, same valuation — the ONLY difference is the
+    // scorer's own verdict on the bid window.
+    expect(isEasyWin(open, easyWinCfg())).toBe(true);
+    expect(isEasyWin(closed, easyWinCfg())).toBe(false);
+  });
+
+  it("a null rationale is treated as unflagged, not as a crash", () => {
+    // Rows scored before the signal existed carry rationale_json = null.
+    expect(
+      isEasyWin(candidate({ dist_m: 45 * MILE_M, rationale_json: null }), easyWinCfg()),
+    ).toBe(true);
+  });
+});
