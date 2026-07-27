@@ -137,7 +137,13 @@ export async function decideReview(
         decisionNote: opts.note ?? null,
       })
       .where(eq(resolutionReviews.id, reviewId));
-    outcome = await resolveRecord(db, row, { excludeProjectIds: review.candidateProjectId ? [review.candidateProjectId] : [] });
+    // `adjudicating` — this record is the one being decided, so it must not be
+    // parked behind a sibling whose review is only waiting on this decision.
+    // See ResolveOptions.adjudicating for the deadlock it prevents.
+    outcome = await resolveRecord(db, row, {
+      excludeProjectIds: review.candidateProjectId ? [review.candidateProjectId] : [],
+      adjudicating: true,
+    });
   }
 
   if (decision === "merge") {

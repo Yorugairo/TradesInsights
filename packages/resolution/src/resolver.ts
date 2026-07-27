@@ -421,6 +421,61 @@ async function matchByIds(
   return null;
 }
 
+/**
+ * Pass 1b: the same authoritative permit number is already sitting in the
+ * review queue on ANOTHER source record.
+ *
+ * `matchByIds` can only see ids that reached `project_external_ids`, and that
+ * table is written exclusively by `registerExternalIds` from `mergeIntoProject`
+ * and `createProject` — both of which need a project. A record parked in
+ * `resolution_reviews` has no project, so its permit number is registered
+ * nowhere queryable. The strongest key this system has is therefore INVISIBLE
+ * to the resolver for exactly as long as a human has not answered an unrelated
+ * question ("which project is this?").
+ *
+ * A second record carrying that same permit number then matches nothing, and
+ * falls through to parcel matching, fuzzy matching, or `createProject` — every
+ * one of which is a guess made against a key we already know is authoritative
+ * and already know is undecided. Measured live 2026-07-27 on the Pierce PALS
+ * hydration lane: 46 records did this. 31 created a SECOND project for a permit
+ * we already held, and 15 merged on `parcel_overlap` into a project that
+ * diverges from their twin's review candidate. In all 46 the twin's review
+ * points somewhere else, so deciding those reviews splits one permit across two
+ * projects permanently.
+ *
+ * So: an authoritative id whose twin is awaiting review means "we do not know
+ * yet", and that must outrank every weaker pass rather than fall through them.
+ * The record is parked next to its twin instead. This SELF-HEALS in both
+ * directions — whichever way the reviewer decides, the twin ends up on a
+ * project, that project registers the permit number, and this record's next
+ * resolve pass hits `official_id` and merges. Nothing is stranded, and no
+ * enrichment is lost: the record and its evidence are already stored, and the
+ * review row carries its features, so a licence captured for a parked permit
+ * shows up in the queue as the org support the twin was blocked for lacking.
+ *
+ * Same authority as pass 1 — a bare number is only unique within its
+ * jurisdiction, and matching "1073191" across counties would invent twins.
+ */
+async function pendingReviewForSamePermit(
+  db: Db,
+  record: NormalizedSourceRecord,
+  selfRecordId: string,
+): Promise<{ candidateProjectId: string | null } | null> {
+  const res = await db.execute(sql`
+    SELECT rv.candidate_project_id
+    FROM resolution_reviews rv
+    JOIN source_records sr ON sr.id = rv.source_record_id
+    WHERE rv.status = 'pending'
+      AND sr.id <> ${selfRecordId}
+      AND sr.external_id = ${record.externalId}
+      AND sr.normalized_json->>'permittingJurisdiction' = ${record.permittingJurisdiction}
+    ORDER BY rv.created_at
+    LIMIT 1`);
+  const row = res.rows[0] as { candidate_project_id: string | null } | undefined;
+  if (!row) return null;
+  return { candidateProjectId: row.candidate_project_id ?? null };
+}
+
 /** Pass 3: parcel overlap within the same county. */
 async function matchByParcels(
   db: Db,
@@ -479,6 +534,18 @@ export async function mergeIntoProjectForReview(
 export interface ResolveOptions {
   /** Projects a reviewer has rejected for this record — never re-matched. */
   excludeProjectIds?: string[];
+  /**
+   * A human is deciding THIS record right now, so pass 1b must not park it
+   * behind a sibling that is only waiting on this very decision.
+   *
+   * Without this the two records hold each other and neither can ever produce a
+   * project: A is parked, B arrives and is held pointing at A, and the reject
+   * path then re-resolves A — which now sees B's pending review for the same
+   * permit and parks A too. `decideReview` marks the row `rejected` BEFORE
+   * re-resolving, so "does this record have a pending review" cannot
+   * distinguish the two cases; the caller has to say so.
+   */
+  adjudicating?: boolean;
 }
 
 export async function resolveRecord(
@@ -499,6 +566,35 @@ export async function resolveRecord(
     await mergeIntoProject(db, idMatch.projectId, row, features);
     await persistResolution(db, row, idMatch.projectId, idMatch.rule, features, 1);
     return { sourceRecordId: row.id, outcome: "merged", rule: idMatch.rule, projectId: idMatch.projectId };
+  }
+
+  // Pass 1b — BEFORE parcel and fuzzy, deliberately. If the authoritative
+  // permit number is already in the queue on another record, every weaker pass
+  // below is a guess against a key we know is authoritative and know is
+  // undecided. Hold this record next to its twin instead; it re-resolves on
+  // `official_id` the moment the twin gets a project.
+  const heldByTwin = opts.adjudicating
+    ? null
+    : await pendingReviewForSamePermit(db, record, row.id);
+  if (heldByTwin) {
+    await db.insert(resolutionReviews).values({
+      sourceRecordId: row.id,
+      candidateProjectId: heldByTwin.candidateProjectId,
+      matchedRule: "official_id",
+      featuresJson: features,
+      // Not a confidence in a PROJECT — the permit number is certain, the
+      // project is exactly what is undecided. The candidate is carried through
+      // so this row clusters with its twin in the review cockpit.
+      score: 1,
+      reasonsJson: ["same_permit_pending_review"],
+      resolverVersion: RESOLVER_VERSION,
+    });
+    return {
+      sourceRecordId: row.id,
+      outcome: "review",
+      rule: "official_id",
+      projectId: heldByTwin.candidateProjectId,
+    };
   }
 
   const parcelMatchRaw = await matchByParcels(db, record, features);

@@ -16,6 +16,7 @@ import {
   resolutionReviews,
   sourceRecords,
   sourceRuns,
+  sources,
   type Db,
 } from "@otn/db";
 import type { NormalizedSourceRecord } from "@otn/domain";
@@ -472,5 +473,240 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
         ),
       );
     expect(recs.length).toBe(5);
+  });
+});
+
+
+/**
+ * Pass 1b — an authoritative permit number sitting in the review queue means
+ * "we do not know yet", and that has to outrank every weaker pass.
+ *
+ * Live failure this pins (2026-07-27, Pierce PALS hydration): 46 records whose
+ * twin was parked in review fell through to weaker passes — 31 created a SECOND
+ * project for a permit we already held, and 15 merged on parcel overlap into a
+ * project that diverges from the twin's review candidate. In all 46 the twin's
+ * review points elsewhere, so deciding those reviews splits one permit across
+ * two projects permanently.
+ *
+ * The twin is inserted under a SECOND source on purpose: source_records is
+ * unique on (source_id, external_id), so one source physically cannot hold the
+ * same permit twice — which is precisely why this only ever bites across
+ * sources, where an enrichment lane meets the open-data lane.
+ */
+describe("pass 1b — a permit number awaiting review holds its twin", () => {
+  let twinSourceId: string;
+  let twinArtifactId: string;
+  const twinRecordIds: string[] = [];
+
+  beforeAll(async () => {
+    const [row] = await db
+      .insert(sources)
+      .values({
+        key: `fake_twin_source_${RUN.toLowerCase()}`,
+        name: "Twin source (test)",
+        authority: "Test Jurisdiction",
+        priority: "test",
+        landingUrl: "https://example.invalid/twin",
+        accessUrl: "https://example.invalid/twin.json",
+        format: "json",
+        accessClass: "open_data",
+        cadence: "daily",
+        county: "Thurston",
+        permittingJurisdiction: "Test Jurisdiction",
+        enabled: false,
+      })
+      .returning({ id: sources.id });
+    twinSourceId = row!.id;
+
+    // Its OWN artifact. Pointing twin records at fake_source's artifact makes
+    // resetSource("fake_source") in a concurrently-running test file fail on
+    // the raw_artifacts FK, because these records still reference it.
+    const [twinRun] = await db
+      .insert(sourceRuns)
+      .values({ sourceId: twinSourceId, status: "succeeded" })
+      .returning({ id: sourceRuns.id });
+    const [twinArtifact] = await db
+      .insert(rawArtifacts)
+      .values({
+        sourceId: twinSourceId,
+        sourceRunId: twinRun!.id,
+        canonicalUrl: `https://example.invalid/twin-test/${RUN}`,
+        retrievedAt: new Date(),
+        contentType: "application/json",
+        httpStatus: 200,
+        storageKey: `raw/twin/${RUN}`,
+        sha256: `1${RUN.padEnd(63, "0")}`.toLowerCase().slice(0, 64),
+        byteSize: 2,
+        headersJson: {},
+        parserVersion: "test",
+      })
+      .returning({ id: rawArtifacts.id });
+    twinArtifactId = twinArtifact!.id;
+  });
+
+  afterAll(async () => {
+    // Leave nothing behind: the source key is RUN-unique, so without this every
+    // run accumulates a source plus its records.
+    if (twinRecordIds.length > 0) {
+      await db
+        .delete(resolutionReviews)
+        .where(inArray(resolutionReviews.sourceRecordId, twinRecordIds));
+      await db.delete(recordResolutions).where(inArray(recordResolutions.sourceRecordId, twinRecordIds));
+      await db.delete(projectEvents).where(inArray(projectEvents.sourceRecordId, twinRecordIds));
+      await db.delete(sourceRecords).where(inArray(sourceRecords.id, twinRecordIds));
+    }
+    await db.delete(rawArtifacts).where(eq(rawArtifacts.id, twinArtifactId));
+    await db.delete(sourceRuns).where(eq(sourceRuns.sourceId, twinSourceId));
+    await db.delete(sources).where(eq(sources.id, twinSourceId));
+  });
+
+  /** Insert the twin under the other source, then park it in review. */
+  async function parkedTwin(
+    normalized: NormalizedSourceRecord,
+    candidateProjectId: string | null,
+  ): Promise<{ id: string; normalized: NormalizedSourceRecord; rawFields: Record<string, unknown>; firstSeenAt: Date }> {
+    const firstSeenAt = new Date("2026-07-01T00:00:00Z");
+    const [row] = await db
+      .insert(sourceRecords)
+      .values({
+        sourceId: twinSourceId,
+        rawArtifactId: twinArtifactId,
+        externalId: normalized.externalId,
+        recordType: normalized.recordType,
+        firstSeenAt,
+        lastSeenAt: firstSeenAt,
+        rawFieldsJson: {},
+        normalizedJson: normalized,
+        normalizedFingerprint: `twin-${normalized.externalId}-${RUN}`,
+      })
+      .returning({ id: sourceRecords.id });
+    twinRecordIds.push(row!.id);
+    await db.insert(resolutionReviews).values({
+      sourceRecordId: row!.id,
+      candidateProjectId,
+      matchedRule: "proximity_org",
+      featuresJson: {},
+      score: 0.6,
+      reasonsJson: ["fuzzy_without_parcel_or_org_support"],
+      resolverVersion: RESOLVER_VERSION,
+    });
+    return { id: row!.id, normalized, rawFields: {}, firstSeenAt };
+  }
+
+  it("parks the second record instead of creating a second project for the same permit", async () => {
+    const permit = `TWIN-A-${RUN}`;
+    await parkedTwin(record({ externalId: permit, title: "open-data record, parked" }), null);
+
+    const enrichment = await insertRecord(
+      record({ externalId: permit, title: "lookup-class enrichment" }),
+      {},
+      new Date("2026-07-02T00:00:00Z"),
+    );
+    const outcome = await resolveTracked(enrichment);
+
+    expect(outcome.outcome).toBe("review");
+    expect(outcome.rule).toBe("official_id");
+    const [rv] = await db
+      .select()
+      .from(resolutionReviews)
+      .where(eq(resolutionReviews.sourceRecordId, enrichment.id));
+    expect(rv?.reasonsJson).toEqual(["same_permit_pending_review"]);
+  });
+
+  it("outranks a parcel match — the strong key wins over the weaker guess", async () => {
+    // The 15-record half of the live failure: a parcel overlap is a guess made
+    // against a key we already know is authoritative and already know is
+    // undecided, so it must not be allowed to decide.
+    const parcel = `8${RUN.replace(/\D/g, "0").padEnd(10, "3")}`.slice(0, 11);
+    const seed = await insertRecord(
+      record({ externalId: `TWIN-SEED-${RUN}`, parcelIds: [parcel], title: "existing project" }),
+      {},
+      new Date("2026-07-01T00:00:00Z"),
+    );
+    expect((await resolveTracked(seed)).outcome).toBe("created");
+
+    const permit = `TWIN-B-${RUN}`;
+    await parkedTwin(record({ externalId: permit, title: "parked twin" }), null);
+
+    // Same parcel as the seeded project — pass 3 would merge it there.
+    const enrichment = await insertRecord(
+      record({ externalId: permit, parcelIds: [parcel], title: "would have merged on parcel" }),
+      {},
+      new Date("2026-07-03T00:00:00Z"),
+    );
+    const outcome = await resolveTracked(enrichment);
+
+    expect(outcome.outcome).toBe("review");
+    expect(outcome.rule).toBe("official_id");
+  });
+
+  it("self-heals: once the twin has a project, the held record merges on official_id", async () => {
+    const permit = `TWIN-C-${RUN}`;
+    const twin = await parkedTwin(record({ externalId: permit, title: "twin awaiting a human" }), null);
+
+    const enrichment = await insertRecord(
+      record({ externalId: permit, title: "held alongside" }),
+      {},
+      new Date("2026-07-02T00:00:00Z"),
+    );
+    expect((await resolveTracked(enrichment)).outcome).toBe("review");
+
+    // The reviewer decides; the twin lands on a project, which registers the
+    // permit number. Nothing about the held record has to be repaired by hand.
+    await db
+      .update(resolutionReviews)
+      .set({ status: "rejected" })
+      .where(eq(resolutionReviews.sourceRecordId, twin.id));
+    // `adjudicating` is what decideReview's reject branch passes. WITHOUT it the
+    // two records hold each other forever: the twin would now see the held
+    // record's pending review for the same permit and park itself too.
+    const twinOutcome = await resolveRecord(db, twin, { adjudicating: true });
+    if (twinOutcome.projectId) createdProjects.add(twinOutcome.projectId);
+    expect(twinOutcome.outcome).toBe("created");
+
+    const healed = await resolveTracked(enrichment);
+    expect(healed.outcome).toBe("merged");
+    expect(healed.rule).toBe("official_id");
+    expect(healed.projectId).toBe(twinOutcome.projectId);
+  });
+
+  it("without `adjudicating` the two records would hold each other forever", async () => {
+    // Pins the deadlock directly, so nobody removes the flag thinking it is
+    // redundant. This is the state decideReview's reject branch is in: the row
+    // is already 'rejected', so "has a pending review" cannot tell the record
+    // being decided apart from one merely waiting.
+    const permit = `TWIN-E-${RUN}`;
+    const twin = await parkedTwin(record({ externalId: permit, title: "twin" }), null);
+    const enrichment = await insertRecord(
+      record({ externalId: permit, title: "held alongside" }),
+      {},
+      new Date("2026-07-02T00:00:00Z"),
+    );
+    expect((await resolveTracked(enrichment)).outcome).toBe("review");
+    await db
+      .update(resolutionReviews)
+      .set({ status: "rejected" })
+      .where(eq(resolutionReviews.sourceRecordId, twin.id));
+
+    const deadlocked = await resolveRecord(db, twin);
+    if (deadlocked.projectId) createdProjects.add(deadlocked.projectId);
+    expect(deadlocked.outcome).toBe("review");
+  });
+
+  it("does not treat the same bare number in another jurisdiction as a twin", async () => {
+    // Permit numbers are only unique within their authority; matching across
+    // jurisdictions would invent twins out of coincidence.
+    const permit = `TWIN-D-${RUN}`;
+    await parkedTwin(
+      record({ externalId: permit, permittingJurisdiction: "Other Jurisdiction" }),
+      null,
+    );
+
+    const other = await insertRecord(
+      record({ externalId: permit, title: "same number, different authority" }),
+      {},
+      new Date("2026-07-02T00:00:00Z"),
+    );
+    expect((await resolveTracked(other)).outcome).toBe("created");
   });
 });
