@@ -29,3 +29,8 @@ captures/
 
 # pals-hydrate-export CLI output — regenerated every batch, not source
 apps/worker/pals-hydrate-seed.json
+
+# Checked-out worktrees are copies of this repo, not content to track.
+# Also ignored by eslint (see eslint.config.mjs) for the same reason:
+# linting them reports every finding a second time against identical source.
+.worktrees/

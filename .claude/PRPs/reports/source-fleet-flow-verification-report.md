@@ -212,6 +212,32 @@ being deduped against yesterday's different problem.
 | Affected tests | 31 passed (flow 10, solicitations 5, alerts 6, domain 10) |
 | `pnpm flow:check --all` vs production | 23 checked, 2 flagged, exit 1 |
 
+---
+
+## Deployed 2026-07-27 (owner-approved)
+
+`packages/db/src/seed.ts` run against production, reconciling the `sources`
+table with config: `spokane_permits_arcgis` `enabled` true → **false**, and the
+two bid sources seeded disabled. 36 → 38 sources.
+
+**This closed a drift worth naming.** Between the commit and the seed, config
+said Spokane was disabled while the production row still said enabled. Nothing
+would have *run* it — `schedulableSources` and `assertSourceFlow` both read
+config — but `evaluateAlertConditions` reads `sources WHERE enabled = true` from
+the **database**, so it would have kept raising `source_red` / `source_stale`
+for a source deliberately switched off. Editing `config/sources.yaml` is not the
+whole act; the seed is.
+
+**`pnpm flow:check` against production: 22 checked, 0 flagged** — the fleet reads
+fully green for the first time. Neither change was a code fix:
+`bellevue_permits_arcgis` now has a genuine successful run inside its window
+(the "broken" verdict was orphaned bookkeeping), and Spokane is correctly out of
+scope.
+
+That green is *not yet* evidence the scheduler works — every run behind it was
+still invoked by hand. The acceptance criterion below is what tests that, and it
+needs the secrets first.
+
 ## Remaining human blocker
 
 **GitHub Actions secrets.** The workflow fails fast with an explicit message

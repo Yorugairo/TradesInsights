@@ -302,18 +302,49 @@ reach them.
 | A published solicitation still sets `bidding_confirmed` | Yes — unchanged, which is why the port waits |
 | v1.12.0 timing model untouched | Yes |
 
+---
+
+## Deployed to production 2026-07-27 (owner-approved)
+
+Migration `0036` applied via `packages/db/src/migrate.ts`, then
+`packages/db/src/seed.ts` (pure upsert — `onConflictDoUpdate`, no deletes).
+
+| Check | Result |
+|---|---|
+| `insights.solicitations` exists | yes, 28 columns, 6 indexes |
+| Migrations applied | 36 → **37** |
+| `procuring_agency` nullable | **YES** — the corrected version landed, not the `NOT NULL` one |
+| `county` nullable | YES |
+| Rows | 0 (both sources still disabled) |
+| `spokane_permits_arcgis` | `enabled` true → **false** — config/DB drift resolved |
+| `omwbe_bid_opportunities` | seeded, `enabled: false`, reviews 2026-07-27 |
+| `webs_bid_calendar` | seeded, `enabled: false`, reviews 2026-07-27 |
+| Sources in DB | 36 → **38** |
+
+**`pnpm flow:check` against production: 22 checked, 0 flagged.** The fleet reads
+fully green for the first time. Two things changed to get there and neither was
+a code fix: `bellevue_permits_arcgis` now has a real successful run inside its
+window (the audit's "broken" verdict was orphaned bookkeeping), and
+`spokane_permits_arcgis` is correctly out of scope now that config and the
+database agree it is disabled.
+
+Note the drift that existed between the commit and the seed: config said Spokane
+was disabled while the production `sources` row still said enabled. Nothing
+would have *run* it — the scheduler and the flow check both read config — but
+`evaluateAlertConditions` reads `sources WHERE enabled = true` from the
+**database**, so it would have kept raising `source_red`/`source_stale` for a
+source deliberately switched off. Disabling a source in config is not finished
+until the seed runs.
+
 ## Follow-ups
 
 1. **Solicitation → project resolver** (blocks Phase 3). Link a solicitation to a
    known project on real evidence, emit `solicitation_published`, set
    `bidding_confirmed` from the new table. Then port Tacoma.
-2. **Activation** — the shadow runs above are the inspect step and both are
-   green, so what remains is owner-gated: apply migration 0036 to production
-   (prod is at 35, so 0036 is the only pending one), then flip `enabled: true`
-   with a ledger entry, the path `tacoma_solicitations` took on 2026-07-17.
-   Neither was done unilaterally: a production schema change and a source
-   activation are both checklist rituals in this repo, not side effects of an
-   implementation pass.
+2. **Activation** — the remaining step is flipping `enabled: true` with a ledger
+   entry, the path `tacoma_solicitations` took on 2026-07-17. The schema and the
+   source rows are already in place (see the deployment record below); the
+   sources are seeded `enabled: false` by design.
 3. **`bid_deadline_changed` / `award_published`** are now implementable and still
    unimplemented. WEBS exposes an amendment date (already mapped to
    `status: "amended"`); neither source publishes awards.
