@@ -251,11 +251,20 @@ export function classifyNameAgreement(
   return "none";
 }
 
-const phoneDigits = (raw: string | null | undefined): string | null => {
+/**
+ * The 10-digit NANP form of a phone, or null when there is nothing comparable.
+ *
+ * Exported because "the phones disagree" and "there is no phone to compare" are
+ * different facts and callers must be able to tell them apart — folding both
+ * into a single false makes an absent number look like a contradiction.
+ */
+export const comparablePhone = (raw: string | null | undefined): string | null => {
   const d = String(raw ?? "").replace(/\D/g, "");
   const t = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
   return t.length === 10 ? t : null;
 };
+
+const phoneDigits = comparablePhone;
 
 export function classifyGoogleConfirmation(input: {
   lniPhone: string | null | undefined;

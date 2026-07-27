@@ -27,6 +27,7 @@ const summary = (over: Partial<GooglePlaceScoreSummary>): GooglePlaceScoreSummar
   byConfirmation: { phone_and_name: 0, phone_only: 0, name_only: 0, none: 0 },
   confirmed: [],
   contestedPlaceIds: [],
+  nameOnly: { divergentPhone: 0, noLniPhone: 0, noGooglePhone: 0, neitherPhone: 0 },
   ...over,
 });
 

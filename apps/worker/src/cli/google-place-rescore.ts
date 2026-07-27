@@ -1,5 +1,5 @@
 import "../load-env.js";
-import { createRegistryPool } from "@otn/db";
+import { createRegistryPool, withConnectionRetry } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
 import {
   buildGooglePlaceExports,
@@ -59,14 +59,30 @@ async function main() {
       return;
     }
 
-    const observations = await loadGooglePlaceScrapeRows(registryPool);
+    // Both loads are single full-table reads across the Supavisor pooler, and
+    // this lane had NO retry: on 2026-07-26 a DNS blip (ENOTFOUND on
+    // aws-1-us-west-2.pooler.supabase.com) killed an entire preview outright,
+    // and the same drop during --apply would abandon a part-staged batch. The
+    // reads are idempotent so retrying is free; anything that is NOT a
+    // connection fault still surfaces immediately and unchanged.
+    const onRetry = (attempt: number, err: unknown) =>
+      logger.info(
+        { attempt, err: String(err) },
+        "transient connection fault reading the registry contract — retrying",
+      );
+
+    const observations = await withConnectionRetry(() => loadGooglePlaceScrapeRows(registryPool), {
+      onRetry,
+    });
     if (observations.length === 0) {
       // Either the contract view has not been deployed yet (skip-safe read) or
       // nothing has been scraped. Both are honest zeros, not failures.
       logger.info({ observations: 0 }, "no google place observations visible on the contract");
       return;
     }
-    const identityRows = await fetchRegistryIdentityRows(registryPool);
+    const identityRows = await withConnectionRetry(() => fetchRegistryIdentityRows(registryPool), {
+      onRetry,
+    });
     const scored = scoreGooglePlaceObservations(observations, identityRows);
     const allRows = buildGooglePlaceExports(scored);
     const rows = limit ? allRows.slice(0, limit) : allRows;
@@ -80,6 +96,11 @@ async function main() {
         skippedUnusableStatus: scored.skippedUnusableStatus,
         skippedUnknownEntity: scored.skippedUnknownEntity,
         byConfirmation: scored.byConfirmation,
+        // name_only split by WHY the phone did not confirm. `divergentPhone` is
+        // the only sub-class that is evidence AGAINST the match — the rest are
+        // simply missing a number, and reading them as disagreement would
+        // manufacture conflicts out of gaps.
+        nameOnly: scored.nameOnly,
         // Only phone_and_name is real confirmation; phone_only is circular
         // because most existing links were made BY matching that phone.
         confirmed: scored.confirmed.length,

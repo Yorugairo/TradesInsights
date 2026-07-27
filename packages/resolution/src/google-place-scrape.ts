@@ -34,6 +34,7 @@
 import {
   classifyGoogleConfirmation,
   classifyNameAgreement,
+  comparablePhone,
   type GoogleConfirmation,
   type NameAgreementBasis,
 } from "./registry-identifiers.js";
@@ -141,10 +142,35 @@ export interface GooglePlaceScoreSummary {
    * Drilling LLC holding ANDERDL789CQ and ANDERDL789TQ is one company with two
    * licences, not two companies fighting over a listing. */
   contestedPlaceIds: string[];
+  /**
+   * `name_only` split by WHY the phone did not confirm. The bare verdict merges
+   * two different facts:
+   *
+   *   `divergentPhone` — both sides state a phone and they DISAGREE. A real
+   *     contradiction: same name, different line. Either the listing belongs to
+   *     a different branch/company of a similar name, or one number is stale.
+   *     This is the only sub-class that is evidence AGAINST the match.
+   *   `noLniPhone` / `noGooglePhone` / `neitherPhone` — nobody contradicts
+   *     anybody; there is simply nothing to compare. Absence of evidence.
+   *
+   * Kept apart because treating a missing number as a disagreement would
+   * manufacture conflicts out of gaps — the same error class as counting a
+   * place contested by licence rather than by entity.
+   */
+  nameOnly: {
+    divergentPhone: number;
+    noLniPhone: number;
+    noGooglePhone: number;
+    neitherPhone: number;
+  };
 }
 
 function emptyCounts(): Record<GoogleConfirmation, number> {
   return { phone_and_name: 0, phone_only: 0, name_only: 0, none: 0 };
+}
+
+function emptyNameOnly(): GooglePlaceScoreSummary["nameOnly"] {
+  return { divergentPhone: 0, noLniPhone: 0, noGooglePhone: 0, neitherPhone: 0 };
 }
 
 /**
@@ -166,6 +192,7 @@ export function scoreGooglePlaceObservations(
     byConfirmation: emptyCounts(),
     confirmed: [],
     contestedPlaceIds: [],
+    nameOnly: emptyNameOnly(),
   };
   const confirmedEntitiesByPlace = new Map<string, Set<string>>();
 
@@ -191,6 +218,15 @@ export function scoreGooglePlaceObservations(
       googleName: row.scrapedName,
     });
     summary.byConfirmation[confirmation] += 1;
+
+    if (confirmation === "name_only") {
+      const lni = comparablePhone(identity.phone);
+      const google = comparablePhone(row.scrapedPhone);
+      if (lni !== null && google !== null) summary.nameOnly.divergentPhone += 1;
+      else if (lni === null && google === null) summary.nameOnly.neitherPhone += 1;
+      else if (lni === null) summary.nameOnly.noLniPhone += 1;
+      else summary.nameOnly.noGooglePhone += 1;
+    }
 
     if (confirmation === "phone_and_name") {
       summary.confirmed.push({
