@@ -298,6 +298,48 @@ async function upsertOpportunity(
       rationale_json = EXCLUDED.rationale_json`);
 }
 
+/**
+ * Transient connection faults, as distinct from a bad statement.
+ *
+ * `scoreAll` is a long SERIAL loop of one round trip per opportunity against a
+ * Supavisor session-mode pooler. On 2026-07-26 a full rescore died partway with
+ * "Connection terminated unexpectedly" after writing 31 of ~1,260 Solis rows,
+ * leaving production on a MIX of algorithm versions — a worse state than either
+ * the old or the new model, because half the list is ranked by rules the other
+ * half is not. The loop has no resume, so a plain retry restarts from the top
+ * and lands somewhere different every time.
+ *
+ * These faults are a property of the connection, not the data, and the upsert is
+ * a single idempotent statement, so retrying it is safe. Anything else — a
+ * constraint violation, a type error — must still fail loudly and immediately.
+ */
+function isTransientConnectionError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /Connection terminated/i.test(msg) ||
+    /server closed the connection/i.test(msg) ||
+    /Client has encountered a connection error/i.test(msg) ||
+    /ECONNRESET|EPIPE|ETIMEDOUT|ENOTFOUND/i.test(msg)
+  );
+}
+
+async function withConnectionRetry<T>(
+  fn: () => Promise<T>,
+  onRetry?: (attempt: number, err: unknown) => void,
+): Promise<T> {
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= MAX_ATTEMPTS || !isTransientConnectionError(err)) throw err;
+      onRetry?.(attempt, err);
+      // Backoff gives the pooler time to hand out a fresh backend: 0.5s, 1s, 2s, 4s.
+      await new Promise((res) => setTimeout(res, 500 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
 export async function scoreAll(
   db: Db,
   opts: { logger?: { info(o: unknown, m?: string): void } } = {},
@@ -325,13 +367,21 @@ export async function scoreAll(
         snapshotByKey.get(r.accountKey) ?? null,
         deliveryByKey.get(r.accountKey) ?? {},
       );
-      await upsertOpportunity(
-        db,
-        accountId,
-        f,
-        r,
-        accountData.ruleVersions.get(r.accountKey) ?? {},
-        adjusted,
+      await withConnectionRetry(
+        () =>
+          upsertOpportunity(
+            db,
+            accountId,
+            f,
+            r,
+            accountData.ruleVersions.get(r.accountKey) ?? {},
+            adjusted,
+          ),
+        (attempt, err) =>
+          opts.logger?.info(
+            { attempt, projectId: f.projectId, account: r.accountKey, err: String(err) },
+            "transient connection fault during upsert — retrying",
+          ),
       );
       summary.opportunities++;
       const bucket = (summary.byAccount[r.accountKey] ??= {
