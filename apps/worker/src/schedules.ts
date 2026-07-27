@@ -187,11 +187,31 @@ export async function runMaintenance(logger: Logger): Promise<void> {
     // Alert EMAILS go out when a recipient is configured (ALERTS_EMAIL):
     // an unattended pipeline whose alerts stay in a table isn't alerting.
     // Idempotent rows + exactly-once send semantics live in runAlerts (M4.7).
-    const alerts = await runAlerts(db, {
-      monthlyBudgetUsd,
-      substitutes,
-      send: Boolean(process.env.ALERTS_EMAIL),
-    });
+    // Alerts run LAST, after resolution, the registry seam and scoring have all
+    // committed. A mail-transport failure at this point must not throw away a
+    // completed chain: on 2026-07-27 the hosted env still carried the LOCAL DEV
+    // defaults (ALERTS_EMAIL=ops@otn.local over SMTP localhost:1025) with no
+    // Mailpit running, so every send raised ESOCKET — which would have aborted
+    // the nightly chain at its final step, every night, after all the real work
+    // was already done.
+    //
+    // A visible skip, the same discipline the registry seam uses when
+    // REGISTRY_DATABASE_URL is absent. runAlerts writes the alert ROWS before
+    // attempting delivery, so nothing is lost here except the email itself.
+    let alerts: Awaited<ReturnType<typeof runAlerts>> | null = null;
+    try {
+      alerts = await runAlerts(db, {
+        monthlyBudgetUsd,
+        substitutes,
+        send: Boolean(process.env.ALERTS_EMAIL),
+      });
+    } catch (err) {
+      logger.error(
+        { err: String(err), recipient: process.env.ALERTS_EMAIL ?? null },
+        "alerts step failed — chain already committed, continuing",
+      );
+      alerts = null;
+    }
 
     logger.info(
       {
@@ -223,7 +243,9 @@ export async function runMaintenance(logger: Logger): Promise<void> {
         registryExport: registryExport.skipped
           ? { skipped: true }
           : { observations: registryExport.observationsExported, projectFacts: registryExport.projectFactsExported },
-        alerts: { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped },
+        alerts: alerts
+          ? { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped }
+          : { skipped: "alerts_failed" },
       },
       "pipeline maintenance complete",
     );
