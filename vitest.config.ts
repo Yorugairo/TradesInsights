@@ -18,7 +18,11 @@ loadEnv();
 // Moved to ./vitest.test-db.ts so vitest.global-setup.ts pre-flights the SAME
 // database this injects. When the two disagreed, the pre-flight checked the
 // hosted DB (always up) and passed while the local container was stopped.
-import { testDatabaseUrl } from "./vitest.test-db.js";
+import {
+  testDatabaseUrl,
+  testObjectStorageEndpoint,
+  usingLocalObjectStorage,
+} from "./vitest.test-db.js";
 
 export default defineConfig({
   test: {
@@ -48,15 +52,26 @@ export default defineConfig({
       // operator's staged genuine-browser captures (.env OTN_CAPTURE_DIR) are a
       // runtime concern and would make fetch() resolve, breaking the gate tests.
       OTN_CAPTURE_DIR: "",
-      OBJECT_STORAGE_ENDPOINT:
-        process.env.OBJECT_STORAGE_ENDPOINT ?? "http://localhost:9000",
-      OBJECT_STORAGE_REGION: process.env.OBJECT_STORAGE_REGION ?? "us-east-1",
+      // Local-guarded like DATABASE_URL: these tests WRITE objects, and the
+      // production bucket now holds the only copy of the raw source bodies.
+      // When the guard sends us to local MinIO the credentials must go with it —
+      // inheriting Supabase keys against a MinIO endpoint just fails obscurely.
+      OBJECT_STORAGE_ENDPOINT: testObjectStorageEndpoint(),
+      OBJECT_STORAGE_REGION: usingLocalObjectStorage()
+        ? "us-east-1"
+        : (process.env.OBJECT_STORAGE_REGION ?? "us-east-1"),
       OBJECT_STORAGE_BUCKET:
         process.env.OBJECT_STORAGE_BUCKET ?? "otn-artifacts",
-      OBJECT_STORAGE_ACCESS_KEY:
-        process.env.OBJECT_STORAGE_ACCESS_KEY ?? "otn-minio",
-      OBJECT_STORAGE_SECRET_KEY:
-        process.env.OBJECT_STORAGE_SECRET_KEY ?? "otn-minio-secret",
+      OBJECT_STORAGE_ACCESS_KEY: usingLocalObjectStorage()
+        ? "otn-minio"
+        : (process.env.OBJECT_STORAGE_ACCESS_KEY ?? "otn-minio"),
+      OBJECT_STORAGE_SECRET_KEY: usingLocalObjectStorage()
+        ? "otn-minio-secret"
+        : (process.env.OBJECT_STORAGE_SECRET_KEY ?? "otn-minio-secret"),
+      // Never carry a Supabase session token into a local MinIO run.
+      OBJECT_STORAGE_SESSION_TOKEN: usingLocalObjectStorage()
+        ? ""
+        : (process.env.OBJECT_STORAGE_SESSION_TOKEN ?? ""),
       SOURCE_USER_AGENT:
         process.env.SOURCE_USER_AGENT ?? "OTNInsightsBot/0.1 (test)",
       // Unit tests stub global fetch and must never route through an egress

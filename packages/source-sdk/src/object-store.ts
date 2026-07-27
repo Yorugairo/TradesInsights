@@ -37,6 +37,19 @@ export interface S3ObjectStoreConfig {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /**
+   * Optional STS-style session token. MinIO does not use one; Supabase Storage's
+   * S3 protocol does, and its credential shape is NOT the obvious one — verified
+   * empirically 2026-07-27 against project arbmeioglflvzoffgtii:
+   *
+   *   accessKeyId     = project ref
+   *   secretAccessKey = ANON key         (what the request is signed with)
+   *   sessionToken    = SERVICE ROLE JWT (what actually authorises it)
+   *
+   * Signing with the service-role key in secretAccessKey fails, with or without
+   * a token. Optional so the MinIO path and every existing caller are unchanged.
+   */
+  sessionToken?: string;
 }
 
 export function s3ConfigFromEnv(): S3ObjectStoreConfig {
@@ -45,12 +58,15 @@ export function s3ConfigFromEnv(): S3ObjectStoreConfig {
     if (!v) throw new Error(`${name} is not set`);
     return v;
   };
+  const sessionToken = process.env["OBJECT_STORAGE_SESSION_TOKEN"];
   return {
     endpoint: need("OBJECT_STORAGE_ENDPOINT"),
     region: need("OBJECT_STORAGE_REGION"),
     bucket: need("OBJECT_STORAGE_BUCKET"),
     accessKeyId: need("OBJECT_STORAGE_ACCESS_KEY"),
     secretAccessKey: need("OBJECT_STORAGE_SECRET_KEY"),
+    // Absent for MinIO; required for Supabase Storage (see S3ObjectStoreConfig).
+    ...(sessionToken ? { sessionToken } : {}),
   };
 }
 
@@ -67,6 +83,10 @@ export class S3ObjectStore implements ObjectStore {
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
+        // Spread, not a literal undefined: the AWS SDK signs `sessionToken`
+        // into the request when the key is PRESENT, so an explicit undefined
+        // is not equivalent to omitting it.
+        ...(config.sessionToken ? { sessionToken: config.sessionToken } : {}),
       },
     });
   }

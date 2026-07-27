@@ -48,12 +48,15 @@ function targetConfigFromEnv() {
     if (!v) throw new Error(`${n} is not set (required for --mirror)`);
     return v;
   };
+  const sessionToken = process.env["TARGET_OBJECT_STORAGE_SESSION_TOKEN"];
   return {
     endpoint: need("TARGET_OBJECT_STORAGE_ENDPOINT"),
     region: need("TARGET_OBJECT_STORAGE_REGION"),
     bucket: need("TARGET_OBJECT_STORAGE_BUCKET"),
     accessKeyId: need("TARGET_OBJECT_STORAGE_ACCESS_KEY"),
     secretAccessKey: need("TARGET_OBJECT_STORAGE_SECRET_KEY"),
+    // Supabase Storage requires this; MinIO does not. See S3ObjectStoreConfig.
+    ...(sessionToken ? { sessionToken } : {}),
   };
 }
 
