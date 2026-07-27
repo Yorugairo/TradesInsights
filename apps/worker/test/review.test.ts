@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import type pg from "pg";
 import {
   projectEvents,
+  projectExternalIds,
   projectRoles,
   rawArtifacts,
   recordResolutions,
@@ -20,6 +21,7 @@ import type { NormalizedSourceRecord } from "@otn/domain";
 import {
   decideReview,
   listPendingReviews,
+  reevaluatePendingReviews,
   resolveRecord,
   undoResolution,
   type ResolutionOutcome,
@@ -245,5 +247,197 @@ describe("M2.5 merge-review workflow", () => {
       .from(resolutionReviews)
       .where(eq(resolutionReviews.id, reviewId));
     expect(review!.status).toBe("rejected");
+  });
+});
+
+/**
+ * Re-evaluation: a parked review is a verdict on the evidence available WHEN IT
+ * WAS PARKED, and nothing ever re-asked the question. 2,505 rows had piled up,
+ * the oldest four days old, and pass 1b deliberately adds more.
+ *
+ * The three properties that matter are pinned here: an authoritative id that
+ * AGREES with the parked candidate merges into it; one that DISAGREES rejects
+ * and re-resolves onto the right project (this is the 46 split permits repaired
+ * by hand on 2026-07-27); and a review with no new evidence is left completely
+ * alone, because "nobody has looked at this in a while" is not evidence.
+ *
+ * The strong evidence is created by registering the permit number against a
+ * project directly. That is exactly what arriving evidence looks like to the
+ * resolver — `project_external_ids` is the only thing pass 1 reads — and it
+ * avoids standing up a second source just to reach the same state.
+ */
+describe("re-evaluation clears reviews that new evidence has made unambiguous", () => {
+  const REEV_ADDRESS = `${RUN.slice(0, 4)} Reevaluate Way, Olympia, WA 98502`;
+  const AGREE_ID = `REEVA-${RUN}`;
+  const DIVERGE_ID = `REEVD-${RUN}`;
+  let candidateProjectId: string;
+  let otherProjectId: string;
+  let agreeReviewId: string;
+  let divergeReviewId: string;
+
+  async function reviewFor(externalId: string): Promise<string> {
+    const [rv] = await db
+      .select({ id: resolutionReviews.id })
+      .from(resolutionReviews)
+      .innerJoin(sourceRecords, eq(sourceRecords.id, resolutionReviews.sourceRecordId))
+      .where(
+        and(eq(sourceRecords.externalId, externalId), eq(resolutionReviews.status, "pending")),
+      );
+    return rv!.id;
+  }
+
+  it("seeds an anchor, two same-address reviews, and an unrelated project", async () => {
+    const anchor = await resolveTracked(
+      await insertRecord(
+        record({
+          externalId: `REEVANCH-${RUN}`,
+          title: `Reevaluate Anchor ${RUN}`,
+          addressRaw: REEV_ADDRESS,
+          normalizedStage: "permit_issued",
+        }),
+      ),
+    );
+    candidateProjectId = anchor.projectId!;
+
+    // Same address, an unrelated name → address_name / same_address_name_mismatch.
+    for (const [externalId, title] of [
+      [AGREE_ID, `Zeta Bakery Fitout ${RUN}`],
+      [DIVERGE_ID, `Omega Laundromat Fitout ${RUN}`],
+    ] as const) {
+      const outcome = await resolveTracked(
+        await insertRecord(record({ externalId, title, addressRaw: REEV_ADDRESS })),
+      );
+      expect(outcome.outcome).toBe("review");
+    }
+    agreeReviewId = await reviewFor(AGREE_ID);
+    divergeReviewId = await reviewFor(DIVERGE_ID);
+
+    const other = await resolveTracked(
+      await insertRecord(
+        record({
+          externalId: `REEVOTH-${RUN}`,
+          title: `Reevaluate Other ${RUN}`,
+          addressRaw: `${RUN.slice(0, 4)} Elsewhere Rd, Olympia, WA 98503`,
+        }),
+      ),
+    );
+    otherProjectId = other.projectId!;
+    expect(otherProjectId).not.toBe(candidateProjectId);
+  });
+
+  it("leaves an unchanged ambiguous review completely alone", async () => {
+    const summary = await reevaluatePendingReviews(db, {
+      apply: true,
+      reviewIds: [agreeReviewId, divergeReviewId],
+    });
+    expect(summary.scanned).toBe(2);
+    expect(summary.resolved).toBe(0);
+    expect(summary.stillAmbiguous).toBe(2);
+    expect(summary.errors).toHaveLength(0);
+
+    // Still pending — a fuzzy verdict is never strong enough on its own, which
+    // is the whole safety property. Age is not evidence.
+    const [rv] = await db
+      .select()
+      .from(resolutionReviews)
+      .where(eq(resolutionReviews.id, agreeReviewId));
+    expect(rv!.status).toBe("pending");
+  });
+
+  it("defaults to dry-run and writes nothing", async () => {
+    // Evidence arrives: this permit number is now registered on the very project
+    // the review was parked against.
+    await db.insert(projectExternalIds).values({
+      projectId: candidateProjectId,
+      authority: "Test Jurisdiction",
+      idType: "primary",
+      externalId: AGREE_ID,
+    });
+
+    const dry = await reevaluatePendingReviews(db, { reviewIds: [agreeReviewId] });
+    expect(dry.apply).toBe(false);
+    expect(dry.resolved).toBe(1);
+    expect(dry.byRule["official_id"]).toBe(1);
+
+    const [rv] = await db
+      .select()
+      .from(resolutionReviews)
+      .where(eq(resolutionReviews.id, agreeReviewId));
+    expect(rv!.status).toBe("pending");
+    expect(rv!.decidedBy).toBeNull();
+  });
+
+  it("merges when the authoritative id agrees with the parked candidate", async () => {
+    const summary = await reevaluatePendingReviews(db, {
+      apply: true,
+      reviewIds: [agreeReviewId],
+    });
+    expect(summary.resolved).toBe(1);
+    expect(summary.mismatched).toBe(0);
+
+    const [rv] = await db
+      .select()
+      .from(resolutionReviews)
+      .where(eq(resolutionReviews.id, agreeReviewId));
+    expect(rv!.status).toBe("merged");
+    expect(rv!.decidedBy).toBe("system/reevaluation");
+
+    const [res] = await db
+      .select()
+      .from(recordResolutions)
+      .where(
+        and(
+          eq(recordResolutions.sourceRecordId, rv!.sourceRecordId),
+          eq(recordResolutions.status, "active"),
+        ),
+      );
+    expect(res!.projectId).toBe(candidateProjectId);
+  });
+
+  it("rejects and re-resolves when the authoritative id names a DIFFERENT project", async () => {
+    // The shape of all 46 split permits: the review points at one project and
+    // the permit number turns out to belong to another. Merging into the parked
+    // candidate here would bind the record to the project the evidence overruled.
+    await db.insert(projectExternalIds).values({
+      projectId: otherProjectId,
+      authority: "Test Jurisdiction",
+      idType: "primary",
+      externalId: DIVERGE_ID,
+    });
+
+    const summary = await reevaluatePendingReviews(db, {
+      apply: true,
+      reviewIds: [divergeReviewId],
+    });
+    expect(summary.resolved).toBe(1);
+    expect(summary.mismatched).toBe(0);
+    expect(summary.byRule["official_id"]).toBe(1);
+
+    const [rv] = await db
+      .select()
+      .from(resolutionReviews)
+      .where(eq(resolutionReviews.id, divergeReviewId));
+    expect(rv!.status).toBe("rejected");
+    expect(rv!.decidedBy).toBe("system/reevaluation");
+
+    const [res] = await db
+      .select()
+      .from(recordResolutions)
+      .where(
+        and(
+          eq(recordResolutions.sourceRecordId, rv!.sourceRecordId),
+          eq(recordResolutions.status, "active"),
+        ),
+      );
+    // Landed on the project the permit number actually names, NOT the candidate.
+    expect(res!.projectId).toBe(otherProjectId);
+    expect(res!.projectId).not.toBe(candidateProjectId);
+  });
+
+  it("reports an empty queue as zero rather than failing", async () => {
+    const summary = await reevaluatePendingReviews(db, { reviewIds: [] , limit: 0 });
+    expect(summary.scanned).toBe(0);
+    expect(summary.resolved).toBe(0);
+    expect(summary.errors).toHaveLength(0);
   });
 });

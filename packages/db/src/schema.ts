@@ -256,6 +256,23 @@ export const projectEvents = pgTable(
   (t) => [
     index("project_events_project_ix").on(t.projectId, t.eventDate),
     index("project_events_type_ix").on(t.eventType),
+    // DELIBERATE, DOCUMENTED DRIFT: the real index carries `NULLS NOT DISTINCT`
+    // and this declaration cannot. drizzle 0.44's uniqueIndex builder has no
+    // `.nullsNotDistinct()` — only the `unique()` CONSTRAINT builder does, and
+    // that would create a constraint rather than the index migration 0035
+    // creates. The qualifier is not cosmetic: `event_date` is nullable (383 live
+    // rows) and without it Postgres treats every NULL as distinct, so those rows
+    // could still duplicate freely. Declared here anyway so drizzle-kit knows
+    // the index exists and does not propose dropping it; see
+    // packages/db/migrations/0035_project_events_unique.sql for the
+    // authoritative definition and why `observedAt` is in the key.
+    uniqueIndex("project_events_dedupe_ux").on(
+      t.projectId,
+      t.sourceRecordId,
+      t.eventType,
+      t.eventDate,
+      t.observedAt,
+    ),
   ],
 );
 

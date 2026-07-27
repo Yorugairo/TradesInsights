@@ -164,7 +164,7 @@ describe("M4.6 customer bid inbox", () => {
       JOIN source_records sr ON sr.id = rr.source_record_id
       WHERE sr.source_id = ${sourceId}`);
     expect(Number((resolved.rows[0] as { n: string }).n)).toBe(0);
-    expect(summary.errors).toBe(0);
+    expect(summary.errors).toHaveLength(0);
   });
 
   it("private-CLASS records stay out even when the account binding is unbound", async () => {
@@ -180,7 +180,7 @@ describe("M4.6 customer bid inbox", () => {
         JOIN source_records sr ON sr.id = rr.source_record_id
         WHERE sr.source_id = ${sourceId}`);
       expect(Number((resolved.rows[0] as { n: string }).n)).toBe(0);
-      expect(summary.errors).toBe(0);
+      expect(summary.errors).toHaveLength(0);
     } finally {
       await db.execute(
         sql`UPDATE sources SET account_profile_id = ${ownerAccountId} WHERE id = ${sourceId}`,

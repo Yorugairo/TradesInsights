@@ -31,6 +31,7 @@
  * pending-row query filters on that literal constant, so any other value is
  * simply never picked up.
  */
+import { withConnectionRetry } from "@otn/db";
 import type { GooglePlaceScoreSummary, ScoredGooglePlaceObservation } from "./google-place-scrape.js";
 import type { NameAgreementBasis } from "./registry-identifiers.js";
 import type { RegistryWriterLike } from "./registry-observations.js";
@@ -163,7 +164,21 @@ export interface RecordGooglePlaceSummary {
   uncontested: number;
   contested: number;
   inserted: number;
+  /**
+   * Rows already staged under this `dedupe_key` and left untouched.
+   *
+   * READS 0 IN A DRY RUN BY CONSTRUCTION — the insert never executes, so nothing
+   * can report as already present. A dry-run 0 says nothing whatsoever about how
+   * full the table is, and has twice been misread as "the table is empty".
+   */
   alreadyPresent: number;
+  /** Existing rows whose payload was rewritten. Only ever non-zero with `restage`. */
+  restaged: number;
+  /**
+   * Restaged rows whose freshly computed trust differs from the trust stored
+   * when they were first staged. Reported, never applied — see `restage`.
+   */
+  trustDrift: number;
 }
 
 /**
@@ -180,9 +195,34 @@ export interface RecordGooglePlaceSummary {
 export async function recordGooglePlaceConfirmations(
   writer: RegistryWriterLike | null,
   rows: readonly GooglePlaceExportRow[],
-  opts: { dryRun?: boolean | undefined } = {},
+  opts: {
+    dryRun?: boolean | undefined;
+    /**
+     * Rewrite the payload of rows that are ALREADY staged, instead of skipping
+     * them.
+     *
+     * Needed because `name_basis` was added after 3,578 rows had already been
+     * written and consumed, so those rows carry no basis and cannot be grouped
+     * by it. A plain re-run cannot fix them: the statement is
+     * `ON CONFLICT (dedupe_key) DO NOTHING`, so it reports `alreadyPresent` and
+     * changes nothing — a silent no-op that looks like success.
+     *
+     * DELIBERATELY NARROW. It rewrites `payload` and nothing else:
+     *  - `applied_at` / `applied_action` belong to the OneTradeNetwork loader.
+     *    Writing them from this side of the seam would forge its provenance.
+     *  - `trust_score` is left as first staged. These rows are already applied,
+     *    and silently re-scoring a decision the loader has acted on is not a
+     *    backfill, it is a retroactive edit. Where the recomputed trust differs
+     *    it is COUNTED in `trustDrift` and reported, so the disagreement is
+     *    visible and someone can decide about it deliberately.
+     */
+    restage?: boolean | undefined;
+    /** Logged on each transient-fault retry, so a degraded link is visible. */
+    onRetry?: ((attempt: number, err: unknown) => void) | undefined;
+  } = {},
 ): Promise<RecordGooglePlaceSummary> {
   const dryRun = opts.dryRun ?? true;
+  const restage = opts.restage ?? false;
   const summary: RecordGooglePlaceSummary = {
     dryRun,
     candidates: rows.length,
@@ -190,6 +230,8 @@ export async function recordGooglePlaceConfirmations(
     contested: rows.filter((r) => r.contested).length,
     inserted: 0,
     alreadyPresent: 0,
+    restaged: 0,
+    trustDrift: 0,
   };
   if (dryRun || rows.length === 0 || writer === null) return summary;
 
@@ -210,25 +252,52 @@ export async function recordGooglePlaceConfirmations(
       // the newer, weaker class and is the one worth eyeballing first.
       name_basis: row.nameBasis,
     };
-    const res = await writer.query(
-      `INSERT INTO registry_partner.partner_observations
+    // `xmax = 0` is true only for a freshly INSERTed row, which is how an
+    // upsert tells "created" from "updated" — the DO UPDATE branch returns a row
+    // either way. `trust_score` is read back AFTER the update, and since the
+    // update never sets it, comparing it to $5 reports drift without causing it.
+    const conflictClause = restage
+      ? `DO UPDATE SET payload = EXCLUDED.payload
+         RETURNING observation_id, (xmax = 0) AS was_inserted,
+                   (partner_observations.trust_score IS DISTINCT FROM $5) AS trust_drift`
+      : `DO NOTHING RETURNING observation_id, true AS was_inserted, false AS trust_drift`;
+
+    // Safe to retry: both branches are keyed on `dedupe_key`, so a replay after
+    // a dropped connection either re-inserts the same row or rewrites it to the
+    // same payload. Nothing accumulates.
+    const res = await withConnectionRetry(
+      () =>
+        writer.query(
+          `INSERT INTO registry_partner.partner_observations
          (source_system, entity_id, observation_type, payload, trust_score,
           reviewed_by, reviewed_at, dedupe_key)
        VALUES ($1, $2, $3, $4::jsonb, $5, $6, now(), $7)
-       ON CONFLICT (dedupe_key) DO NOTHING
-       RETURNING observation_id`,
-      [
-        SOURCE_SYSTEM,
-        row.entityId,
-        GOOGLE_PLACE_OBSERVATION_TYPE,
-        JSON.stringify(payload),
-        row.trustScore,
-        GOOGLE_PLACE_DECIDED_BY,
-        row.dedupeKey,
-      ],
+       ON CONFLICT (dedupe_key) ${conflictClause}`,
+          [
+            SOURCE_SYSTEM,
+            row.entityId,
+            GOOGLE_PLACE_OBSERVATION_TYPE,
+            JSON.stringify(payload),
+            row.trustScore,
+            GOOGLE_PLACE_DECIDED_BY,
+            row.dedupeKey,
+          ],
+        ),
+      { ...(opts.onRetry ? { onRetry: opts.onRetry } : {}) },
     );
-    if (res.rows.length > 0) summary.inserted += 1;
-    else summary.alreadyPresent += 1;
+
+    const returned = res.rows[0] as
+      | { was_inserted?: boolean; trust_drift?: boolean }
+      | undefined;
+    if (!returned) {
+      // DO NOTHING swallowed it — the row was already staged.
+      summary.alreadyPresent += 1;
+    } else if (returned.was_inserted) {
+      summary.inserted += 1;
+    } else {
+      summary.restaged += 1;
+      if (returned.trust_drift) summary.trustDrift += 1;
+    }
   }
   return summary;
 }

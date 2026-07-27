@@ -20,11 +20,18 @@ import {
   linkRegistry,
   loadRegistryIdentifierIndex,
   materializeProjectGeometry,
+  reevaluatePendingReviews,
   resolveUnresolved,
 } from "@otn/resolution";
 import { reapOrphanedRuns } from "@otn/source-sdk";
 import { computeStageLagStats, scoreAll } from "@otn/intelligence";
-import { buildDigest, cleanupActionTokens, deliverDigest, runAlerts } from "@otn/delivery";
+import {
+  buildDigest,
+  cleanupActionTokens,
+  deliverDigest,
+  resolverErrorAlert,
+  runAlerts,
+} from "@otn/delivery";
 import { SOURCE_RUN_DEAD_LETTER, executeSourceRun } from "./jobs.js";
 
 /**
@@ -128,6 +135,12 @@ export async function runMaintenance(logger: Logger): Promise<void> {
 
     const resolved = await resolveUnresolved(db, { logger });
     const updates = await applyRecordUpdates(db, { logger });
+    // Re-ask the resolver about every parked review, now that THIS run's
+    // records and updates have landed. Position is deliberate: after resolve
+    // and update so the newest evidence counts, and before scoreAll so a review
+    // cleared here scores tonight rather than tomorrow. Only an authoritative
+    // id match clears a row — see STRONG_REEVALUATION_RULES.
+    const reevaluated = await reevaluatePendingReviews(db, { apply: true, logger });
     const developments = await buildDevelopments(db, { logger });
     const velocity = await computeClusterVelocity(db, { logger });
     const campus = await computeCampusVelocity(db, { logger });
@@ -209,10 +222,15 @@ export async function runMaintenance(logger: Logger): Promise<void> {
     // attempting delivery, so nothing is lost here except the email itself.
     let alerts: Awaited<ReturnType<typeof runAlerts>> | null = null;
     try {
+      // Resolver failures are in-memory state from earlier in THIS chain, so
+      // they cannot be derived by evaluateAlertConditions' queries — they are
+      // handed in. This is what makes the failing record ids survive the run.
+      const resolverErrors = resolverErrorAlert(resolved.errors);
       alerts = await runAlerts(db, {
         monthlyBudgetUsd,
         substitutes,
         send: Boolean(process.env.ALERTS_EMAIL),
+        ...(resolverErrors ? { extraCandidates: [resolverErrors] } : {}),
       });
     } catch (err) {
       logger.error(
@@ -227,6 +245,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
         reapedRuns: reapedRuns.length,
         resolved,
         updates,
+        reevaluated,
         developments,
         velocity,
         campus,

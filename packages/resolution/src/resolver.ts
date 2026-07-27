@@ -228,32 +228,32 @@ async function upsertOrganizationsAndRoles(
 }
 
 /**
- * DELIBERATELY NOT WRAPPED IN `withConnectionRetry`.
+ * IDEMPOTENT since migration 0035 — a repeat of the same event is dropped, and
+ * a legitimate re-emit still lands.
  *
- * `project_events` carries no unique constraint — only two NON-unique indexes
- * (`project_events_project_ix`, `project_events_type_ix`). This INSERT is
- * therefore not idempotent, and a replay would duplicate the event.
+ * This used to be a bare INSERT into a table with no unique constraint, on the
+ * reasoning that deduping would destroy real data: `applyRecordUpdates`
+ * re-processes a record whose content drifted — a Seattle application becoming
+ * an issued permit on the same row — and that genuinely emits a second event
+ * with the same (projectId, sourceRecordId, eventType). That reasoning was
+ * sound about the risk and wrong about the remedy. The distinguishing column is
+ * `observed_at`: a re-emit is observed later, a duplicate is observed at the
+ * same instant. Measured over 44,111 live rows, keying on the four identity
+ * columns alone would have collapsed 2,997 rows; adding `observed_at` collapses
+ * 2,861 and preserves the 136 real re-emits.
  *
- * Nor can it borrow the trick `velocity.ts` uses (a SELECT guard on
- * project/type/source_record, retried together with the insert): there, a
- * repeat of that triple is always redundant. Here it is LEGITIMATE.
- * `applyRecordUpdates` re-processes a record whose content drifted — a Seattle
- * application becoming an issued permit on the same row — and that genuinely
- * emits a second event with the same (projectId, sourceRecordId, eventType).
- * Deduping on it would silently discard real stage changes, a worse failure
- * than the one being prevented.
+ * `project_events_dedupe_ux` is therefore
+ * (project_id, source_record_id, event_type, event_date, observed_at)
+ * NULLS NOT DISTINCT — the NULLS clause because `event_date` is nullable and
+ * would otherwise let those rows duplicate freely.
  *
- * What protects this path instead: the pool keep-alive (the prevention layer),
- * and the per-record try/catch in `resolveUnresolved`, which records the error
- * and continues — the record keeps no active resolution, so the next run
- * reprocesses it.
- *
- * KNOWN GAP, pre-existing and unchanged by this pass: because `resolveRecord`
- * is not transactional, a crash BETWEEN this insert and the resolution write
- * already leaves the event committed and the record unresolved, so the next run
- * emits it a second time. Closing that needs a transaction around
- * `resolveRecord`, which needs `Db` to accept a drizzle transaction type — a
- * real change, out of scope for a durability pass, tracked separately.
+ * Two consequences worth naming. First, the older KNOWN GAP is now benign:
+ * `resolveRecord` is still not transactional, so a crash between this insert
+ * and the resolution write leaves the event committed and the record
+ * unresolved — but the next run's re-emit is now a no-op instead of a duplicate.
+ * Second, this call is consequently safe to retry, which it was not before;
+ * wrapping it in `withConnectionRetry` is now a free choice rather than a
+ * correctness hazard, and is deliberately left for whoever needs it.
  */
 async function emitEvent(
   db: Db,
@@ -262,21 +262,24 @@ async function emitEvent(
   opts: { priorStage: string | null; resultingStage: string | null },
 ): Promise<void> {
   const record = row.normalized;
-  await db.insert(projectEvents).values({
-    projectId,
-    sourceRecordId: row.id,
-    eventType: eventTypeFor(record),
-    eventDate: eventDateFor(record),
-    observedAt: row.firstSeenAt,
-    priorStage: opts.priorStage,
-    resultingStage: opts.resultingStage,
-    materialChange:
-      opts.priorStage !== null &&
-      opts.resultingStage !== null &&
-      opts.priorStage !== opts.resultingStage,
-    confirmed: true,
-    confidence: null,
-  });
+  await db
+    .insert(projectEvents)
+    .values({
+      projectId,
+      sourceRecordId: row.id,
+      eventType: eventTypeFor(record),
+      eventDate: eventDateFor(record),
+      observedAt: row.firstSeenAt,
+      priorStage: opts.priorStage,
+      resultingStage: opts.resultingStage,
+      materialChange:
+        opts.priorStage !== null &&
+        opts.resultingStage !== null &&
+        opts.priorStage !== opts.resultingStage,
+      confirmed: true,
+      confidence: null,
+    })
+    .onConflictDoNothing();
 }
 
 /** Write the record's point geometry onto the project when it has none. */
@@ -353,34 +356,44 @@ async function createProject(db: Db, row: RecordRow, features: MatchFeatures): P
   await upsertOrganizationsAndRoles(db, projectId, row);
   await fillGeometry(db, projectId, row);
   // First observation event (spec §9 project_first_seen) plus none-to-stage.
-  await db.insert(projectEvents).values({
-    projectId,
-    sourceRecordId: row.id,
-    eventType: "project_first_seen",
-    eventDate: eventDateFor(record),
-    observedAt: row.firstSeenAt,
-    priorStage: null,
-    resultingStage: record.normalizedStage,
-    materialChange: false,
-    confirmed: true,
-    confidence: null,
-  });
+  // `onConflictDoNothing` here is belt-and-braces rather than load-bearing: the
+  // project was created microseconds ago so nothing can collide with it. It is
+  // present so that every write to `project_events` names the arbiter index and
+  // none of them can raise on a duplicate — see `emitEvent` for the reasoning.
+  await db
+    .insert(projectEvents)
+    .values({
+      projectId,
+      sourceRecordId: row.id,
+      eventType: "project_first_seen",
+      eventDate: eventDateFor(record),
+      observedAt: row.firstSeenAt,
+      priorStage: null,
+      resultingStage: record.normalizedStage,
+      materialChange: false,
+      confirmed: true,
+      confidence: null,
+    })
+    .onConflictDoNothing();
   // The record that created the project also carries its own event (a permit
   // that opens a project is still a permit_issued on the timeline).
   const typeEvent = eventTypeFor(record);
   if (typeEvent !== "project_first_seen") {
-    await db.insert(projectEvents).values({
-      projectId,
-      sourceRecordId: row.id,
-      eventType: typeEvent,
-      eventDate: eventDateFor(record),
-      observedAt: row.firstSeenAt,
-      priorStage: null,
-      resultingStage: null,
-      materialChange: false,
-      confirmed: true,
-      confidence: null,
-    });
+    await db
+      .insert(projectEvents)
+      .values({
+        projectId,
+        sourceRecordId: row.id,
+        eventType: typeEvent,
+        eventDate: eventDateFor(record),
+        observedAt: row.firstSeenAt,
+        priorStage: null,
+        resultingStage: null,
+        materialChange: false,
+        confirmed: true,
+        confidence: null,
+      })
+      .onConflictDoNothing();
   }
   return projectId;
 }
@@ -548,24 +561,54 @@ export interface ResolveOptions {
   adjudicating?: boolean;
 }
 
-export async function resolveRecord(
+/**
+ * What the resolver has DECIDED, before anything is written.
+ *
+ * Splitting this out is what lets `previewResolution` exist without becoming a
+ * second, quietly diverging copy of the pass ladder. The alternative — a
+ * read-only function that re-walks passes 1, 1b, 3, 4 and 5 in parallel — was
+ * rejected: the two would agree on the day they were written and drift on the
+ * first rule change, and a preview that disagrees with the apply is worse than
+ * no preview, because it is trusted. There is exactly one pass sequence
+ * (`decideResolution`); `resolveRecord` executes its verdict and
+ * `previewResolution` reports it.
+ */
+export type ResolutionDecision =
+  | { kind: "skip" }
+  | { kind: "merge"; rule: MatchedRule; projectId: string; score: number }
+  | {
+      kind: "review";
+      rule: MatchedRule;
+      /** Written to `resolution_reviews.candidate_project_id`. */
+      candidateProjectId: string | null;
+      /**
+       * Reported as `ResolutionOutcome.projectId`. Deliberately NOT always the
+       * same as `candidateProjectId`: when several projects share the parcel,
+       * the review row still carries the first as a starting point for the
+       * human, but the outcome reports null, because naming one of several
+       * would claim a choice the resolver did not make.
+       */
+      outcomeProjectId: string | null;
+      score: number;
+      reasons: string[];
+    }
+  | { kind: "create" };
+
+/** Every match pass, in order, with no writes. */
+async function decideResolution(
   db: Db,
   row: RecordRow,
-  opts: ResolveOptions = {},
-): Promise<ResolutionOutcome> {
+  features: MatchFeatures,
+  opts: ResolveOptions,
+): Promise<ResolutionDecision> {
   const record = row.normalized;
   const excluded = new Set(opts.excludeProjectIds ?? []);
-  if (NON_PROJECT_RECORD_TYPES.has(record.recordType)) {
-    return { sourceRecordId: row.id, outcome: "skipped", rule: null, projectId: null };
-  }
-  const features = extractFeatures(record, row.rawFields);
+  if (NON_PROJECT_RECORD_TYPES.has(record.recordType)) return { kind: "skip" };
 
   let idMatch = await matchByIds(db, record, features);
   if (idMatch && excluded.has(idMatch.projectId)) idMatch = null;
   if (idMatch) {
-    await mergeIntoProject(db, idMatch.projectId, row, features);
-    await persistResolution(db, row, idMatch.projectId, idMatch.rule, features, 1);
-    return { sourceRecordId: row.id, outcome: "merged", rule: idMatch.rule, projectId: idMatch.projectId };
+    return { kind: "merge", rule: idMatch.rule, projectId: idMatch.projectId, score: 1 };
   }
 
   // Pass 1b — BEFORE parcel and fuzzy, deliberately. If the authoritative
@@ -577,91 +620,180 @@ export async function resolveRecord(
     ? null
     : await pendingReviewForSamePermit(db, record, row.id);
   if (heldByTwin) {
-    await db.insert(resolutionReviews).values({
-      sourceRecordId: row.id,
+    return {
+      kind: "review",
+      rule: "official_id",
       candidateProjectId: heldByTwin.candidateProjectId,
-      matchedRule: "official_id",
-      featuresJson: features,
+      outcomeProjectId: heldByTwin.candidateProjectId,
       // Not a confidence in a PROJECT — the permit number is certain, the
       // project is exactly what is undecided. The candidate is carried through
       // so this row clusters with its twin in the review cockpit.
       score: 1,
-      reasonsJson: ["same_permit_pending_review"],
-      resolverVersion: RESOLVER_VERSION,
-    });
-    return {
-      sourceRecordId: row.id,
-      outcome: "review",
-      rule: "official_id",
-      projectId: heldByTwin.candidateProjectId,
+      reasons: ["same_permit_pending_review"],
     };
   }
 
-  const parcelMatchRaw = await matchByParcels(db, record, features);
-  const parcelMatch = {
-    projectIds: parcelMatchRaw.projectIds.filter((id) => !excluded.has(id)),
-  };
-  if (parcelMatch.projectIds.length === 1) {
-    const projectId = parcelMatch.projectIds[0]!;
+  const parcelIds = (await matchByParcels(db, record, features)).projectIds.filter(
+    (id) => !excluded.has(id),
+  );
+  if (parcelIds.length === 1) {
+    const projectId = parcelIds[0]!;
     // Jurisdiction conflict on a parcel match goes to review, not auto-merge.
     const [candidate] = await db
       .select({ jurisdiction: projects.permittingJurisdiction })
       .from(projects)
       .where(eq(projects.id, projectId));
     if (candidate && candidate.jurisdiction !== record.permittingJurisdiction) {
-      await db.insert(resolutionReviews).values({
-        sourceRecordId: row.id,
+      return {
+        kind: "review",
+        rule: "parcel_overlap",
         candidateProjectId: projectId,
-        matchedRule: "parcel_overlap",
-        featuresJson: features,
+        outcomeProjectId: projectId,
         score: 0.7,
-        reasonsJson: ["conflicting_jurisdiction"],
-        resolverVersion: RESOLVER_VERSION,
-      });
-      return { sourceRecordId: row.id, outcome: "review", rule: "parcel_overlap", projectId };
+        reasons: ["conflicting_jurisdiction"],
+      };
     }
-    await mergeIntoProject(db, projectId, row, features);
-    await persistResolution(db, row, projectId, "parcel_overlap", features, 0.95);
-    return { sourceRecordId: row.id, outcome: "merged", rule: "parcel_overlap", projectId };
+    return { kind: "merge", rule: "parcel_overlap", projectId, score: 0.95 };
   }
-  if (parcelMatch.projectIds.length > 1) {
+  if (parcelIds.length > 1) {
     // Multiple parcel-sharing projects (e.g. same address, separate TIs) → review.
-    await db.insert(resolutionReviews).values({
-      sourceRecordId: row.id,
-      candidateProjectId: parcelMatch.projectIds[0]!,
-      matchedRule: "parcel_overlap",
-      featuresJson: features,
+    return {
+      kind: "review",
+      rule: "parcel_overlap",
+      candidateProjectId: parcelIds[0]!,
+      outcomeProjectId: null,
       score: 0.6,
-      reasonsJson: ["multiple_parcel_candidates"],
-      resolverVersion: RESOLVER_VERSION,
-    });
-    return { sourceRecordId: row.id, outcome: "review", rule: "parcel_overlap", projectId: null };
+      reasons: ["multiple_parcel_candidates"],
+    };
   }
 
   // Passes 4–5 (M2.3) — fuzzy address/proximity with spec-§10 review gates.
   let fuzzy = await evaluateFuzzy(db, record, features);
   if (fuzzy && excluded.has(fuzzy.projectId)) fuzzy = null;
   if (fuzzy?.kind === "auto") {
-    await mergeIntoProject(db, fuzzy.projectId, row, features);
-    await persistResolution(db, row, fuzzy.projectId, fuzzy.rule, features, fuzzy.score);
-    return { sourceRecordId: row.id, outcome: "merged", rule: fuzzy.rule, projectId: fuzzy.projectId };
+    return { kind: "merge", rule: fuzzy.rule, projectId: fuzzy.projectId, score: fuzzy.score };
   }
   if (fuzzy?.kind === "review") {
-    await db.insert(resolutionReviews).values({
-      sourceRecordId: row.id,
+    return {
+      kind: "review",
+      rule: fuzzy.rule,
       candidateProjectId: fuzzy.projectId,
-      matchedRule: fuzzy.rule,
-      featuresJson: features,
+      outcomeProjectId: fuzzy.projectId,
       score: fuzzy.score,
-      reasonsJson: fuzzy.reasons,
-      resolverVersion: RESOLVER_VERSION,
-    });
-    return { sourceRecordId: row.id, outcome: "review", rule: fuzzy.rule, projectId: fuzzy.projectId };
+      reasons: fuzzy.reasons,
+    };
   }
 
-  const projectId = await createProject(db, row, features);
-  await persistResolution(db, row, projectId, "new_project", features, 1);
-  return { sourceRecordId: row.id, outcome: "created", rule: "new_project", projectId };
+  return { kind: "create" };
+}
+
+export async function resolveRecord(
+  db: Db,
+  row: RecordRow,
+  opts: ResolveOptions = {},
+): Promise<ResolutionOutcome> {
+  const features = extractFeatures(row.normalized, row.rawFields);
+  const decision = await decideResolution(db, row, features, opts);
+
+  switch (decision.kind) {
+    case "skip":
+      return { sourceRecordId: row.id, outcome: "skipped", rule: null, projectId: null };
+
+    case "merge":
+      await mergeIntoProject(db, decision.projectId, row, features);
+      await persistResolution(
+        db,
+        row,
+        decision.projectId,
+        decision.rule,
+        features,
+        decision.score,
+      );
+      return {
+        sourceRecordId: row.id,
+        outcome: "merged",
+        rule: decision.rule,
+        projectId: decision.projectId,
+      };
+
+    case "review":
+      await db.insert(resolutionReviews).values({
+        sourceRecordId: row.id,
+        candidateProjectId: decision.candidateProjectId,
+        matchedRule: decision.rule,
+        featuresJson: features,
+        score: decision.score,
+        reasonsJson: decision.reasons,
+        resolverVersion: RESOLVER_VERSION,
+      });
+      return {
+        sourceRecordId: row.id,
+        outcome: "review",
+        rule: decision.rule,
+        projectId: decision.outcomeProjectId,
+      };
+
+    case "create": {
+      const projectId = await createProject(db, row, features);
+      await persistResolution(db, row, projectId, "new_project", features, 1);
+      return { sourceRecordId: row.id, outcome: "created", rule: "new_project", projectId };
+    }
+  }
+}
+
+/** What `resolveRecord` WOULD do with this record right now. Writes nothing. */
+export interface ResolutionPreview {
+  sourceRecordId: string;
+  outcome: ResolutionOutcome["outcome"];
+  rule: MatchedRule | null;
+  projectId: string | null;
+  /** Populated only for a would-be review. */
+  reasons: string[];
+  score: number | null;
+}
+
+/**
+ * Ask the resolver what it would decide, without touching the graph.
+ *
+ * The point of this is re-evaluation: a review parked weeks ago was a verdict
+ * on the evidence available THEN. Evidence keeps arriving — a licence, a parcel,
+ * a twin finally getting a project — and nothing re-asks the question. This
+ * asks it, so `reevaluatePendingReviews` can clear rows that have since become
+ * unambiguous instead of letting them accumulate.
+ *
+ * Shares `decideResolution` with `resolveRecord`, so the two cannot disagree.
+ */
+export async function previewResolution(
+  db: Db,
+  row: RecordRow,
+  opts: ResolveOptions = {},
+): Promise<ResolutionPreview> {
+  const features = extractFeatures(row.normalized, row.rawFields);
+  const decision = await decideResolution(db, row, features, opts);
+  const base = { sourceRecordId: row.id, reasons: [] as string[] };
+  switch (decision.kind) {
+    case "skip":
+      return { ...base, outcome: "skipped", rule: null, projectId: null, score: null };
+    case "merge":
+      return {
+        ...base,
+        outcome: "merged",
+        rule: decision.rule,
+        projectId: decision.projectId,
+        score: decision.score,
+      };
+    case "review":
+      return {
+        sourceRecordId: row.id,
+        outcome: "review",
+        rule: decision.rule,
+        projectId: decision.outcomeProjectId,
+        reasons: decision.reasons,
+        score: decision.score,
+      };
+    case "create":
+      return { ...base, outcome: "created", rule: "new_project", projectId: null, score: 1 };
+  }
 }
 
 /**
@@ -683,7 +815,21 @@ export interface ResolveRunSummary {
   created: number;
   review: number;
   skipped: number;
-  errors: number;
+  /**
+   * WHICH records failed, not just how many.
+   *
+   * This was a bare count, and the cost of that showed up on 2026-07-27: a run
+   * reported `errors: 15` and the fifteen ids were unrecoverable — the per-row
+   * `logger.error` had scrolled, and nothing was persisted. The failures turned
+   * out to be transient and cleared on a re-run, but that was luck, not
+   * knowledge; there was no way to tell a transient fault from fifteen
+   * permanently malformed records without the ids.
+   *
+   * Shape mirrors `BulkDecisionSummary.errors` (review.ts) so the two error
+   * lists read the same. The summary is written into the maintenance run's
+   * durable metrics by the caller.
+   */
+  errors: { sourceRecordId: string; error: string }[];
 }
 
 /** Resolve every source record without an active resolution, oldest first. */
@@ -718,7 +864,7 @@ export async function resolveUnresolved(
     .limit(limit);
 
   const summary: ResolveRunSummary = {
-    processed: 0, merged: 0, created: 0, review: 0, skipped: 0, errors: 0,
+    processed: 0, merged: 0, created: 0, review: 0, skipped: 0, errors: [],
   };
   for (const r of rows) {
     summary.processed++;
@@ -733,7 +879,9 @@ export async function resolveUnresolved(
       });
       summary[outcome.outcome === "merged" ? "merged" : outcome.outcome === "created" ? "created" : outcome.outcome === "review" ? "review" : "skipped"]++;
     } catch (err) {
-      summary.errors++;
+      // Both: the log line stays for tailing a live run, and the id is carried
+      // out in the summary so it survives the run.
+      summary.errors.push({ sourceRecordId: r.id, error: String(err) });
       opts.logger?.error({ sourceRecordId: r.id, err: String(err) }, "resolution failed");
     }
   }

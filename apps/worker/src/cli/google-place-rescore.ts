@@ -38,6 +38,15 @@ import {
 // Flags:
 //   --apply     stage the observations (default is dry run)
 //   --limit=N   cap rows staged (diagnostic; does not change the scoring)
+//   --restage   with --apply, REWRITE the payload of rows that are already
+//               staged, instead of skipping them. Needed once, to backfill
+//               `name_basis` onto the 3,578 rows written before that field
+//               existed. Payload only — never applied_at/applied_action (the
+//               registry loader owns those) and never trust_score (those rows
+//               are already applied; drift is reported, not applied).
+//   --report    read-only breakdown of the staged batch by (name_basis,
+//               contested), so 840 containment rows can be judged as a class
+//               and the contested handful individually.
 function numericArg(name: string): number | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   if (!hit) return undefined;
@@ -47,7 +56,14 @@ function numericArg(name: string): number | undefined {
 
 async function main() {
   const apply = process.argv.includes("--apply");
+  const restage = process.argv.includes("--restage");
+  const report = process.argv.includes("--report");
   const limit = numericArg("limit");
+  if (restage && !apply) {
+    // --restage rewrites live rows. Refuse to let it look like a dry run.
+    console.error("--restage rewrites existing staged rows and requires --apply");
+    process.exit(2);
+  }
   const logger = createLogger({
     app: apply ? "google-place-rescore-apply" : "google-place-rescore-preview",
   });
@@ -87,7 +103,44 @@ async function main() {
     const allRows = buildGooglePlaceExports(scored);
     const rows = limit ? allRows.slice(0, limit) : allRows;
 
-    const staged = await recordGooglePlaceConfirmations(registryPool, rows, { dryRun: !apply });
+    if (report) {
+      // Grouped by the two axes a reviewer actually decides along: HOW the names
+      // agreed, and whether anyone else is claiming the same place. Judging 840
+      // containment rows as one class is the whole point — the same ergonomic
+      // `triageReviewQueue` gives the resolution queue.
+      const buckets = new Map<
+        string,
+        { nameBasis: string; contested: boolean; count: number; trust: Set<number>; samples: string[] }
+      >();
+      for (const r of rows) {
+        const key = `${r.nameBasis}|${r.contested}`;
+        const b = buckets.get(key) ?? {
+          nameBasis: r.nameBasis,
+          contested: r.contested,
+          count: 0,
+          trust: new Set<number>(),
+          samples: [],
+        };
+        b.count += 1;
+        b.trust.add(r.trustScore);
+        if (b.samples.length < 3) b.samples.push(`${r.lniName ?? "?"} → ${r.scrapedName ?? "?"}`);
+        buckets.set(key, b);
+      }
+      for (const b of [...buckets.values()].sort((a, z) => z.count - a.count)) {
+        console.log(
+          `${String(b.count).padStart(5)}  name_basis=${b.nameBasis.padEnd(10)} ` +
+            `contested=${String(b.contested).padEnd(5)} trust=${[...b.trust].sort().join(",")}`,
+        );
+        for (const s of b.samples) console.log(`         ${s}`);
+      }
+      console.log(`${rows.length} row(s) in the staged batch`);
+    }
+
+    const staged = await recordGooglePlaceConfirmations(registryPool, rows, {
+      dryRun: !apply,
+      restage,
+      onRetry,
+    });
 
     logger.info(
       {
@@ -109,7 +162,13 @@ async function main() {
         uncontested: staged.uncontested,
         contested: staged.contested,
         [apply ? "staged" : "wouldStage"]: apply ? staged.inserted : staged.candidates,
+        // 0 in a dry run BY CONSTRUCTION — the insert never runs, so nothing can
+        // report as present. Not a statement about how full the table is.
         alreadyPresent: staged.alreadyPresent,
+        restaged: staged.restaged,
+        // Restaged rows whose recomputed trust disagrees with what is stored.
+        // Deliberately not written — those rows are already applied.
+        trustDrift: staged.trustDrift,
         truncatedByLimit: limit ? allRows.length - rows.length : 0,
       },
       apply ? "google place rescore staged" : "google place rescore preview",

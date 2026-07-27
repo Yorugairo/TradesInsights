@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import nodemailer from "nodemailer";
 import type { Db } from "@otn/db";
@@ -47,12 +48,66 @@ const PHASE_CHANGE_LOOKBACK_DAYS = 2;
 const RESIDENTIAL_BID_WINDOW_STAGE = "permit_issued";
 
 export interface AlertCandidate {
-  alertType: "spend_budget" | "source_red" | "source_stale" | "delivery_unsent" | "phase_change";
+  alertType:
+    | "spend_budget"
+    | "source_red"
+    | "source_stale"
+    | "delivery_unsent"
+    | "phase_change"
+    | "resolver_errors";
   subjectKey: string;
   severity: "warning" | "critical";
   message: string;
   details: Record<string, unknown>;
   idempotencyKey: string;
+}
+
+/**
+ * A durable record of WHICH source records failed to resolve this run.
+ *
+ * `resolveUnresolved` used to report a bare count, and on 2026-07-27 that cost
+ * us: a run reported 15 errors and the fifteen ids were gone — the per-row log
+ * line had scrolled and nothing was persisted. They turned out to be transient,
+ * but nothing in the system could have told us that.
+ *
+ * The alerts table is the durability layer rather than a new `resolution_errors`
+ * table: this is ~15 rows on a bad run, it already has idempotent writes, an
+ * email path and an operator surface, and a whole table for it would be
+ * over-build.
+ *
+ * The idempotency key is (day, digest of the failing ids), which gives the two
+ * behaviours worth having. The SAME records failing repeatedly on one day write
+ * one row instead of spamming; a DIFFERENT set of failures always writes its
+ * own row, so no id is ever swallowed by a dedupe. Including the day means a
+ * persistent failure re-announces itself daily instead of going quiet after the
+ * first sighting.
+ */
+export function resolverErrorAlert(
+  errors: readonly { sourceRecordId: string; error: string }[],
+  now: Date = new Date(),
+): AlertCandidate | null {
+  if (errors.length === 0) return null;
+  const ids = errors.map((e) => e.sourceRecordId).sort();
+  const digest = createHash("sha256").update(ids.join(",")).digest("hex").slice(0, 16);
+  const day = now.toISOString().slice(0, 10);
+  return {
+    alertType: "resolver_errors",
+    subjectKey: "resolve_unresolved",
+    // Warning, not critical: an unresolved record is retried on the next run and
+    // keeps no active resolution, so the graph is never left half-written. It
+    // becomes a real problem only if it persists, which the daily re-fire shows.
+    severity: "warning",
+    message: `${errors.length} source record${errors.length === 1 ? "" : "s"} failed to resolve`,
+    details: {
+      count: errors.length,
+      // Every id, not a sample — recovering them after the fact is the entire
+      // point. Capped only by the fact that a run this broken is itself the alert.
+      sourceRecordIds: ids,
+      // Distinct messages, so a hundred instances of one fault read as one fault.
+      distinctErrors: [...new Set(errors.map((e) => e.error))].slice(0, 20),
+    },
+    idempotencyKey: `resolver_errors:${day}:${digest}`,
+  };
 }
 
 export interface AlertsRunSummary {
@@ -312,6 +367,16 @@ export interface RunAlertsOptions {
   smtp?: { host: string; port: number };
   /** D4 — source key → keys it provides substitute coverage for. */
   substitutes?: Record<string, string[]>;
+  /**
+   * Alerts about THIS RUN rather than about database state.
+   *
+   * `evaluateAlertConditions` derives everything it knows by querying, which
+   * works for source health or unsent deliveries but cannot see a failure that
+   * happened in memory minutes ago. Resolver errors are the first of those: the
+   * caller holds them and passes them in, and they then ride the same
+   * idempotent insert, dedupe and email path as every other alert.
+   */
+  extraCandidates?: readonly AlertCandidate[];
 }
 
 export async function runAlerts(db: Db, opts: RunAlertsOptions): Promise<AlertsRunSummary> {
@@ -323,7 +388,7 @@ export async function runAlerts(db: Db, opts: RunAlertsOptions): Promise<AlertsR
 
   const fired: AlertCandidate[] = [];
   let deduped = 0;
-  for (const c of candidates) {
+  for (const c of [...candidates, ...(opts.extraCandidates ?? [])]) {
     const inserted = await db.execute(sql`
       INSERT INTO alerts (alert_type, subject_key, severity, message, details_json, idempotency_key)
       VALUES (${c.alertType}, ${c.subjectKey}, ${c.severity}, ${c.message},

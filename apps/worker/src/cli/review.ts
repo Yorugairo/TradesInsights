@@ -2,9 +2,11 @@ import "../load-env.js";
 import { createDb, createPool } from "@otn/db";
 import { createLogger } from "@otn/source-sdk";
 import {
+  auditAddressNameMismatch,
   decideReview,
   decideReviewCluster,
   listPendingReviews,
+  reevaluatePendingReviews,
   triageReviewQueue,
   undoResolution,
 } from "@otn/resolution";
@@ -14,6 +16,8 @@ import {
 // pnpm review bulk merge|reject --rule <rule> --reason <key> [--candidate <project-id>|none] [--by <who>] [--note <text>] [--limit N]
 // pnpm review decide <review-id> merge|reject [--by <who>] [--note <text>]
 // pnpm review undo <source-record-id> --reason <text>
+// pnpm review reevaluate [--apply] [--limit N]     (READ-ONLY without --apply)
+// pnpm review name-audit [--limit N]               (always read-only)
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   const logger = createLogger({ app: "review-cli" });
@@ -23,6 +27,7 @@ async function main() {
     const i = args.indexOf(`--${name}`);
     return i >= 0 ? args[i + 1] : undefined;
   };
+  const has = (name: string): boolean => args.includes(`--${name}`);
   try {
     if (cmd === "list") {
       const rows = await listPendingReviews(db);
@@ -79,6 +84,36 @@ async function main() {
         ...(flag("note") ? { note: flag("note")! } : {}),
       });
       logger.info({ outcome }, "review decided");
+    } else if (cmd === "reevaluate") {
+      // Dry-run unless --apply is passed. The default has to be the safe one:
+      // this decides reviews without a human in the loop, and the first thing
+      // anyone types is the bare command.
+      const apply = has("apply");
+      const summary = await reevaluatePendingReviews(db, {
+        apply,
+        ...(flag("limit") ? { limit: Number(flag("limit")) } : {}),
+        logger,
+      });
+      console.log(
+        `${summary.scanned} scanned  ${summary.resolved} ${apply ? "resolved" : "would resolve"}  ` +
+          `${summary.stillAmbiguous} still ambiguous  ${summary.errors.length} error(s)` +
+          (summary.mismatched > 0 ? `  ${summary.mismatched} MISMATCHED` : ""),
+      );
+      for (const [rule, n] of Object.entries(summary.byRule)) console.log(`  ${rule}: ${n}`);
+      if (!apply) console.log("(dry run — nothing written; re-run with --apply)");
+    } else if (cmd === "name-audit") {
+      const audit = await auditAddressNameMismatch(db, {
+        ...(flag("limit") ? { limit: Number(flag("limit")) } : {}),
+      });
+      console.log(`${audit.total} pending same_address_name_mismatch review(s)`);
+      for (const [basis, n] of Object.entries(audit.byBasis)) {
+        const pct = audit.total > 0 ? ((n / audit.total) * 100).toFixed(1) : "0.0";
+        console.log(`  ${basis.padEnd(10)} ${String(n).padStart(5)}  ${pct}%`);
+      }
+      for (const s of audit.samples) {
+        console.log(`  [${s.basis}] "${s.recordTitle}"  vs  "${s.candidateName}"`);
+      }
+      console.log("(measurement only — no behaviour is wired to these buckets)");
     } else if (cmd === "undo") {
       const [sourceRecordId] = args;
       const reason = flag("reason");
@@ -89,7 +124,9 @@ async function main() {
       await undoResolution(db, sourceRecordId, { reason });
       logger.info({ sourceRecordId }, "resolution undone");
     } else {
-      console.error("usage: pnpm review list | triage | bulk | decide | undo");
+      console.error(
+        "usage: pnpm review list | triage | bulk | decide | undo | reevaluate | name-audit",
+      );
       process.exit(2);
     }
   } finally {

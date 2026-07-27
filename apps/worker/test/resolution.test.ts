@@ -478,6 +478,107 @@ describe("M2.2 resolver: SEPA + planning + permit resolve into one project", () 
 
 
 /**
+ * Migration 0035 — `project_events` carried no unique index, so `emitEvent`'s
+ * bare INSERT quietly duplicated 2,861 rows of 44,111 live.
+ *
+ * The fix has two halves that pull against each other, and both are pinned
+ * here. Repeats of the same write must collapse; the re-emits
+ * `applyRecordUpdates` produces when a record's content drifts must NOT. What
+ * separates them is `observed_at` — a duplicate is written at the same instant,
+ * a real stage change is observed later. Measured live, keying without it would
+ * have destroyed 136 genuine events.
+ */
+describe("project_events dedupes repeats but keeps real re-emits (0035)", () => {
+  async function eventsFor(sourceRecordId: string) {
+    return db
+      .select({
+        eventType: projectEvents.eventType,
+        eventDate: projectEvents.eventDate,
+        observedAt: projectEvents.observedAt,
+      })
+      .from(projectEvents)
+      .where(eq(projectEvents.sourceRecordId, sourceRecordId));
+  }
+
+  /**
+   * Reproduce the gap that actually produced the duplicates.
+   *
+   * `resolveRecord` is not transactional: it emits the event, THEN writes the
+   * resolution. A connection fault between the two commits the event and leaves
+   * the record unresolved, so the next run picks it up and emits the same event
+   * again at the same `observed_at`. Deleting the resolution row is that state
+   * exactly. It cannot be reached by simply calling `resolveRecord` twice —
+   * `record_resolutions_active_ux` rejects the second write before `emitEvent`
+   * is ever reached, which is why the duplication only ever showed up after a
+   * genuine mid-write failure.
+   */
+  async function simulateCrashAfterEvent(sourceRecordId: string): Promise<void> {
+    await db
+      .delete(recordResolutions)
+      .where(eq(recordResolutions.sourceRecordId, sourceRecordId));
+  }
+
+  it("drops an identical repeat, including when event_date is NULL", async () => {
+    const row = await insertRecord(
+      record({ externalId: `DEDUPE-${RUN}`, title: `Dedupe ${RUN}` }),
+      {},
+      new Date("2026-03-01T00:00:00.000Z"),
+    );
+
+    const first = await resolveTracked(row);
+    expect(first.outcome).toBe("created");
+    const afterFirst = await eventsFor(row.id);
+    // createProject writes project_first_seen plus the record's own type event.
+    expect(afterFirst).toHaveLength(2);
+    // The fixture leaves issueDate/applicationDate/sourceUpdatedAt all null, so
+    // event_date is NULL — exactly the rows a unique index WITHOUT
+    // `NULLS NOT DISTINCT` would happily let duplicate forever.
+    expect(afterFirst.every((e) => e.eventDate === null)).toBe(true);
+
+    await simulateCrashAfterEvent(row.id);
+
+    // Same row, same observation instant: pass 1 matches the external id and the
+    // merge path re-emits a byte-identical event. The index must swallow it.
+    const second = await resolveTracked(row);
+    expect(second.outcome).toBe("merged");
+    expect(second.rule).toBe("official_id");
+    expect(await eventsFor(row.id)).toHaveLength(2);
+
+    // A third pass proves it is idempotent, not merely off-by-one.
+    await simulateCrashAfterEvent(row.id);
+    await resolveTracked(row);
+    expect(await eventsFor(row.id)).toHaveLength(2);
+  });
+
+  it("keeps a re-emit observed at a later instant", async () => {
+    const row = await insertRecord(
+      record({ externalId: `REEMIT-${RUN}`, title: `Re-emit ${RUN}` }),
+      {},
+      new Date("2026-03-01T00:00:00.000Z"),
+    );
+    await resolveTracked(row);
+    const before = await eventsFor(row.id);
+    expect(before.length).toBeGreaterThan(0);
+
+    await simulateCrashAfterEvent(row.id);
+
+    // What applyRecordUpdates does when a source republishes a drifted record:
+    // same record, same event type, a LATER observation. This is a real event
+    // and must survive — the 136 rows the naive 4-column key would have eaten.
+    const later = { ...row, firstSeenAt: new Date("2026-04-01T00:00:00.000Z") };
+    const outcome = await resolveTracked(later);
+    expect(outcome.outcome).toBe("merged");
+
+    const after = await eventsFor(row.id);
+    expect(after).toHaveLength(before.length + 1);
+    expect(
+      after.filter((e) => e.observedAt.toISOString() === "2026-04-01T00:00:00.000Z"),
+    ).toHaveLength(1);
+  });
+});
+
+
+/**
  * Pass 1b — an authoritative permit number sitting in the review queue means
  * "we do not know yet", and that has to outrank every weaker pass.
  *

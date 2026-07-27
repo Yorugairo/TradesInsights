@@ -227,6 +227,7 @@
     },
     { "idx": 32, "version": "7", "when": 1784342000000, "tag": "0032_org_registry_brand_ref", "breakpoints": true },
     { "idx": 33, "version": "7", "when": 1784343000000, "tag": "0033_opportunity_evidence_indexes", "breakpoints": true },
-    { "idx": 34, "version": "7", "when": 1784344000000, "tag": "0034_org_binding_gap", "breakpoints": true }
+    { "idx": 34, "version": "7", "when": 1784344000000, "tag": "0034_org_binding_gap", "breakpoints": true },
+    { "idx": 35, "version": "7", "when": 1784345000000, "tag": "0035_project_events_unique", "breakpoints": true }
   ]
 }

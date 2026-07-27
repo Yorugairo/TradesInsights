@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   projectEvents,
   projectRoles,
@@ -11,10 +11,12 @@ import { NormalizedSourceRecordSchema } from "@otn/domain";
 import {
   RESOLVER_VERSION,
   mergeIntoProjectForReview,
+  previewResolution,
   resolveRecord,
   type ResolutionOutcome,
 } from "./resolver.js";
 import { extractFeatures } from "./normalize.js";
+import { classifyNameAgreement, type NameAgreementBasis } from "./registry-identifiers.js";
 
 /**
  * M2.5 — merge-review / split workflow (spec §10): humans decide ambiguous
@@ -416,4 +418,244 @@ export async function decideReviewCluster(
     }
   }
   return summary;
+}
+
+/** Machine identity on reviews cleared by re-evaluation rather than by a person. */
+export const REEVALUATION_DECIDED_BY = "system/reevaluation";
+
+/**
+ * Rules strong enough to overturn a parked review with no human involved.
+ *
+ * This set is the whole safety argument, so it is deliberately tiny. Both
+ * members are an AUTHORITATIVE IDENTIFIER match — the same permit number in the
+ * same jurisdiction, or an explicit cross-source reference. Neither is a guess.
+ *
+ * A parcel or fuzzy verdict is excluded even though re-evaluation would happily
+ * produce one, because those are precisely the guesses the review exists to
+ * question; auto-accepting them would not be "new evidence arrived", it would be
+ * "we got bored of asking". That distinction is what keeps this from becoming a
+ * lowered threshold in disguise.
+ */
+const STRONG_REEVALUATION_RULES = new Set(["official_id", "explicit_reference"]);
+
+export interface ReevaluateSummary {
+  scanned: number;
+  /** Reviews a strong verdict clears — or WOULD clear, when `apply` is false. */
+  resolved: number;
+  /** Still needs a human (or still needs evidence). Left untouched. */
+  stillAmbiguous: number;
+  /** Strong rule that cleared each: `official_id` / `explicit_reference`. */
+  byRule: Record<string, number>;
+  /**
+   * Applied decisions that landed on a project other than the one previewed.
+   * MUST be 0. Anything else means preview and apply disagree, which is the
+   * failure mode this design exists to prevent.
+   */
+  mismatched: number;
+  /** False ⇒ nothing was written. */
+  apply: boolean;
+  errors: { reviewId: string; error: string }[];
+}
+
+/**
+ * Re-ask the resolver about every parked review, and clear the ones that are no
+ * longer ambiguous.
+ *
+ * A review is a verdict on the evidence available WHEN IT WAS PARKED. Evidence
+ * keeps arriving — a licence lands from a PALS capture, a parcel gets geocoded,
+ * a twin permit finally gets a project — but nothing ever re-asked the question,
+ * so the queue only grew: 2,505 rows, the oldest from 2026-07-21. Pass 1b makes
+ * that worse before it makes it better, because it deliberately routes records
+ * with an undecided authoritative id INTO the queue; without this pass those
+ * holds accumulate instead of clearing.
+ *
+ * The 46 split permits repaired by hand on 2026-07-27 are the design reference
+ * case: every one of them already carried an authoritative permit id pointing at
+ * a real project, and all that was needed was to ask again. This is that, on a
+ * schedule, instead of a one-off script.
+ *
+ * DRY-RUN BY DEFAULT — `apply` must be opted into, matching `strict-bind:preview`
+ * and `google-place-rescore:preview`.
+ */
+export async function reevaluatePendingReviews(
+  db: Db,
+  opts: {
+    apply?: boolean;
+    limit?: number;
+    /** Restrict to specific reviews (targeted re-runs; test isolation) — the
+     * same escape hatch `applyRecordUpdates` provides via `sourceRecordIds`. */
+    reviewIds?: string[];
+    logger?: { info(o: unknown, m?: string): void; error(o: unknown, m?: string): void };
+  } = {},
+): Promise<ReevaluateSummary> {
+  const apply = opts.apply ?? false;
+  const limit = opts.limit ?? 2000;
+
+  const pending = await db
+    .select({
+      id: resolutionReviews.id,
+      sourceRecordId: resolutionReviews.sourceRecordId,
+      candidateProjectId: resolutionReviews.candidateProjectId,
+    })
+    .from(resolutionReviews)
+    .where(
+      opts.reviewIds && opts.reviewIds.length > 0
+        ? and(
+            eq(resolutionReviews.status, "pending"),
+            inArray(resolutionReviews.id, opts.reviewIds),
+          )
+        : eq(resolutionReviews.status, "pending"),
+    )
+    .orderBy(resolutionReviews.createdAt)
+    .limit(limit);
+
+  const summary: ReevaluateSummary = {
+    scanned: 0,
+    resolved: 0,
+    stillAmbiguous: 0,
+    byRule: {},
+    mismatched: 0,
+    apply,
+    errors: [],
+  };
+
+  for (const review of pending) {
+    summary.scanned++;
+    try {
+      const row = await loadRecordRow(db, review.sourceRecordId);
+      const preview = await previewResolution(db, row);
+      const rule = preview.rule;
+
+      // Only a would-be MERGE counts. A would-be review (including pass 1b
+      // parking this record behind a twin) means the question is still open,
+      // and a would-be create means there is still nothing to attach to.
+      if (
+        preview.outcome !== "merged" ||
+        rule === null ||
+        !STRONG_REEVALUATION_RULES.has(rule) ||
+        preview.projectId === null
+      ) {
+        summary.stillAmbiguous++;
+        continue;
+      }
+
+      if (!apply) {
+        summary.resolved++;
+        summary.byRule[rule] = (summary.byRule[rule] ?? 0) + 1;
+        continue;
+      }
+
+      // WHICH decision reproduces the strong verdict depends on whether it
+      // agrees with the candidate this review was parked against, and getting
+      // this backwards would bind the record to the wrong project.
+      //
+      //   agrees   → "merge": join the candidate, recorded as review_approved.
+      //   disagrees → "reject": close the review and re-resolve. `decideReview`
+      //               excludes the rejected candidate, which is safe precisely
+      //               BECAUSE the strong match is a different project — the id
+      //               pass then lands on it. Using "merge" here would bind the
+      //               record to the stale candidate the evidence just overruled.
+      //
+      // The 46 were all the second kind, which is why rejecting them was the
+      // repair rather than a discard.
+      const decision = preview.projectId === review.candidateProjectId ? "merge" : "reject";
+      const outcome = await decideReview(db, review.id, decision, {
+        decidedBy: REEVALUATION_DECIDED_BY,
+        note: `re-evaluated: ${rule} → project ${preview.projectId}`,
+      });
+
+      if (outcome.projectId === preview.projectId) {
+        summary.resolved++;
+        summary.byRule[rule] = (summary.byRule[rule] ?? 0) + 1;
+      } else {
+        summary.mismatched++;
+        opts.logger?.error(
+          {
+            reviewId: review.id,
+            sourceRecordId: review.sourceRecordId,
+            decision,
+            previewedProjectId: preview.projectId,
+            actualProjectId: outcome.projectId,
+            rule,
+          },
+          "re-evaluation landed on a different project than previewed",
+        );
+      }
+    } catch (err) {
+      // Never abort the batch — one malformed record must not stop the drain.
+      // A review decided concurrently by a human lands here too, as
+      // "already decided", which is the correct outcome: theirs wins.
+      summary.errors.push({ reviewId: review.id, error: String(err) });
+    }
+  }
+
+  opts.logger?.info(summary, "pending review re-evaluation complete");
+  return summary;
+}
+
+export interface NameMismatchAudit {
+  total: number;
+  byBasis: Record<NameAgreementBasis, number>;
+  /** A few of each basis, so the buckets can be sanity-checked by eye. */
+  samples: { basis: NameAgreementBasis; recordTitle: string; candidateName: string }[];
+}
+
+/**
+ * MEASUREMENT ONLY — changes nothing, decides nothing.
+ *
+ * `same_address_name_mismatch` is 784 of the 2,505 pending reviews. They were
+ * parked because the fuzzy pass compared the record title to the candidate
+ * project's canonical name with `nameSimilarity` and fell short of the
+ * threshold. Since then the registry work has produced a more forgiving
+ * comparison — `crossNameKeyLoose` (which strips truncated legal suffixes)
+ * feeding `classifyNameAgreement`, which also recognises token containment.
+ *
+ * The open question is how much of that 784 is genuinely two different
+ * businesses at one address (separate tenant improvements — the exact thing
+ * spec §10 wants a human for) versus one business whose name was written two
+ * ways. This answers it with a number instead of an intuition.
+ *
+ * DELIBERATELY NOT WIRED TO ANY BEHAVIOUR. Whether `contained` should be
+ * allowed to auto-resolve a same-address mismatch is an owner decision with a
+ * real false-bind cost: at one address, "Smith Electric" containing "Smith"
+ * is not evidence of anything. Ship the measurement, argue from it later.
+ */
+export async function auditAddressNameMismatch(
+  db: Db,
+  opts: { limit?: number; samplesPerBasis?: number } = {},
+): Promise<NameMismatchAudit> {
+  const limit = opts.limit ?? 5000;
+  const samplesPerBasis = opts.samplesPerBasis ?? 3;
+  const res = await db.execute(sql`
+    SELECT sr.normalized_json->>'title' AS record_title,
+           p.canonical_name AS candidate_name
+    FROM resolution_reviews rv
+    JOIN source_records sr ON sr.id = rv.source_record_id
+    JOIN projects p ON p.id = rv.candidate_project_id
+    WHERE rv.status = 'pending'
+      AND rv.matched_rule = 'address_name'
+      AND rv.reasons_json ? 'same_address_name_mismatch'
+    ORDER BY rv.created_at
+    LIMIT ${limit}`);
+
+  const audit: NameMismatchAudit = {
+    total: 0,
+    byBasis: { exact: 0, close: 0, contained: 0, none: 0 },
+    samples: [],
+  };
+  const sampled: Record<string, number> = {};
+  for (const r of res.rows as { record_title: string | null; candidate_name: string | null }[]) {
+    audit.total++;
+    const basis = classifyNameAgreement(r.candidate_name, r.record_title);
+    audit.byBasis[basis]++;
+    if ((sampled[basis] ?? 0) < samplesPerBasis) {
+      sampled[basis] = (sampled[basis] ?? 0) + 1;
+      audit.samples.push({
+        basis,
+        recordTitle: r.record_title ?? "",
+        candidateName: r.candidate_name ?? "",
+      });
+    }
+  }
+  return audit;
 }
