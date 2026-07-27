@@ -19,10 +19,15 @@ import {
   sources,
   type Db,
 } from "@otn/db";
+import { SCORING_ALGORITHM_VERSION } from "@otn/intelligence";
 import { evaluateAlertConditions, runAlerts } from "@otn/delivery";
 import { deleteTestProjects, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toLowerCase();
+/** The rationale scoreAll stamps on every row it writes. The phase-change alert
+ * skips any opportunity whose recorded algorithm version is not the running one,
+ * so a fixture without this never reaches the bid-window check. */
+const CURRENT_RATIONALE = { algorithmVersion: SCORING_ALGORITHM_VERSION };
 
 let db: Db;
 let pool: pg.Pool;
@@ -255,6 +260,7 @@ describe("WS-C phase_change bid-window alert", () => {
         currentScore: opts.score,
         state: opts.state,
         firstQualifiedAt: new Date(),
+        rationaleJson: CURRENT_RATIONALE,
       })
       .returning({ id: opportunities.id });
     return opp!.id;

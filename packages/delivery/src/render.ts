@@ -269,6 +269,7 @@ export function renderDigestHtml(model: DigestModel, opts: RenderOptions = {}): 
     model.suppressed.gateFailed === 0 &&
     model.suppressed.blockedOnVerifier === 0 &&
     model.suppressed.customerSuppressed === 0 &&
+    model.suppressed.staleScore === 0 &&
     model.reviewQueue.length === 0
       ? "<p>All enabled sources green; nothing suppressed.</p>"
       : `<ul>
@@ -283,6 +284,11 @@ ${
 ${
   model.suppressed.gateFailed > 0
     ? `<li>${model.suppressed.gateFailed} matching opportunit${model.suppressed.gateFailed === 1 ? "y" : "ies"} withheld by the publication gate (incomplete identity, stale, or unsupported facts).</li>`
+    : ""
+}
+${
+  model.suppressed.staleScore > 0
+    ? `<li>${model.suppressed.staleScore} matching opportunit${model.suppressed.staleScore === 1 ? "y was" : "ies were"} withheld pending a rescore — ${model.suppressed.staleScore === 1 ? "its" : "their"} last score predates the current ranking model, so ${model.suppressed.staleScore === 1 ? "it" : "they"} cannot be ranked against the rest of this list.</li>`
     : ""
 }
 ${

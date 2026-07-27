@@ -10,6 +10,7 @@ import {
   latestOutreach,
   latestVerification,
   relationshipTargets,
+  scoredByCurrentAlgorithm,
   suppressedProjectIds,
   tradeBidWindows,
   type BidWindowStatus,
@@ -160,7 +161,14 @@ export interface DigestModel {
   decisions: DecisionItem[];
   /** Gate-passing items withheld from automation for a human decision. */
   reviewQueue: DigestItem[];
-  suppressed: { gateFailed: number; blockedOnVerifier: number; customerSuppressed: number };
+  suppressed: {
+    gateFailed: number;
+    blockedOnVerifier: number;
+    customerSuppressed: number;
+    /** Withheld because the stored score was not produced by the algorithm
+     * version running now (see `scoredByCurrentAlgorithm`). */
+    staleScore: number;
+  };
   ruleVersions: Record<string, number>;
   candidateCount: number;
 }
@@ -175,7 +183,7 @@ export interface CandidateRow {
   current_score: number | null;
   route: string | null;
   state: string;
-  rationale_json: { signals?: string[]; route?: string } | null;
+  rationale_json: { signals?: string[]; route?: string; algorithmVersion?: string } | null;
   text: string;
   max_valuation: number | null;
   /** Latest stated permit issue date among active records (null when unstated). */
@@ -803,13 +811,23 @@ export async function buildDigest(
   // select nearest-band-first AFTER the pass (score order alone no longer decides).
   const easyWinCandidates: { item: DigestItem; distM: number | null }[] = [];
   const decisions: DecisionItem[] = [];
-  const suppressed = { gateFailed: 0, blockedOnVerifier: 0, customerSuppressed: 0 };
+  const suppressed = { gateFailed: 0, blockedOnVerifier: 0, customerSuppressed: 0, staleScore: 0 };
 
   for (const c of candidates) {
     // §9: suppression is applied BEFORE assembly — a suppressed project/org
     // never reaches gate evaluation or an item build.
     if (suppressedProjects.has(c.project_id)) {
       suppressed.customerSuppressed++;
+      continue;
+    }
+    // The score is what ORDERS this email, so a score the current algorithm did
+    // not produce cannot be ranked against ones it did. Cheap (a field compare,
+    // no query) and placed before the gate so a stale row costs nothing. It
+    // catches both a row scoreAll stopped rescoring and a rescore that died
+    // partway leaving mixed versions live — the two ways a retired model has
+    // reached a customer here. Counted and disclosed in section 5, per §18.
+    if (!scoredByCurrentAlgorithm(c.rationale_json)) {
+      suppressed.staleScore++;
       continue;
     }
     const gate: GateResult | null = await evaluateGate(db, c.id);

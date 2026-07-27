@@ -18,7 +18,14 @@ import {
   sourceRuns,
   type Db,
 } from "@otn/db";
-import { MockProvider, buildDecisionMemo, createPursuit, extractProject, verifyProject } from "@otn/intelligence";
+import {
+  MockProvider,
+  SCORING_ALGORITHM_VERSION,
+  buildDecisionMemo,
+  createPursuit,
+  extractProject,
+  verifyProject,
+} from "@otn/intelligence";
 import {
   buildDigest,
   cleanupActionTokens,
@@ -31,6 +38,9 @@ import {
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toUpperCase();
+/** The rationale scoreAll stamps on every row it writes; delivery withholds any
+ * opportunity whose recorded algorithm version is not the running one. */
+const CURRENT_RATIONALE = { algorithmVersion: SCORING_ALGORITHM_VERSION };
 const BUDGET = { monthlyCapUsd: 100, perJobCapUsd: 0.5 };
 const PERIOD_END = new Date();
 const PERIOD_START = new Date(PERIOD_END.getTime() - 7 * 86_400_000);
@@ -115,6 +125,7 @@ async function seedGateReadyProject(
       currentScore: 88,
       state: "priority_review",
       firstQualifiedAt: new Date(),
+      rationaleJson: CURRENT_RATIONALE,
       lastMaterialChangeAt: new Date(PERIOD_END.getTime() - 3 * 86_400_000),
     })
     .returning({ id: opportunities.id });

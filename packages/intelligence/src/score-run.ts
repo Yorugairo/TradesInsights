@@ -10,6 +10,7 @@ import {
 } from "./capacity.js";
 import {
   SCORING_ALGORITHM_VERSION,
+  hasRouter,
   routeProject,
   type AccountScoringInput,
   type ProjectFeatures,
@@ -39,7 +40,20 @@ function bandFor(
 export interface ScoreRunSummary {
   projectsScored: number;
   opportunities: number;
-  byAccount: Record<string, { total: number; priority: number; digest: number; archive: number }>;
+  /** Opportunities archived because their (project, account) pair stopped routing. */
+  deroutedArchived: number;
+  byAccount: Record<
+    string,
+    { total: number; priority: number; digest: number; archive: number; derouted: number }
+  >;
+}
+
+type AccountBucket = ScoreRunSummary["byAccount"][string];
+
+function bucketFor(summary: ScoreRunSummary, accountKey: string): AccountBucket {
+  return (summary.byAccount[accountKey] ??= {
+    total: 0, priority: 0, digest: 0, archive: 0, derouted: 0,
+  });
 }
 
 /**
@@ -295,7 +309,126 @@ async function upsertOpportunity(
       END,
       first_qualified_at = COALESCE(opportunities.first_qualified_at, EXCLUDED.first_qualified_at),
       last_material_change_at = EXCLUDED.last_material_change_at,
+      -- Wholesale replacement also clears any deroute marker a previous sweep
+      -- stamped here: a pair that routes again is live again, and the marker
+      -- must not outlive the condition it recorded.
       rationale_json = EXCLUDED.rationale_json`);
+}
+
+/**
+ * De-routing (2026-07-26).
+ *
+ * `scoreAll` only ever wrote the pairs `routeProject` RETURNED. A project that
+ * stopped routing to an account — territory edit, exclusion rule, keyword
+ * reclassification — kept its `opportunities` row untouched at whatever score
+ * and algorithmVersion it last had, forever. Found live in production:
+ * opportunity 93054ce2 (solis_interiors, weekly_digest, score 72.5) still
+ * carried algorithmVersion 1.9.0 three releases after 1.12.0, because the
+ * project's shoreline/dock records no longer clear routeSolis's trade-fit gate.
+ * It had never actually been sent (no delivery_items), but it sat in a delivery
+ * state, so nothing but luck kept a retired model out of a customer's digest.
+ *
+ * Semantics chosen: ARCHIVE, with the reason recorded — not a new "stale" flag.
+ * `archive` is already this system's word for "scored, not deliverable" (it is
+ * what `bandFor` returns below the digest floor) and every delivery path already
+ * honours it, so nothing downstream needs to learn a new state. The row is kept,
+ * never deleted, and the reason is merged INTO the existing rationale so the last
+ * real score stays auditable next to the note explaining why it stopped moving.
+ *
+ * `dismissed` and `promoted` are excluded: those are human decisions and the
+ * sweep is not entitled to overturn one. A `promoted` row that no longer routes
+ * therefore stays live by design — the delivery-side version guard
+ * (`scoredByCurrentAlgorithm`) is what stops it going out stale, and it discloses
+ * the withholding rather than silently dropping it.
+ */
+export const DEROUTE_REASON = "no_longer_routed";
+
+/** Opportunity states the sweep may archive — manual decisions and rows already
+ * archived are excluded. Kept as one list so the read filter and the write-time
+ * re-check below can never drift apart. */
+const SWEEPABLE_STATE_EXCLUSIONS = sql`('archive', 'dismissed', 'promoted')`;
+
+export interface LiveOpportunityRow {
+  id: string;
+  accountProfileId: string;
+  projectId: string;
+}
+
+/** Stable key for a (project, account) pair. `::` cannot occur inside a UUID, so
+ * no two distinct pairs can collide on one key. */
+function pairKey(accountProfileId: string, projectId: string): string {
+  return `${accountProfileId}::${projectId}`;
+}
+
+/**
+ * The sweepable rows this run proved are no longer routed. Pure, so the
+ * selection rule is testable without a database.
+ *
+ * The `scoredProjectIds` condition is the safety property: the sweep can only
+ * demote a pair whose project this run actually re-evaluated. A project outside
+ * the run's scope — or one `loadFeatures` no longer returns at all — is left
+ * alone, because not looking at something is not evidence about it.
+ */
+export function deroutedOpportunities(
+  live: readonly LiveOpportunityRow[],
+  routedPairs: ReadonlySet<string>,
+  scoredProjectIds: ReadonlySet<string>,
+): LiveOpportunityRow[] {
+  return live.filter(
+    (row) =>
+      scoredProjectIds.has(row.projectId) &&
+      !routedPairs.has(pairKey(row.accountProfileId, row.projectId)),
+  );
+}
+
+async function loadSweepableOpportunities(
+  db: Db,
+  accountProfileIds: string[],
+): Promise<LiveOpportunityRow[]> {
+  if (accountProfileIds.length === 0) return [];
+  const res = await db.execute(sql`
+    SELECT id, account_profile_id, project_id
+    FROM opportunities
+    WHERE state NOT IN ${SWEEPABLE_STATE_EXCLUSIONS}
+      AND account_profile_id IN (${sql.join(
+        accountProfileIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})`);
+  return (res.rows as Record<string, unknown>[]).map((r) => ({
+    id: r["id"] as string,
+    accountProfileId: r["account_profile_id"] as string,
+    projectId: r["project_id"] as string,
+  }));
+}
+
+/**
+ * Archive the de-routed rows in one statement and report which ones actually
+ * moved. The id list rides as a single jsonb parameter so a large sweep cannot
+ * run into the bind-parameter ceiling.
+ */
+async function archiveDerouted(db: Db, ids: string[]): Promise<Set<string>> {
+  const res = await db.execute(sql`
+    UPDATE opportunities SET
+      state = 'archive',
+      -- Merge, never replace: the last real score's components/signals stay
+      -- intact beside the note. A bare "state" on the right-hand side is the
+      -- row's PRE-update value, so previousState records where it came from.
+      -- The ::text casts are required, not decorative: jsonb_build_object is
+      -- variadic "any", so a bare placeholder gives the planner nothing to infer
+      -- from and it fails with 42P18 "could not determine data type".
+      rationale_json = COALESCE(rationale_json, '{}'::jsonb) || jsonb_build_object(
+        'deroute', jsonb_build_object(
+          'reason', ${DEROUTE_REASON}::text,
+          'archivedAt', now(),
+          'previousState', state,
+          'atAlgorithmVersion', ${SCORING_ALGORITHM_VERSION}::text))
+    WHERE id IN (SELECT jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb)::uuid)
+      -- Re-assert the manual-state guard AT WRITE TIME. The sweep reads at the
+      -- end of a run that can take minutes; an owner who promoted or dismissed
+      -- a row in the meantime must win, and RETURNING tells us who did.
+      AND state NOT IN ${SWEEPABLE_STATE_EXCLUSIONS}
+    RETURNING id`);
+  return new Set((res.rows as { id: string }[]).map((r) => r.id));
 }
 
 /**
@@ -342,10 +475,27 @@ async function withConnectionRetry<T>(
 
 export async function scoreAll(
   db: Db,
-  opts: { logger?: { info(o: unknown, m?: string): void } } = {},
+  opts: {
+    logger?: { info(o: unknown, m?: string): void };
+    /**
+     * Limit the run to these projects. Omitted = the whole corpus (the
+     * production default). Scoping is safe for the de-route sweep by
+     * construction: the sweep only considers pairs whose project this run
+     * actually re-scored, so a narrow run can never archive work it never read.
+     */
+    projectIds?: string[];
+  } = {},
 ): Promise<ScoreRunSummary> {
-  const [features, accountData] = await Promise.all([loadFeatures(db), loadAccountInputs(db)]);
-  const summary: ScoreRunSummary = { projectsScored: 0, opportunities: 0, byAccount: {} };
+  const [features, accountData] = await Promise.all([
+    loadFeatures(db, opts.projectIds),
+    loadAccountInputs(db),
+  ]);
+  const summary: ScoreRunSummary = {
+    projectsScored: 0,
+    opportunities: 0,
+    deroutedArchived: 0,
+    byAccount: {},
+  };
 
   // The capacity snapshot effective at scoring time, per account (§5). Loaded
   // once per run; a null snapshot leaves scores unchanged.
@@ -355,6 +505,11 @@ export async function scoreAll(
   for (const [key, id] of accountData.ids) {
     snapshotByKey.set(key, await effectiveCapacitySnapshot(db, id, now));
   }
+
+  // Everything this run re-scored, and every pair it found still routing. The
+  // difference between them is what the sweep archives below.
+  const scoredProjectIds = new Set(features.map((f) => f.projectId));
+  const routedPairs = new Set<string>();
 
   for (const f of features) {
     summary.projectsScored++;
@@ -383,16 +538,55 @@ export async function scoreAll(
             "transient connection fault during upsert — retrying",
           ),
       );
+      routedPairs.add(pairKey(accountId, f.projectId));
       summary.opportunities++;
-      const bucket = (summary.byAccount[r.accountKey] ??= {
-        total: 0, priority: 0, digest: 0, archive: 0,
-      });
+      const bucket = bucketFor(summary, r.accountKey);
       bucket.total++;
       if (adjusted.state === "priority_review") bucket.priority++;
       else if (adjusted.state === "weekly_digest") bucket.digest++;
       else bucket.archive++;
     }
   }
+
+  // The de-route sweep runs only HERE, after every upsert has landed. A run that
+  // throws partway never reaches it — which is the point: a half-finished pass
+  // has no basis to claim anything stopped routing, it just stopped looking.
+  const accountKeyById = new Map<string, string>();
+  const evaluatedAccountIds: string[] = [];
+  for (const [key, id] of accountData.ids) {
+    accountKeyById.set(id, key);
+    // Only accounts the scorer can actually route for. For an account with no
+    // router, "nothing routed" is a config gap, not a verdict on the project.
+    if (hasRouter(key)) evaluatedAccountIds.push(id);
+  }
+  const sweepable = await loadSweepableOpportunities(db, evaluatedAccountIds);
+  const derouted = deroutedOpportunities(sweepable, routedPairs, scoredProjectIds);
+  if (derouted.length > 0) {
+    const archived = await withConnectionRetry(
+      () => archiveDerouted(db, derouted.map((d) => d.id)),
+      (attempt, err) =>
+        opts.logger?.info(
+          { attempt, candidates: derouted.length, err: String(err) },
+          "transient connection fault during de-route sweep — retrying",
+        ),
+    );
+    for (const row of derouted) {
+      if (!archived.has(row.id)) continue; // manual state won the race
+      summary.deroutedArchived++;
+      const key = accountKeyById.get(row.accountProfileId);
+      if (key) bucketFor(summary, key).derouted++;
+    }
+    opts.logger?.info(
+      {
+        candidates: derouted.length,
+        archived: summary.deroutedArchived,
+        skippedManualState: derouted.length - summary.deroutedArchived,
+        reason: DEROUTE_REASON,
+      },
+      "archived opportunities whose (project, account) pair stopped routing",
+    );
+  }
+
   opts.logger?.info(summary, "score run complete");
   return summary;
 }

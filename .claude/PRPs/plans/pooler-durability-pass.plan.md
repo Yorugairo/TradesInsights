@@ -1,15 +1,17 @@
 # Plan: durability pass — surviving Supavisor connection drops
 
-> Evidence gathered 2026-07-27 from two live failures the same day, plus a
+> Evidence gathered 2026-07-27 from THREE live failures the same day, plus a
 > codebase search for the same exposure. Every claim below is a file:line or a
 > production observation, not a hypothesis.
 
 ## Summary
 
-Long serial database loops die mid-run against the Supavisor pooler and leave
-**partial state that looks complete**. It happened twice on 2026-07-27 in
-unrelated subsystems. The fix already exists inside this repo — in a script
-nobody back-ported — and the shared pool is missing every setting that prevents it.
+Processes holding a database connection across minutes die mid-run against the
+Supavisor pooler and leave **partial state that looks complete**. It happened three
+times on 2026-07-27, in three unrelated subsystems, from two different causes (an
+idle socket reaped by the pooler, and a local DNS blip). The fix already exists inside
+this repo — in a script nobody back-ported — and the shared pool factory is missing
+every setting that prevents it.
 
 This is a three-layer pass: **prevent** at the pool, **recover** at the boundary,
 **detect** what already broke.
@@ -29,7 +31,7 @@ or a source stuck at `status='running'` while the dashboard reads healthy.
 
 ## GROUND TRUTH
 
-### Two confirmed failures, same day, unrelated subsystems
+### Three confirmed failures, same day, unrelated subsystems
 
 **1. `scoreAll` — v1.12.0 rescore.** Died at row ~31 of ~1,260 with
 `Connection terminated unexpectedly`. The loop has no resume, so production sat on a

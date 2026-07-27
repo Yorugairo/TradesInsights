@@ -20,7 +20,13 @@ import {
   sourceRuns,
   type Db,
 } from "@otn/db";
-import { MockProvider, extractProject, generateOutreach, verifyProject } from "@otn/intelligence";
+import {
+  MockProvider,
+  SCORING_ALGORITHM_VERSION,
+  extractProject,
+  generateOutreach,
+  verifyProject,
+} from "@otn/intelligence";
 import {
   buildDigest,
   deliverDigest,
@@ -31,6 +37,13 @@ import {
 import { deleteTestProjects, resetSource, testDb } from "./helpers.js";
 
 const RUN = randomUUID().slice(0, 8).toUpperCase();
+/**
+ * The rationale scoreAll stamps on every row it writes. Delivery refuses to rank
+ * an opportunity whose recorded algorithm version is not the running one
+ * (scoredByCurrentAlgorithm), so a fixture without this is withheld as stale —
+ * which is correct behaviour, but not what these tests are about.
+ */
+const CURRENT_RATIONALE = { algorithmVersion: SCORING_ALGORITHM_VERSION };
 const BUDGET = { monthlyCapUsd: 100, perJobCapUsd: 0.5 };
 const PERIOD_END = new Date();
 const PERIOD_START = new Date(PERIOD_END.getTime() - 7 * 86_400_000);
@@ -157,6 +170,7 @@ beforeAll(async () => {
     currentScore: 88,
     state: "priority_review",
     firstQualifiedAt: new Date(),
+    rationaleJson: CURRENT_RATIONALE,
   });
 
   const extract = await extractProject(
@@ -208,6 +222,7 @@ beforeAll(async () => {
     projectId: projectBlockedId,
     currentScore: 70,
     state: "weekly_digest",
+    rationaleJson: CURRENT_RATIONALE,
   });
 
   // Project C: fully verified but with a missing critical fact → gate passes,
@@ -222,6 +237,7 @@ beforeAll(async () => {
       currentScore: 82,
       state: "priority_review",
       firstQualifiedAt: new Date(),
+      rationaleJson: CURRENT_RATIONALE,
     })
     .returning({ id: opportunities.id });
   oppReviewId = oppC!.id;
@@ -321,6 +337,7 @@ beforeAll(async () => {
     currentScore: 86,
     state: "priority_review",
     firstQualifiedAt: new Date(),
+    rationaleJson: CURRENT_RATIONALE,
   });
   const extractD = await extractProject(
     db,

@@ -1,7 +1,13 @@
 import { sql } from "drizzle-orm";
 import nodemailer from "nodemailer";
 import type { Db } from "@otn/db";
-import { COMMERCIAL_BUYOUT_STAGES, bidTrackFor, classify, type ProjectFeatures } from "@otn/intelligence";
+import {
+  COMMERCIAL_BUYOUT_STAGES,
+  bidTrackFor,
+  classify,
+  scoredByCurrentAlgorithm,
+  type ProjectFeatures,
+} from "@otn/intelligence";
 
 /**
  * M4.7 — operational alerts (spec §21: "spend, health, stale-source, and
@@ -28,6 +34,13 @@ export const SPEND_WARNING_RATIO = 0.8;
  *   re-alerts to at most one per opportunity/stage/day.
  * - Residential interior trades bid AFTER the permit issues; commercial buys out
  *   pre-issuance across COMMERCIAL_BUYOUT_STAGES (bid-window.ts, one source of truth).
+ * - The opportunity's stored score must come from the CURRENT algorithm version.
+ *   This alert tells a sub "bid now" about one named project, and `state =
+ *   priority_review` is the whole qualifying bar — but that state is only
+ *   meaningful if a current model set it. A row scoreAll stopped rescoring (its
+ *   pair no longer routes) keeps its old band forever, so without this the
+ *   loudest, most time-sensitive message in the system is the one most likely to
+ *   be sent on retired rules. Skips are counted, not silently swallowed.
  */
 const PHASE_CHANGE_PRIORITY_STATE = "priority_review";
 const PHASE_CHANGE_LOOKBACK_DAYS = 2;
@@ -43,7 +56,15 @@ export interface AlertCandidate {
 }
 
 export interface AlertsRunSummary {
-  evaluated: { spend: boolean; sources: number; deliveries: number };
+  evaluated: {
+    spend: boolean;
+    sources: number;
+    deliveries: number;
+    /** Priority opportunities skipped for the phase-change alert because their
+     * stored score predates the current algorithm version. A non-zero value means
+     * live rows are ranked on retired rules — rescore. */
+    staleScoreSkipped: number;
+  };
   fired: AlertCandidate[];
   deduped: number;
   emailed: boolean;
@@ -59,7 +80,14 @@ export async function evaluateAlertConditions(
     /** D4 — source key → keys it provides substitute coverage for. */
     substitutes?: Record<string, string[]>;
   } = { monthlyBudgetUsd: null },
-): Promise<{ candidates: AlertCandidate[]; sourcesChecked: number; deliveriesChecked: number }> {
+): Promise<{
+  candidates: AlertCandidate[];
+  sourcesChecked: number;
+  deliveriesChecked: number;
+  /** Distinct priority opportunities skipped for the phase-change alert because
+   * their stored score predates the current algorithm version. */
+  staleScoreSkipped: number;
+}> {
   const now = opts.now ?? new Date();
   const substitutes = opts.substitutes ?? {};
   const day = now.toISOString().slice(0, 10);
@@ -174,7 +202,7 @@ export async function evaluateAlertConditions(
   ).toISOString();
   const phase = await db.execute(sql`
     SELECT o.id AS opportunity_id, o.account_profile_id, ap.key AS account_key,
-      o.current_score, p.canonical_name AS project_name, p.county,
+      o.current_score, o.rationale_json, p.canonical_name AS project_name, p.county,
       ev.resulting_stage,
       COALESCE(rec.text, lower(p.canonical_name)) AS text
     FROM opportunities o
@@ -201,16 +229,27 @@ export async function evaluateAlertConditions(
       WHERE rr.project_id = p.id AND rr.status = 'active'
     ) rec ON true
     WHERE o.state = ${PHASE_CHANGE_PRIORITY_STATE}`);
-  const phaseRows = phase.rows as {
+  const allPhaseRows = phase.rows as {
     opportunity_id: string;
     account_profile_id: string;
     account_key: string;
     current_score: number | null;
+    rationale_json: unknown;
     project_name: string;
     county: string;
     resulting_stage: string;
     text: string | null;
   }[];
+  // One opportunity can yield several rows (one per stage it reached), so the
+  // skip count is of distinct opportunities, not of rows.
+  const staleScoreOpportunities = new Set(
+    allPhaseRows
+      .filter((r) => !scoredByCurrentAlgorithm(r.rationale_json))
+      .map((r) => r.opportunity_id),
+  );
+  const phaseRows = allPhaseRows.filter(
+    (r) => !staleScoreOpportunities.has(r.opportunity_id),
+  );
   for (const r of phaseRows) {
     // Same deterministic classifier the scorer/digest use — never a re-derived
     // keyword pass. classify() reads only the aggregated text (stage is unused
@@ -257,7 +296,12 @@ export async function evaluateAlertConditions(
     });
   }
 
-  return { candidates, sourcesChecked: sourceRows.length, deliveriesChecked: draftRows.length };
+  return {
+    candidates,
+    sourcesChecked: sourceRows.length,
+    deliveriesChecked: draftRows.length,
+    staleScoreSkipped: staleScoreOpportunities.size,
+  };
 }
 
 export interface RunAlertsOptions {
@@ -271,7 +315,7 @@ export interface RunAlertsOptions {
 }
 
 export async function runAlerts(db: Db, opts: RunAlertsOptions): Promise<AlertsRunSummary> {
-  const { candidates, sourcesChecked, deliveriesChecked } = await evaluateAlertConditions(db, {
+  const { candidates, sourcesChecked, deliveriesChecked, staleScoreSkipped } = await evaluateAlertConditions(db, {
     monthlyBudgetUsd: opts.monthlyBudgetUsd,
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.substitutes ? { substitutes: opts.substitutes } : {}),
@@ -310,7 +354,12 @@ export async function runAlerts(db: Db, opts: RunAlertsOptions): Promise<AlertsR
   }
 
   return {
-    evaluated: { spend: opts.monthlyBudgetUsd !== null, sources: sourcesChecked, deliveries: deliveriesChecked },
+    evaluated: {
+      spend: opts.monthlyBudgetUsd !== null,
+      sources: sourcesChecked,
+      deliveries: deliveriesChecked,
+      staleScoreSkipped,
+    },
     fired,
     deduped,
     emailed,

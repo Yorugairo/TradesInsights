@@ -49,6 +49,32 @@ import { bidTrackFor, type BidTrack } from "./bid-window.js";
 // filed last week or last year. See timingInterior / appliedFreshness.
 export const SCORING_ALGORITHM_VERSION = "1.12.0";
 
+/**
+ * Delivery guard — may this opportunity's stored rationale be ranked and sent?
+ *
+ * Only if it records the version of the algorithm that is running now. Two
+ * distinct faults both reach a customer as "here is your ranked list" and both
+ * are caught here:
+ *
+ * - A row `scoreAll` stopped rescoring, because its (project, account) pair no
+ *   longer routes. The de-route sweep in score-run.ts archives those, but the
+ *   sweep only runs when a full pass COMPLETES — this holds the line when one
+ *   does not.
+ * - A rescore that died partway (2026-07-26: a pooler drop after 31 of ~1,260
+ *   Solis rows) and left production ranked by two different models at once.
+ *
+ * An ABSENT or unparseable version fails too. `scoreAll` writes the version on
+ * every row it touches, so a live row without one has unknown provenance — and
+ * ranking a customer's week by a model we cannot name is a claim without a
+ * source. Withheld items are counted and disclosed, never silently dropped.
+ */
+export function scoredByCurrentAlgorithm(rationale: unknown): boolean {
+  if (rationale === null || typeof rationale !== "object") return false;
+  return (
+    (rationale as { algorithmVersion?: unknown }).algorithmVersion === SCORING_ALGORITHM_VERSION
+  );
+}
+
 /** Aggregated, stored facts about a project — no inference beyond keywords. */
 export interface ProjectFeatures {
   projectId: string;
@@ -799,6 +825,19 @@ function appendCorroborationSignals(signals: string[], f: ProjectFeatures): void
   if ((f.corroborationSourceCount ?? 0) >= 2) signals.push("corroborated_multi_source");
   if ((f.corroborationStageDepth ?? 0) >= 2) signals.push("lifecycle_progressing");
   if (f.hasFactContradiction) signals.push("fact_contradiction");
+}
+
+/**
+ * Whether the scorer has a router for this account key.
+ *
+ * `routeProject` silently skips an account with no router, so for such an
+ * account "returned no result" means "was never evaluated" — NOT "this project
+ * is no longer relevant". The de-route sweep in score-run.ts must be able to
+ * tell those apart, or a missing router entry would archive every one of that
+ * account's opportunities on the next run.
+ */
+export function hasRouter(accountKey: string): boolean {
+  return Object.hasOwn(ROUTERS, accountKey);
 }
 
 /** Route a project against every active account. */
