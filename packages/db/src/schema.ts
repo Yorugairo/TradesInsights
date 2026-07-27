@@ -1023,7 +1023,8 @@ export const alerts = pgTable(
   "alerts",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    /** spend_budget | source_red | source_stale | delivery_unsent */
+    /** spend_budget | source_red | source_stale | source_no_flow | delivery_unsent
+     *  | phase_change | resolver_errors */
     alertType: text("alert_type").notNull(),
     subjectKey: text("subject_key").notNull(),
     /** warning | critical */

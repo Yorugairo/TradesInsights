@@ -9,6 +9,7 @@ import {
   scoredByCurrentAlgorithm,
   type ProjectFeatures,
 } from "@otn/intelligence";
+import { assertSourceFlow } from "@otn/source-sdk";
 
 /**
  * M4.7 — operational alerts (spec §21: "spend, health, stale-source, and
@@ -52,6 +53,7 @@ export interface AlertCandidate {
     | "spend_budget"
     | "source_red"
     | "source_stale"
+    | "source_no_flow"
     | "delivery_unsent"
     | "phase_change"
     | "resolver_errors";
@@ -222,6 +224,49 @@ export async function evaluateAlertConditions(
         });
       }
     }
+  }
+
+  // 3b. CADENCE-WINDOWED FLOW. Distinct from `source_stale` above, and the
+  // difference is the whole reason it exists: that check reads
+  // `sources JOIN coverage_entries` and then requires `last_success_at` to be
+  // non-null, so a source that has NEVER RUN — null last_success_at, no runs to
+  // join — passes silently. Nine sources were in exactly that state on
+  // 2026-07-27, one of them (`seattle_design_review`) with a committed adapter
+  // and a passing test.
+  //
+  // `assertSourceFlow` iterates CONFIG and left-joins runs, so a source can be
+  // reported missing by something that knew to expect it. It also separates
+  // "never invoked" from "ran and produced nothing", which are different
+  // failures with different fixes.
+  const flow = await assertSourceFlow(db, { now });
+  for (const f of flow) {
+    if (!f.flagged) continue;
+    candidates.push({
+      alertType: "source_no_flow",
+      subjectKey: f.sourceKey,
+      // `never_ran` and `no_run_in_window` mean the pipeline is not running at
+      // all for this source — critical. `no_records_in_window` and `unknown`
+      // mean it ran and something went wrong, which the red/stale checks above
+      // will usually also catch, so they stay a warning rather than doubling
+      // the noise on an already-alerting source.
+      severity:
+        f.state === "never_ran" || f.state === "no_run_in_window" ? "critical" : "warning",
+      message: `Source ${f.sourceKey} is not flowing (${f.state}): ${f.reason}`,
+      details: {
+        state: f.state,
+        cadence: f.cadence,
+        windowHours: f.windowHours,
+        runsInWindow: f.runsInWindow,
+        orphanRunsInWindow: f.orphanRunsInWindow,
+        recordsInWindow: f.recordsInWindow,
+        lastRunAt: f.lastRunAt?.toISOString() ?? null,
+        lastSuccessAt: f.lastSuccessAt?.toISOString() ?? null,
+      },
+      // State is in the key so a source moving from `never_ran` to
+      // `no_records_in_window` re-announces itself rather than being deduped
+      // against yesterday's different problem.
+      idempotencyKey: `source_no_flow:${f.sourceKey}:${f.state}:${day}`,
+    });
   }
 
   // 4. Deliveries drafted but never sent well past their period.

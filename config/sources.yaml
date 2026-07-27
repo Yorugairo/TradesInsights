@@ -202,6 +202,17 @@ sources:
       via the generic ArcgisPermitsAdapter (BELLEVUE_CONFIG). King county —
       Bellevue is King's #2 job market after Seattle; routes to Solis as
       King-suburb commercial. Public open-data REST, no auth/robots restriction.
+      ---
+      2026-07-27: the fleet audit listed this as "ran twice, never succeeded,
+      zero records ever". THAT READING WAS WRONG, and how it was wrong is worth
+      keeping. Both runs were ORPHANS — reaped at status='running' with null
+      metrics — so their zero counters were never-written columns, not
+      measurements. The source had in fact already stored 3 artifacts and 4,018
+      records. A clean run on 2026-07-27 confirmed it: discovered 3, fetched 3,
+      unchanged 3, health green — unchanged because the bytes were identical to
+      what the "failed" runs had already banked. Nothing to fix here; the defect
+      was in the bookkeeping (see reapOrphanedRuns) and in reading an orphan's
+      zeros as data.
 
   - key: everett_permits_socrata
     name: City of Everett Trakit Permits (Socrata)
@@ -242,11 +253,25 @@ sources:
     cadence: daily
     county: Spokane
     permitting_jurisdiction: City of Spokane
-    enabled: true
+    enabled: false
     terms_reviewed_at: "2026-07-23"
     robots_reviewed_at: "2026-07-23"
     required_fields: [addressRaw, applicationDate]
     notes: >-
+      DISABLED 2026-07-27 — services.spokanegis.org blocks our user agent with a
+      SELF-REDIRECT LOOP. Measured the same minute: the identical query returns
+      HTTP 200 with a browser UA and HTTP 302 with "OTNInsightsBot/0.1", and the
+      302's Location header is the request URL itself, so following it loops
+      forever. There is no robots.txt (404), so this is a server-side UA filter,
+      not a crawl directive. The adapter and the endpoint are both fine — three
+      runs, three failures, zero artifacts and zero records ever stored.
+      NOT worked around by spoofing a browser UA. That is evading a deliberate
+      block, which is the same "push against the gate" that scripts/pals-capture-loop.mjs
+      exists to refuse. Re-enable only if Spokane whitelists a declared bot UA or
+      publishes the layer through an open-data portal that permits automation.
+      Low cost to leave off: eastern WA is far from every current account and
+      Solis's distance band de-rates it hard.
+      ---
       Wave3 densification, verified live 2026-07-23. Spokane's permit MapServer
       (Permit/Permit_WM_Dynamic2), layer 0 "Permit" — layers 1-3 are boundary/
       council overlays, so this is effectively a single-layer feed. OpenDate epoch,

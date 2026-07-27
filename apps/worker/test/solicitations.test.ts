@@ -26,7 +26,6 @@ import {
   type DiscoveredArtifact,
   type ParsedRecord,
   type RawArtifact,
-  type RunContext,
   type SourceAdapter,
 } from "@otn/source-sdk";
 import { FIXTURES_DIR } from "../src/jobs.js";

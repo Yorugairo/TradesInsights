@@ -1,0 +1,126 @@
+name: source fleet
+
+# THE SCHEDULER. Until this file existed, nothing in production ran on a
+# cadence: `registerSchedules()` was written, correct and staggered, but the
+# `pgboss` schema had never been created, so it had never initialized once.
+# Every run in `source_runs` up to 2026-07-27 was invoked by hand — daily
+# sources averaged ~2 runs in 6 days.
+#
+# READ THIS BEFORE EDITING:
+#
+#  1. `schedule:` fires ONLY from the repository's DEFAULT branch. This org has
+#     been bitten by that before. Verified 2026-07-27 with
+#     `gh repo view --json defaultBranchRef` → `claude/tmux-install-320aiz`,
+#     which is the branch this file is committed to, so it will fire. If the
+#     default branch is ever changed, this workflow silently stops — which is
+#     the exact failure it was written to fix.
+#
+#  2. Times are UTC; GitHub cron has no timezone. 09:35 UTC = 02:35 Pacific
+#     during PDT, matching the 02:00–03:59 local fetch window `cadenceCron()`
+#     was designed around (counties publish on business days; fetching before
+#     their peak is deliberate). During PST this drifts an hour later — harmless.
+#
+#  3. GH cron is best-effort and routinely 5–15 minutes late, and can be skipped
+#     entirely under load. That is why `flow-check` runs separately and
+#     independently: it reports whether the fetches ACTUALLY happened, rather
+#     than trusting that scheduling them was enough.
+
+on:
+  schedule:
+    # Daily fetch — 02:35 Pacific (PDT).
+    - cron: "35 9 * * *"
+    # Weekly fetch — Mondays, 03:05 Pacific.
+    - cron: "5 10 * * 1"
+    # Monthly fetch — 2nd of the month (monthly reports post after month end).
+    - cron: "20 10 2 * *"
+    # Nightly maintenance chain — 04:45 Pacific, after the fetch window.
+    - cron: "45 11 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: which job to run
+        required: true
+        default: flow-check
+        type: choice
+        options: [daily, weekly, monthly, maintenance, flow-check]
+
+concurrency:
+  # Never overlap fleet work with itself: two concurrent runs of the same source
+  # race on the same `source_records` rows and on the run ledger.
+  group: source-fleet
+  cancel-in-progress: false
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  OBJECT_STORAGE_ENDPOINT: ${{ secrets.OBJECT_STORAGE_ENDPOINT }}
+  OBJECT_STORAGE_REGION: ${{ secrets.OBJECT_STORAGE_REGION }}
+  OBJECT_STORAGE_BUCKET: ${{ secrets.OBJECT_STORAGE_BUCKET }}
+  OBJECT_STORAGE_ACCESS_KEY: ${{ secrets.OBJECT_STORAGE_ACCESS_KEY }}
+  OBJECT_STORAGE_SECRET_KEY: ${{ secrets.OBJECT_STORAGE_SECRET_KEY }}
+  # Optional. Absent is a visible skip inside the chain, never a failure.
+  REGISTRY_DATABASE_URL: ${{ secrets.REGISTRY_DATABASE_URL }}
+  ALERTS_EMAIL: ${{ secrets.ALERTS_EMAIL }}
+  SMTP_HOST: ${{ secrets.SMTP_HOST }}
+  SMTP_PORT: ${{ secrets.SMTP_PORT }}
+  SOURCE_USER_AGENT: ${{ vars.SOURCE_USER_AGENT }}
+
+jobs:
+  fleet:
+    runs-on: ubuntu-latest
+    # Slowest single run ever measured is 8.8 min and the daily set is ~21
+    # sources run sequentially; 120 min is generous headroom without letting a
+    # hung fetch hold a runner all day.
+    timeout-minutes: 120
+    steps:
+      - name: Fail fast when the database secret is missing
+        # Without this the run would "succeed" having connected to nothing,
+        # which is indistinguishable from a healthy quiet night.
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::DATABASE_URL secret is not set — the fleet cannot run."
+            echo "Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Select the job for this trigger
+        id: which
+        run: |
+          case "${{ github.event.schedule }}" in
+            "35 9 * * *")   echo "job=daily"       >> "$GITHUB_OUTPUT" ;;
+            "5 10 * * 1")   echo "job=weekly"      >> "$GITHUB_OUTPUT" ;;
+            "20 10 2 * *")  echo "job=monthly"     >> "$GITHUB_OUTPUT" ;;
+            "45 11 * * *")  echo "job=maintenance" >> "$GITHUB_OUTPUT" ;;
+            *)              echo "job=${{ inputs.job || 'flow-check' }}" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Fetch sources for this cadence
+        if: contains(fromJSON('["daily","weekly","monthly"]'), steps.which.outputs.job)
+        run: pnpm source:run:cadence --cadence=${{ steps.which.outputs.job }}
+
+      - name: Nightly maintenance chain
+        if: steps.which.outputs.job == 'maintenance'
+        # reap → resolve → developments → geometry/geocode → registry seam →
+        # score → alerts. Idempotent, so a duplicate run is harmless.
+        run: pnpm maintenance:run
+
+      - name: Flow check
+        # ALWAYS, including after a failed fetch step: "did anything actually
+        # land?" is most worth asking on the runs that went wrong. Non-blocking
+        # because it is a report, not a gate — its findings reach the operator
+        # through the `source_no_flow` alert the maintenance chain raises.
+        if: always()
+        continue-on-error: true
+        run: pnpm flow:check --all
