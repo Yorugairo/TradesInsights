@@ -7,6 +7,7 @@ import {
   sourceRecords,
   sourceRuns,
   sources,
+  withConnectionRetry,
 } from "@otn/db";
 import { NormalizedSourceRecordSchema } from "@otn/domain";
 import type { Logger } from "pino";
@@ -357,25 +358,44 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
       for (const f of MONITORED_FILL_FIELDS) fieldFill[f] = (fillCounts[f] ?? 0) / fillTotal;
     }
     const status = metrics.errors > 0 ? "completed_with_errors" : "succeeded";
-    await db
-      .update(sourceRuns)
-      .set({
-        completedAt: new Date(),
-        status,
-        discoveredCount: metrics.discovered,
-        fetchedCount: metrics.fetched,
-        unchangedCount: metrics.unchanged,
-        parsedCount: metrics.parsed,
-        rejectedCount: metrics.rejected,
-        duplicateCount: metrics.duplicate,
-        errorCount: metrics.errors,
-        schemaFingerprint: runSchemaFingerprint,
-        metricsJson: { ...metrics, deadLetters, invariantViolationDetails },
-        // Carry the previous checkpoint forward when the adapter didn't set a
-        // new one, so an intermediate no-checkpoint run doesn't lose the mark.
-        checkpointJson: nextCheckpoint ?? previousCheckpoint,
-      })
-      .where(eq(sourceRuns.id, run.id));
+    // THE most important write in this function, and the one that failed on
+    // 2026-07-27: thurston_active_notices discovered, fetched and parsed its
+    // record cleanly, then lost the connection on THIS statement — the fetch had
+    // succeeded and the ledger recorded a failure. bellevue_permits_arcgis fared
+    // worse: its terminal write never landed at all, leaving the row stuck at
+    // `status='running'` with null metrics, which no health check can see.
+    //
+    // Idempotent by construction: an UPDATE of computed columns keyed by primary
+    // key, so a replay writes the same values.
+    await withConnectionRetry(
+      () =>
+        db
+          .update(sourceRuns)
+          .set({
+            completedAt: new Date(),
+            status,
+            discoveredCount: metrics.discovered,
+            fetchedCount: metrics.fetched,
+            unchangedCount: metrics.unchanged,
+            parsedCount: metrics.parsed,
+            rejectedCount: metrics.rejected,
+            duplicateCount: metrics.duplicate,
+            errorCount: metrics.errors,
+            schemaFingerprint: runSchemaFingerprint,
+            metricsJson: { ...metrics, deadLetters, invariantViolationDetails },
+            // Carry the previous checkpoint forward when the adapter didn't set a
+            // new one, so an intermediate no-checkpoint run doesn't lose the mark.
+            checkpointJson: nextCheckpoint ?? previousCheckpoint,
+          })
+          .where(eq(sourceRuns.id, run.id)),
+      {
+        onRetry: (attempt, e) =>
+          logger.warn(
+            { attempt, sourceRunId: run.id, err: String(e) },
+            "transient fault writing the terminal source_runs row — retrying",
+          ),
+      },
+    );
 
     logger.info({ ...metrics, status }, "source run complete");
     return { sourceRunId: run.id, status, metrics, deadLetters };
