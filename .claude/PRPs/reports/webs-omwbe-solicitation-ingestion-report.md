@@ -227,6 +227,39 @@ Every row has a typed `bid_due_at`. Zero have a county, and zero have an agency
 second is why `procuring_agency` had to become nullable. 48 rows carry an
 amendment date and are stored as `status = 'amended'`.
 
+### OMWBE — green
+
+```
+listed 160  newOrChanged 160  fetching 60  deferredToNextRun 100  crawlDelayMs 10000
+discovered 60  fetched 60  parsed 60  rejected 0  duplicate 0  errors 0
+invariantViolations 0   status succeeded   health green
+```
+
+Ten minutes wall clock for 60 postings, which is the declared `Crawl-delay: 10`
+being honoured rather than a performance problem.
+
+The classification split is exactly the shape it should be:
+
+| document_type | rows | dated | with prime | with agency |
+|---|---:|---:|---:|---:|
+| `solicitation` | 59 | 59 | 0 | **59** |
+| `sub_bid_request` | 1 | 1 | **1** | 0 |
+
+Mutually exclusive in both directions — an agency solicitation never carries a
+prime, a sub-bid call never carries an agency — which is the disambiguation the
+adapter has to do because OMWBE renders both through one
+`field-your-organization`. The one sub-bid row is RAM Construction General
+Contractors on "SUB-BIDS Requested: BSD #501 Community Transitions", due
+2026-07-30.
+
+**Coverage caveat, stated because the cap is real:** only the first 60 of 160
+postings were fetched, so this run harvested one sub-bid post. The known others
+on the live board — Skanska's three Portage Bay Bridge packages, the GC/CM
+Community Transitions call, a Subcontractor Bid Invitation and a statewide
+subcontracting post — sit further down the list and land on runs 2 and 3 as the
+backlog drains. The run logs `deferredToNextRun: 100` explicitly; nothing is
+dropped silently.
+
 ### A real bug this run caught, and the migrator trap behind it
 
 The first live run failed all six artifacts at the persist stage with a
@@ -274,10 +307,13 @@ reach them.
 1. **Solicitation → project resolver** (blocks Phase 3). Link a solicitation to a
    known project on real evidence, emit `solicitation_published`, set
    `bidding_confirmed` from the new table. Then port Tacoma.
-2. **Activation runs** for both sources: run disabled, inspect output, flip
-   `enabled: true` with a ledger entry — the path `tacoma_solicitations` took on
-   2026-07-17. Note OMWBE's first run fetches up to 60 detail pages at a 10s
-   crawl delay (~10 minutes).
+2. **Activation** — the shadow runs above are the inspect step and both are
+   green, so what remains is owner-gated: apply migration 0036 to production
+   (prod is at 35, so 0036 is the only pending one), then flip `enabled: true`
+   with a ledger entry, the path `tacoma_solicitations` took on 2026-07-17.
+   Neither was done unilaterally: a production schema change and a source
+   activation are both checklist rituals in this repo, not side effects of an
+   implementation pass.
 3. **`bid_deadline_changed` / `award_published`** are now implementable and still
    unimplemented. WEBS exposes an amendment date (already mapped to
    `status: "amended"`); neither source publishes awards.
