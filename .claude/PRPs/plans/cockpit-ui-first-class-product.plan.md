@@ -474,7 +474,13 @@ one place the spec constrains DOM shape.
   get `"use client"`. Do not let a `"use client"` leak up into a page.
 - **VALIDATE**: `pnpm typecheck`; no `"use client"` in any `components/ui/*`.
 
-## PHASE 2 — Shell (fixes both nav bugs)
+## PHASE 2 — Shell (fixes both nav bugs) · **COMPLETE 2026-07-27**
+> Report: `.claude/PRPs/reports/cockpit-ui-first-class-product-phase2-report.md`
+> **e2e baseline is now 28** (21 original + 7 in the new `e2e/shell.spec.ts`).
+> The harness was hardened first — built server, one worker — so Phase 3's
+> per-page gate means something. The production-DB half is still open.
+> Deviations: `data-density` is NOT server-rendered (React reconciles it away at
+> hydration); four admin lanes are palette-only, by design.
 
 ### Task 2.1: `AppNav`
 - **ACTION**: Replace the flat 14-link nav with a grouped rail: **Work** (Pipeline,

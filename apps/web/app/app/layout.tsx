@@ -1,59 +1,24 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import AppNav from "../../components/shell/AppNav.js";
 import { currentSession } from "../../lib/auth.js";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The authenticated shell.
+ *
+ * Auth stays here, in a server component. `AppNav` is a client component (it
+ * needs `usePathname` for active state) and receives the session as two plain
+ * props — it never reads a cookie or calls `currentSession` itself. Children
+ * pass through untouched, so every page below remains a server component.
+ */
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await currentSession();
   if (!session) redirect("/login");
   return (
-    <div>
-      <nav
-        style={{
-          display: "flex",
-          gap: "1rem",
-          borderBottom: "1px solid #ddd",
-          paddingBottom: "0.5rem",
-          marginBottom: "1rem",
-          flexWrap: "wrap",
-        }}
-      >
-        <strong>OTN Insights</strong>
-        {session.accountKey && (
-          <>
-            <Link href="/app/pipeline">Pipeline</Link>
-            <Link href="/app/pursuits">Pursuits</Link>
-            <Link href="/app/opportunities">Opportunities</Link>
-            <Link href="/app/map">Map</Link>
-            <Link href="/app/radar">Radar</Link>
-            <Link href="/app/digests">Digests</Link>
-            <Link href="/app/invitations">Invitations</Link>
-            <Link href="/app/organizations">Organizations</Link>
-            <Link href="/app/roi">ROI</Link>
-            <Link href="/app/feedback">Feedback</Link>
-            <Link href="/app/account-profile">Account</Link>
-          </>
-        )}
-        {session.role === "admin" && (
-          <>
-            {/* Cockpit first: it is the declared front door to every
-                identity/enrichment review lane, and until 2026-07-27 it was
-                reachable ONLY by "← cockpit" back-links from the five pages it
-                is supposed to be the front door for. You could find the map
-                only once you were already lost. */}
-            <Link href="/app/admin/cockpit">Cockpit</Link>
-            <Link href="/app/admin/sources">Sources</Link>
-            <Link href="/app/admin/review">Review queue</Link>
-            <Link href="/app/admin/coverage">Coverage</Link>
-          </>
-        )}
-        <span style={{ marginLeft: "auto", color: "#666" }} data-testid="session-info">
-          {session.accountKey ?? "(no account)"} · {session.role}
-        </span>
-      </nav>
+    <AppNav accountKey={session.accountKey ?? null} role={session.role}>
       {children}
-    </div>
+    </AppNav>
   );
 }

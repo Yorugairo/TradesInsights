@@ -181,20 +181,26 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
 
-  /* PRESERVED VERBATIM from the inline GLOBAL_CSS this file replaces. Every one
-     of the 24 pages currently relies on this body margin for its gutter — most
-     render a bare <main> with no padding of its own. Setting `margin: 0` here
-     because a modern shell "should" own its spacing pushes the entire app
-     edge-to-edge, and no e2e test would catch it (they assert testids, not
-     layout). Phase 2's AppNav takes over page framing; the margin comes out
-     THEN, in the same change that replaces it. */
+  /* Phase 2 (2026-07-27): the body margin is GONE, and this is the change that
+     replaced it. Phase 0 kept `margin: 1rem / 2rem` because all 24 pages render
+     a bare <main> and depended on it for their gutter — zeroing it early would
+     have pushed the app edge-to-edge with no e2e test to catch it.
+     `AppNav` now owns page framing (its content column carries px-4/md:px-8),
+     so the rail can reach the viewport edge as a rail should.
+     The two pages OUTSIDE the app shell — / and /login — carry `page-gutter`
+     instead. If you add a third, give it the same class. */
   body {
-    margin: 1rem;
+    margin: 0;
     min-height: 100vh;
   }
+
+  /* The gutter for standalone pages that have no shell around them. */
+  .page-gutter {
+    padding: 1.5rem 1rem;
+  }
   @media (min-width: 768px) {
-    body {
-      margin: 2rem;
+    .page-gutter {
+      padding: 2.5rem 2rem;
     }
   }
 
