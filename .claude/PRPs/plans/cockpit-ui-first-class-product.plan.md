@@ -398,7 +398,8 @@ one place the spec constrains DOM shape.
 
 ## Step-by-Step Tasks
 
-## PHASE 0 — Foundation (gates everything)
+## PHASE 0 — Foundation (gates everything) · **COMPLETE 2026-07-27**
+> Report: `.claude/PRPs/reports/cockpit-ui-first-class-product-phase0-report.md`
 
 ### Task 0.1: Install Tailwind v4
 - **ACTION**: Add `tailwindcss@^4` + `@tailwindcss/postcss` to `apps/web`; create
@@ -436,7 +437,10 @@ one place the spec constrains DOM shape.
 - **VALIDATE**: The doc states what Insights optimizes for in one paragraph, and every
   later task can cite a rule from it.
 
-## PHASE 1 — Primitives
+## PHASE 1 — Primitives · **COMPLETE 2026-07-27**
+> Report: `.claude/PRPs/reports/cockpit-ui-first-class-product-phase1-report.md`
+> 27 unit tests; `StatTile.value` widened to `string | number | null`; no scratch
+> route (it would have been an orphaned page — the bug this plan opens by naming).
 
 ### Task 1.1: Port the three proof primitives
 - **ACTION**: `components/proof/{StatTile,SourceChip,RangeBar}.tsx`, CSS Modules →
@@ -644,6 +648,26 @@ EXPECT: 281 → ~0 by Task 3.9
 | Premium dial drifts into decoration | Medium | Medium | Dials recorded (6/4/7); anti-pattern list in the taste doc; motion must explain state |
 | Half-migrated UI if abandoned mid-phase | Medium | Medium | Foundation-first; each page task independently shippable |
 | Redesign invents numbers to fill space | Low | **High** | "No new data" in NOT Building; primitives carry the never-fabricate comment |
+| **The e2e gate is load-fragile** (MEASURED 2026-07-27) | **High** | **High** | See below — fix before Phase 3 |
+
+### The e2e gate must be hardened before Phase 3 (added 2026-07-27, Phase 1)
+
+Phase 3's entire safety argument is "e2e green after each page". During Phase 1
+validation the suite failed **9 of 21** on one run and passed **21/21** on an
+identical re-run minutes later with no code change — and the change set under test
+contained nothing any page imports, so a real regression was impossible.
+
+The structural cause is in the harness, not the tests: `playwright.config.ts` runs
+`pnpm dev`, and the repo `.env` points `DATABASE_URL` at the **hosted production
+database** (pool max 2). The suite is therefore a dev-mode on-demand compile racing
+a two-connection remote pool under a 60s per-test budget.
+
+A gate that can report nine failures for environmental reasons cannot distinguish a
+dropped testid from a bad afternoon, which is exactly the failure this plan is built
+to prevent. **Fix first:** point e2e at a seeded local database, or run against a
+pre-built server (`next build && next start`) instead of `next dev`. Until then,
+treat any e2e failure as unproven until a clean re-run confirms it — and never treat
+a *pass* obtained by re-running as evidence that a genuine failure was a flake.
 
 ## Notes
 

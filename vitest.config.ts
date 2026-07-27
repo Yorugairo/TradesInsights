@@ -25,12 +25,23 @@ import {
 } from "./vitest.test-db.js";
 
 export default defineConfig({
+  // apps/web/tsconfig.json sets `"jsx": "preserve"` because Next owns that
+  // transform in the app build. Vitest has no Next pipeline behind it, so JSX
+  // left un-transformed reaches Node as a syntax error. Compile it here instead
+  // — `automatic` matches React 19's runtime and needs no `import React`.
+  esbuild: { jsx: "automatic", jsxImportSource: "react" },
   test: {
     include: [
       "packages/**/src/**/*.test.ts",
       "packages/**/test/**/*.test.ts",
       "apps/worker/src/**/*.test.ts",
       "apps/worker/test/**/*.test.ts",
+      // apps/web carries .tsx component tests. They render through
+      // react-dom/server (every primitive is a server component, so the static
+      // markup is the whole output) and need neither jsdom nor a DOM testing
+      // library — hence no `environment` override here.
+      "apps/web/**/*.test.ts",
+      "apps/web/**/*.test.tsx",
     ],
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**"],
     testTimeout: 30_000,

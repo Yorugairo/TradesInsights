@@ -57,6 +57,16 @@
   --surface-track: var(--line-strong);
   --chip-bg: rgba(212, 175, 55, 0.08);
   --chip-border: rgba(212, 175, 55, 0.35);
+  --accent-glow: rgba(212, 175, 55, 0.3); /* verbatim, OTN globals.css:13 */
+  /* Non-text decoration, so no AA obligation. Both are declared per register
+     because a gradient tuned for #061109 turns muddy on #ffffff. */
+  --panel-gold-bg: linear-gradient(160deg, rgba(212, 175, 55, 0.1), var(--surface) 55%);
+  --range-band: linear-gradient(
+    90deg,
+    rgba(212, 175, 55, 0.14),
+    rgba(212, 175, 55, 0.45) 50%,
+    rgba(212, 175, 55, 0.14)
+  );
 
   /* Density. The cockpit is a working tool; operators want more rows per
      screen than a buyer does. DensityToggle flips [data-density]. */
@@ -94,6 +104,16 @@
   --surface-track: var(--line);
   --chip-bg: rgba(212, 175, 55, 0.08);
   --chip-border: rgba(160, 124, 32, 0.4);
+  /* A gold glow reads as a smudge on white; the light register uses the
+     darkened gold (--accent-ink family) as a plain drop shadow instead. */
+  --accent-glow: rgba(138, 106, 21, 0.35);
+  --panel-gold-bg: linear-gradient(160deg, rgba(212, 175, 55, 0.16), var(--surface) 55%);
+  --range-band: linear-gradient(
+    90deg,
+    rgba(160, 124, 32, 0.18),
+    rgba(160, 124, 32, 0.5) 50%,
+    rgba(160, 124, 32, 0.18)
+  );
 }
 
 /* Compact density: same tokens, tighter rhythm. Nothing else changes, so a
@@ -124,6 +144,13 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
+
+  /* Proof-primitive surfaces. Exposed as colour tokens so SourceChip and
+     RangeBar are written in utilities like every other component instead of
+     reaching for `bg-[var(--chip-bg)]` arbitrary values. */
+  --color-chip: var(--chip-bg);
+  --color-chip-line: var(--chip-border);
+  --color-track: var(--surface-track);
 }
 
 /* Radius is register-independent, so it is a plain `@theme` (not `inline`) —
@@ -133,6 +160,15 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
+
+  /* Two type sizes Tailwind's scale does not carry, both ported from OTN's
+     proof primitives rather than rounded to the nearest Tailwind step:
+     `2xs` is the uppercase eyebrow on StatTile/RangeBar captions, and `stat`
+     is StatTile's fluid metric size. Register-independent, so plain @theme. */
+  --text-2xs: 0.7rem;
+  --text-2xs--line-height: 1.2;
+  --text-stat: clamp(1.35rem, 1.1rem + 1vw, 1.85rem);
+  --text-stat--line-height: 1.15;
 }
 
 @layer base {
