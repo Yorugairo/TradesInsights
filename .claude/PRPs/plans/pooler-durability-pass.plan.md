@@ -44,6 +44,32 @@ and the ledger recorded failure.
 
 Both are the same fault: a pooled connection that has gone away between uses.
 
+**3. The Google Place fleet — six of seven workers, simultaneously.** Observed while
+this plan was being written (02:53–02:55 UTC):
+
+```
+{"event":"crashed","error":"getaddrinfo ENOTFOUND aws-1-us-west-2.pooler.supabase.com"}
+```
+
+A local DNS blip, cleared within minutes (`nslookup` resolves, `select 1` answers). It
+is worth recording for three reasons:
+
+- It is the **same failure family** — a transient connection fault — arriving through a
+  different door (name resolution rather than an idle socket). `ENOTFOUND` is already
+  in the `isTransientConnectionError` regex; the driver simply has no retry to use it.
+- The driver **crashes the whole worker** on it, discarding an in-flight batch, when
+  the correct response is to back off and re-resolve. Its own pool config is the best
+  in either repo; its *error handling* is the weakest.
+- It proves the class is not specific to long serial loops. Any process holding a
+  database connection across minutes is exposed, including ones that are otherwise
+  well engineered.
+
+The watchdog did its job — 11 relaunches logged — but a relaunch loses the batch and
+resets the log. Recovery is not the same as durability.
+
+**Three unrelated subsystems, one day, one root cause.** That is the argument for
+fixing this at the shared layer rather than per incident.
+
 ### The collateral: orphaned `running` rows
 
 `bellevue_permits_arcgis` is **still `status='running'`** with `metrics_json = NULL`,
@@ -226,7 +252,22 @@ the message happens to contain it. Match on `err.code` as well as the message.
   or a retry duplicates events). Verify per call site — do not pattern-match.
 - **VALIDATE**: Full suite plus a live `pnpm cycle:run --skip-sources`.
 
-### Task 6 — close-out
+### Task 6 — harden the Google Place driver *(different repo: OneTradeNetwork)*
+- **ACTION**: Make `scrape-google-place-batches.mjs` survive a transient DNS/connection
+  fault instead of crashing the worker.
+- **IMPLEMENT**: Wrap `claimBatch` and the result-write in the same bounded retry. On
+  exhaustion, exit non-zero as today so the watchdog still relaunches — retry is an
+  addition to the safety net, not a replacement for it.
+- **GOTCHA**: This file lives in the **OneTradeNetwork** tree, and a diverged near-copy
+  exists in the `trades-google-place-integration-v2` worktree. Fix the one the watchdog
+  actually launches (`-RepoRoot C:\Users\Snipe\Downloads\OneTradeNetwork`) and note the
+  other, or the fix appears to do nothing.
+- **GOTCHA**: Do NOT retry past the `STOP-do-not-relaunch` semantics — a Google block
+  must still stop the run hard. Only connection faults retry.
+- **VALIDATE**: Point `DATABASE_URL` at an unresolvable host, confirm the worker retries
+  and backs off rather than exiting immediately; restore and confirm a batch completes.
+
+### Task 7 — close-out
 Full suite, `pnpm eval:run` gates, commit, update `docs/STATUS.md`, plan history.
 
 ---
@@ -281,6 +322,6 @@ retry helper; it is that the shared factory carries the lesson.
 
 ## Plan history
 
-**2026-07-27 — v1.** Written after two same-day production failures (`scoreAll` mid-loop,
+**2026-07-27 — v1.** Written after THREE same-day production failures (`scoreAll` mid-loop,
 `thurston_active_notices` terminal write) and a search that found six more exposed paths
 plus a bare shared pool factory.
