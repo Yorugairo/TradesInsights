@@ -1,4 +1,4 @@
-import type { NormalizedSourceRecord } from "@otn/domain";
+import type { NormalizedSolicitationRecord, NormalizedSourceRecord } from "@otn/domain";
 import type { Logger } from "pino";
 import type { ObjectStore } from "./object-store.js";
 import type { InvariantViolation } from "./invariants.js";
@@ -28,8 +28,47 @@ export interface RawArtifact {
 
 /** Parser output: the normalized record plus the raw fields it came from. */
 export interface ParsedSourceRecord {
+  /**
+   * Optional and defaulted so all 36 pre-existing adapters, which construct
+   * `{ record, rawFields }` and nothing else, keep compiling untouched.
+   */
+  kind?: "permit";
   record: NormalizedSourceRecord;
   rawFields: Record<string, unknown>;
+}
+
+/** Parser output for the second record class (bids). See NormalizedSolicitationRecord. */
+export interface ParsedSolicitationRecord {
+  kind: "solicitation";
+  record: NormalizedSolicitationRecord;
+  rawFields: Record<string, unknown>;
+}
+
+/**
+ * What an adapter may emit. The union lives HERE, at the adapter boundary,
+ * rather than inside `ParsedSourceRecord` itself — and that is deliberate.
+ *
+ * Rewriting `ParsedSourceRecord` into the union directly was tried first and
+ * fails the plan's own falsification test: existing adapters read
+ * permit-specific fields off `p.record` inside their `checkInvariants`
+ * (`valuationUsd` in centralia, `units`/`applicationDate` in king,
+ * `organizations` in pierce_pals), and every one of those becomes a type error
+ * the moment `p.record` can also be a solicitation. Ten-plus adapter edits to
+ * land a type change is the signal the shape is wrong.
+ *
+ * Keeping `ParsedSourceRecord` as the permit shape and widening only the
+ * SourceAdapter method signatures costs nothing: a `parse()` declared as
+ * returning `ParsedSourceRecord[]` is assignable to one returning
+ * `ParsedRecord[]` (covariant return), and a `checkInvariants` declared with
+ * the narrower parameter still satisfies the interface (TypeScript method
+ * parameters are bivariant — `strictFunctionTypes` exempts method syntax).
+ * So existing adapters keep their NARROW types internally and need no edits.
+ */
+export type ParsedRecord = ParsedSourceRecord | ParsedSolicitationRecord;
+
+/** Narrowing helper — the one place the discriminant is interpreted. */
+export function isSolicitation(p: ParsedRecord): p is ParsedSolicitationRecord {
+  return p.kind === "solicitation";
 }
 
 export interface BackfillWindow {
@@ -62,7 +101,7 @@ export interface SourceAdapter {
   readonly parserVersion: string;
   discover(ctx: RunContext): Promise<DiscoveredArtifact[]>;
   fetch(item: DiscoveredArtifact, ctx: RunContext): Promise<RawArtifact>;
-  parse(raw: RawArtifact, ctx: RunContext): Promise<ParsedSourceRecord[]>;
+  parse(raw: RawArtifact, ctx: RunContext): Promise<ParsedRecord[]>;
   /**
    * D1 — optional per-artifact self-reconciliation. Given the fetched artifact
    * and the records the parser produced from it, return any invariant
@@ -74,7 +113,7 @@ export interface SourceAdapter {
    */
   checkInvariants?(
     raw: RawArtifact,
-    parsed: ParsedSourceRecord[],
+    parsed: ParsedRecord[],
     ctx: RunContext,
   ): InvariantViolation[] | Promise<InvariantViolation[]>;
 }

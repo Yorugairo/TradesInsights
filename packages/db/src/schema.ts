@@ -147,6 +147,58 @@ export const evidenceItems = pgTable(
   (t) => [index("evidence_items_record_ix").on(t.sourceRecordId, t.factPath)],
 );
 
+/**
+ * The SECOND record class. Bids are not permits and are not stored as them —
+ * see packages/db/migrations/0036_solicitations.sql for the full reasoning and
+ * for why the dedupe key deliberately EXCLUDES `observed_at` (inverting the
+ * 0035 project_events lesson: an event is append-only, a solicitation is a
+ * mutable row that gets amended).
+ */
+export const solicitations = pgTable(
+  "solicitations",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sourceId: uuid("source_id").notNull().references(() => sources.id),
+    rawArtifactId: uuid("raw_artifact_id").notNull().references(() => rawArtifacts.id),
+    externalId: text("external_id").notNull(),
+    solicitationNumber: text("solicitation_number"),
+    title: text("title").notNull(),
+    description: text("description"),
+    procuringAgency: text("procuring_agency").notNull(),
+    primeContractor: text("prime_contractor"),
+    /** 'solicitation' | 'sub_bid_request' — a column, not a title substring. */
+    documentType: text("document_type").notNull(),
+    /** First class and typed: what makes `bid_deadline_changed` implementable. */
+    bidDueAt: timestamp("bid_due_at", { withTimezone: true }),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    status: text("status").notNull(),
+    /** Free text, not the permit county enum. Null is CORRECT for statewide. */
+    county: text("county"),
+    city: text("city"),
+    scopeRaw: text("scope_raw"),
+    tradeTags: text("trade_tags").array().notNull().default(sql`'{}'`),
+    sourceUrl: text("source_url").notNull(),
+    organizationsJson: jsonb("organizations_json").notNull().default([]),
+    evidenceJson: jsonb("evidence_json").notNull().default([]),
+    rawFieldsJson: jsonb("raw_fields_json").notNull(),
+    normalizedJson: jsonb("normalized_json").notNull(),
+    normalizedFingerprint: text("normalized_fingerprint").notNull(),
+    /** Resolution-time linkage only — a parser that set this would be guessing. */
+    projectId: uuid("project_id").references(() => projects.id),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex("solicitations_external_ux").on(t.sourceId, t.externalId),
+    index("solicitations_bid_due_ix").on(t.bidDueAt),
+    index("solicitations_document_type_ix").on(t.documentType, t.status),
+    index("solicitations_project_ix").on(t.projectId),
+    index("solicitations_last_seen_ix").on(t.lastSeenAt),
+  ],
+);
+
 // ── Project graph ────────────────────────────────────────────────────────────
 
 export const developments = pgTable(

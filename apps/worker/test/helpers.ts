@@ -15,6 +15,7 @@ import {
   rawArtifacts,
   recordResolutions,
   resolutionReviews,
+  solicitations,
   sourceRecords,
   sourceRuns,
   sources,
@@ -81,6 +82,10 @@ export async function resetSource(db: Db, key: string): Promise<string> {
     await db.delete(resolutionReviews).where(inArray(resolutionReviews.sourceRecordId, recordIds));
   }
   await db.delete(sourceRecords).where(eq(sourceRecords.sourceId, row.id));
+  // The second record class. Must go before rawArtifacts — solicitations carry
+  // the same raw_artifact_id FK, so leaving them behind makes the artifact
+  // delete below fail on a source that has ever emitted a bid.
+  await db.delete(solicitations).where(eq(solicitations.sourceId, row.id));
   await db.delete(rawArtifacts).where(eq(rawArtifacts.sourceId, row.id));
   await db.delete(sourceRuns).where(eq(sourceRuns.sourceId, row.id));
   return row.id;

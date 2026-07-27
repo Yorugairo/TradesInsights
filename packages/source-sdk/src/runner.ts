@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Db } from "@otn/db";
 import {
@@ -20,6 +20,13 @@ import type {
 } from "./types.js";
 import type { InvariantViolation } from "./invariants.js";
 import { MONITORED_FILL_FIELDS } from "./health.js";
+import { normalizedFingerprint, schemaFingerprint } from "./fingerprint.js";
+import { persistSolicitation } from "./persist-solicitation.js";
+import { isSolicitation } from "./types.js";
+
+// Re-exported from its own module so the solicitation persist path can share it
+// without a circular import back through the runner.
+export { normalizedFingerprint };
 
 export interface DeadLetterEntry {
   idempotencyKey: string;
@@ -47,20 +54,6 @@ export interface RunSourceOptions {
   /** Shadow mode runs a disabled source without enabling it. */
   allowDisabled?: boolean;
   backfill?: BackfillWindow;
-}
-
-function canonicalJson(value: unknown): string {
-  return JSON.stringify(value, Object.keys(value as Record<string, unknown>).sort());
-}
-
-export function normalizedFingerprint(record: unknown): string {
-  return createHash("sha256").update(canonicalJson(record)).digest("hex");
-}
-
-function schemaFingerprint(rawFields: Record<string, unknown>): string {
-  return createHash("sha256")
-    .update(JSON.stringify(Object.keys(rawFields).sort()))
-    .digest("hex");
 }
 
 /**
@@ -213,6 +206,33 @@ export async function runSource(opts: RunSourceOptions): Promise<RunResult> {
 
         stage = "persist";
         for (const p of parsed) {
+          // The SECOND record class routes here. Everything above this line —
+          // discovery, fetch policy, immutable storage, the unchanged-artifact
+          // short circuit — is record-type-agnostic and shared; this branch and
+          // the table behind it are the entire cost of supporting bids.
+          if (isSolicitation(p)) {
+            runSchemaFingerprint ??= schemaFingerprint(p.rawFields);
+            const outcome = await persistSolicitation({
+              db,
+              sourceId: source.id,
+              sourceKey: adapter.key,
+              rawArtifactId: artifact.id,
+              retrievedAt: raw.retrievedAt,
+              parsed: p,
+              logger,
+            });
+            // Same counters as permits — a class that skips them is invisible
+            // to every health check.
+            if (outcome === "rejected") metrics.rejected++;
+            else if (outcome === "duplicate") metrics.duplicate++;
+            else metrics.parsed++;
+            // Deliberately NOT counted in the D2 fill instrumentation: every
+            // MONITORED_FILL_FIELD is a permit field (addressRaw, issueDate,
+            // valuationUsd...) that a solicitation structurally lacks, so
+            // including these records would drive each fill rate toward zero
+            // and trip the required-field health check on a healthy source.
+            continue;
+          }
           const validation = NormalizedSourceRecordSchema.safeParse(p.record);
           if (!validation.success) {
             metrics.rejected++;
