@@ -49,6 +49,7 @@
     "alerts:run": "pnpm --filter @otn/worker alerts:run",
     "export:run": "pnpm --filter @otn/worker export:run",
     "purge:e2e-rows": "pnpm --filter @otn/worker purge:e2e-rows",
+    "calibration:apply": "pnpm --filter @otn/worker calibration:apply",
     "db:seed:e2e": "pnpm --filter @otn/db seed:e2e",
     "db:setup:e2e": "pnpm --filter @otn/db setup:e2e"
   },

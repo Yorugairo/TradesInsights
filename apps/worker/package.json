@@ -50,7 +50,8 @@
     "google-place-rescore:preview": "tsx src/cli/google-place-rescore.ts",
     "google-place-rescore:apply": "tsx src/cli/google-place-rescore.ts --apply",
     "binding-audit": "tsx src/cli/binding-audit.ts",
-    "purge:e2e-rows": "tsx src/cli/purge-e2e-rows.ts"
+    "purge:e2e-rows": "tsx src/cli/purge-e2e-rows.ts",
+    "calibration:apply": "tsx src/cli/apply-calibration.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",
@@ -65,7 +66,8 @@
     "drizzle-orm": "^0.44.0",
     "pg": "^8.13.0",
     "pg-boss": "^10.1.0",
-    "pino": "^9.6.0"
+    "pino": "^9.6.0",
+    "yaml": "^2.7.0"
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",
