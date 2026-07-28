@@ -23,6 +23,15 @@ migrates, seeds sources/accounts from `config/`, then lays the e2e corpus on
 top. It is safe to re-run at any time and is the fastest way out of a confusing
 e2e failure.
 
+Between reseeds the database stays deterministic on its own: `e2e/global-setup.ts`
+wipes every mutation table the suite writes (feedback, outcomes, corrections,
+pursuits and children, invitations and their inbound messages, relationships,
+suppressions, action tokens — children before parents) at the start of each run,
+so run three sees the same database as run one. Corpus tables are never wiped —
+the seeded review cluster's `pending` status is corpus, not mutation. The wipe
+sits below the non-local refusal in that file, so it structurally cannot touch
+`otn` or production.
+
 ## Why three databases and not one
 
 **Production is excluded because tests write.** `apps/web/e2e/app.spec.ts` POSTs
@@ -65,15 +74,21 @@ same package.
 pnpm purge:e2e-rows
 ```
 
-Dry-run by default; profiles every distinct outcome shape and prints each
-candidate row. `--apply` deletes.
+Dry-run by default; profiles every table and prints each candidate row.
+`--apply` deletes — and refuses entirely if the profile has changed since it
+was approved.
 
-Needs a human first: `opportunity_outcomes` has no `reason` column and
-`created_by` is stamped from the session, so no single field separates a test
-row from a real win. What identifies them is the combination — one bare shape,
-one `opportunity_id`, clustered inside known e2e runs. `claim_corrections` is
-documented as immutable, so deleting from it is an owner decision even though
-every row is synthetic.
+Phase 1 (`claim_corrections` 30→0, `opportunity_outcomes` 30→0) was applied
+2026-07-28 with owner approval; those sections remain as verification and now
+report zero. Phase 2 covers the residue: `feedback` (identified by its cluster
+profile — all rows on one opportunity, one user, one window — never by a field,
+because none exists), `pursuits` with children first, and the acme-gc
+`bid_invitations` with their inbound-message parents.
+
+Needs a human every time: `feedback` is a scoring-calibration input, and the
+script's tripwire (refuse `--apply` when feedback spans more than one
+opportunity or user) is what keeps the purge safe once real customer feedback
+starts arriving.
 
 **Never `pg_dump` production into a fixture.** `/app/admin/corporate-families`
 displays real private individuals by design; a filtered dump puts principal

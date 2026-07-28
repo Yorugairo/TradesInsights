@@ -16,11 +16,46 @@ import { e2eDatabaseUrl } from "@otn/db";
  * copies of "which database may tests touch" is how the two harnesses drift,
  * and the whole failure here was one harness not sharing the other's guard.
  *
- * This file does three things, in order of how loudly they fail:
+ * This file does four things, in order of how loudly they fail:
  *   1. Refuses to run against a non-local database at all.
  *   2. Checks the database is actually up, and says `pnpm infra:up` if not.
- *   3. Checks the corpus is present, and says `pnpm db:seed:e2e` if not.
+ *   3. Checks the corpus is present, and says `pnpm db:setup:e2e` if not.
+ *   4. Wipes what previous RUNS wrote, so every run starts from the corpus
+ *      alone instead of drifting until someone reseeds.
  */
+
+/**
+ * Every table the SUITE WRITES, children before parents — deleting a parent
+ * first would trip its FK and fail the wipe loudly.
+ *
+ * Corpus tables (`projects`, `opportunities`, `organizations`, evidence,
+ * roles, `resolution_reviews`) are absent BY DESIGN: the seeded review
+ * cluster's `pending` status is corpus, not mutation, and wiping
+ * `resolution_reviews` would delete the cluster-reject fixture. `raw_artifacts`
+ * also stays: the corpus seeds artifacts, and an orphaned upload artifact is
+ * inert.
+ *
+ * The wipe runs AFTER the non-local refusal above, so it can never touch `otn`
+ * or production — keep it below that guard so the ordering is structural.
+ */
+const MUTATION_TABLES: readonly (readonly [table: string, writtenBy: string])[] = [
+  ["feedback", "the feedback POSTs (3 per run)"],
+  ["decision_labels", "opportunity keep/dismiss actions"],
+  ["opportunity_outcomes", "the outcome POST (references pursuits — deleted first)"],
+  ["claim_corrections", "the admin correction POST"],
+  ["pursuit_transitions", "child of pursuits"],
+  ["pursuit_tasks", "child of pursuits"],
+  ["pursuit_notes", "child of pursuits (nothing writes one today; FK completeness)"],
+  ["pursuits", "the pursuit-open POST"],
+  ["bid_invitation_events", "child of bid_invitations and inbound_messages"],
+  ["bid_documents", "child of bid_invitations"],
+  ["bid_invitations", "the .eml invitation upload"],
+  ["inbound_messages", "the .eml upload's parent message"],
+  ["relationship_interactions", "child of account_organization_relationships"],
+  ["account_organization_relationships", "relationship confirm actions"],
+  ["account_suppressions", "suppression toggles (its test cleans up; belt and braces)"],
+  ["action_tokens", "action links minted during runs"],
+];
 export default async function globalSetup(): Promise<void> {
   const url = e2eDatabaseUrl();
   const isLocal = /localhost|127\.0\.0\.1/.test(url);
@@ -105,6 +140,21 @@ export default async function globalSetup(): Promise<void> {
       );
     }
     console.log(`[e2e] corpus present: ${n} opportunities on ${host}:${port}`);
+
+    // 4. THE WIPE. Tests write and do not clean up (that is what made them
+    // dangerous against production); here the sandbox absorbs the writes and
+    // this wipe returns it to the corpus baseline, so the third run sees the
+    // same database as the first. Table names are literals from the list above.
+    const wiped: string[] = [];
+    for (const [table] of MUTATION_TABLES) {
+      const del = await pool.query(`DELETE FROM ${table}`);
+      if ((del.rowCount ?? 0) > 0) wiped.push(`${table} ${del.rowCount}`);
+    }
+    console.log(
+      wiped.length > 0
+        ? `[e2e] wiped prior-run rows: ${wiped.join(", ")}`
+        : "[e2e] no prior-run rows to wipe",
+    );
   } finally {
     await pool.end();
   }
