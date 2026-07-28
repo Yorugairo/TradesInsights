@@ -58,8 +58,10 @@ export default async function CorporateFamiliesPage({
   if (!pool) return <Unavailable reason="REGISTRY_DATABASE_URL is not set — the registry seam is offline." />;
 
   /*
-    Reads the CACHED derivation instead of pulling the registry identity view
-    per request.
+    Reads the MATERIALISED snapshot (nightly maintenance chain, migration 0037)
+    instead of pulling the registry identity view per request — with the
+    process-cached on-demand derivation as fallback for a table that has never
+    been written.
 
     Measured 2026-07-27: `fetchRegistryIdentityRows` returns 72,952 rows and
     costs 5.2s warm / 29-79s cold, `loadPersonCandidates` another 6.4s. That is

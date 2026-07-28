@@ -24,7 +24,7 @@ import {
   resolveUnresolved,
 } from "@otn/resolution";
 import { reapOrphanedRuns } from "@otn/source-sdk";
-import { computeStageLagStats, scoreAll } from "@otn/intelligence";
+import { computeStageLagStats, deriveCorporateFamilies, scoreAll } from "@otn/intelligence";
 import {
   buildDigest,
   cleanupActionTokens,
@@ -164,6 +164,7 @@ export async function runMaintenance(logger: Logger): Promise<void> {
     let registryObs;
     let registryExport;
     let projectTrades;
+    let corporateFamilies;
     try {
       const registryRows = registryPool ? await fetchRegistryIdentityRows(registryPool) : null;
       // The SHARED trade vocabulary (registry_public.trades_taxonomy_v1). Null
@@ -192,6 +193,10 @@ export async function runMaintenance(logger: Logger): Promise<void> {
           : FALLBACK_TRADE_MATCHER,
         { logger },
       );
+      // Materialise the corporate-family snapshot from the rows THIS chain
+      // already fetched — the 73k-row seam pull happens once per night, never
+      // twice. Seam offline ⇒ visible skip and the previous snapshot stands.
+      corporateFamilies = await deriveCorporateFamilies(db, registryRows, { logger });
     } finally {
       await registryPool?.end();
     }
@@ -272,6 +277,13 @@ export async function runMaintenance(logger: Logger): Promise<void> {
         registryExport: registryExport.skipped
           ? { skipped: true }
           : { observations: registryExport.observationsExported, projectFacts: registryExport.projectFactsExported },
+        corporateFamilies: corporateFamilies.skipped
+          ? { skipped: corporateFamilies.skipped }
+          : {
+              families: corporateFamilies.familyCount,
+              pairsNew: corporateFamilies.pairsNew,
+              pairsStrong: corporateFamilies.pairsStrong,
+            },
         alerts: alerts
           ? { evaluated: alerts.evaluated, fired: alerts.fired.length, deduped: alerts.deduped }
           : { skipped: "alerts_failed" },

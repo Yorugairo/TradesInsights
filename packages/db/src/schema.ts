@@ -1197,3 +1197,41 @@ export const modelRuns = pgTable(
     index("model_runs_month_ix").on(t.createdAt),
   ],
 );
+
+// ── Corporate-family snapshot (materialised nightly) ─────────────────────────
+// The corporate-family derivation needs the ENTIRE registry identity view
+// (72,952 rows, 5.2s warm / 29-79s cold across the seam) — which made the
+// families page a 109-second page when derived per request. The maintenance
+// chain derives once per night and persists here; the web reads the tables.
+//
+// PRIVACY: pairs and family groups contain PRINCIPAL NAMES — private
+// individuals (owner decision 2026-07-23). These tables live in the `insights`
+// schema, are read only by the admin-gated pages, and must NEVER be exposed
+// through `insights_public`, an export, or a digest.
+//
+// `derived_at` travels with the data; the UI renders it. A failed derivation
+// writes NOTHING — the previous rows stand and their age is the signal.
+
+/** Single row (id = 1): the cockpit counts + the snapshot blobs. */
+export const corporateFamilySummary = pgTable("corporate_family_summary", {
+  id: integer("id").primaryKey(),
+  familyCount: integer("family_count").notNull(),
+  pairsNew: integer("pairs_new").notNull(),
+  pairsStrong: integer("pairs_strong").notNull(),
+  /** FamilyGroup[] — the groups the families page renders. */
+  familiesJson: jsonb("families_json").notNull(),
+  /** Groups dropped for exceeding MAX_FAMILY_ENTITIES (regression signal). */
+  droppedJson: jsonb("dropped_json").notNull(),
+  /** RegistryIdentityRow[] trimmed to entities the pages can display (~3k of 73k). */
+  rowsJson: jsonb("rows_json").notNull(),
+  derivedAt: timestamp("derived_at", { withTimezone: true }).notNull(),
+});
+
+/** One PrincipalPersonPair per row, replace-all per derivation. */
+export const corporateFamilyPairs = pgTable("corporate_family_pairs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  verdict: text("verdict").notNull(),
+  alreadyBound: boolean("already_bound").notNull(),
+  pairJson: jsonb("pair_json").notNull(),
+  derivedAt: timestamp("derived_at", { withTimezone: true }).notNull(),
+});

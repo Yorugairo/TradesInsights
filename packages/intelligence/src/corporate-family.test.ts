@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { RegistryIdentityRow } from "@otn/resolution";
-import { MAX_FAMILY_ENTITIES, buildFamilies } from "./corporate-family.js";
+import type { Db } from "@otn/db";
+import type { PersonCandidate, RegistryIdentityRow } from "@otn/resolution";
+import {
+  MAX_FAMILY_ENTITIES,
+  buildCorporateFamilySnapshot,
+  buildFamilies,
+  corporateFamilyCounts,
+  deriveCorporateFamilies,
+} from "./corporate-family.js";
 
 const row = (
   entityId: string,
@@ -163,5 +170,94 @@ describe("buildFamilies", () => {
       row("e5", "Five", [ERDAHL_P]),
     ]);
     expect(families.map((f) => f.entityIds.length)).toEqual([3, 2]);
+  });
+});
+
+// ── Materialised snapshot (0037) ─────────────────────────────────────────────
+
+const candidate = (personName: string, over: Partial<PersonCandidate> = {}): PersonCandidate => ({
+  source: "organization",
+  organizationId: "org-1",
+  organizationName: personName,
+  personName,
+  registryRef: null,
+  jurisdictions: [],
+  projectCount: 0,
+  role: null,
+  sourceUrl: null,
+  ...over,
+});
+
+/** e1+e2 form a family; e3 matches the candidate; e4 is referenced by nothing. */
+const SNAPSHOT_ROWS = [
+  row("e1", "Black Lion Heating", [ERDAHL_PAUL]),
+  row("e2", "Sturm Heating", [ERDAHL_P]),
+  row("e3", "Solo Ventures LLC", [{ name: "Solo, Pat", key: "SOLO, PAT" }]),
+  row("e4", "Unreferenced Co", [{ name: "Nobody, New", key: "NOBODY, NEW" }]),
+];
+
+describe("buildCorporateFamilySnapshot", () => {
+  it("trims identity rows to the entities families and pairs actually reference", () => {
+    const snapshot = buildCorporateFamilySnapshot(
+      SNAPSHOT_ROWS,
+      [candidate("Pat Solo")],
+      "2026-07-28T00:00:00.000Z",
+    );
+    expect(snapshot.families).toHaveLength(1);
+    expect(snapshot.pairs).toHaveLength(1);
+    expect(snapshot.pairs[0]?.entity.entityId).toBe("e3");
+    // e1/e2 via the family, e3 via the pair — e4 is displayable by nothing.
+    expect(snapshot.rows.map((r) => r.entityId).sort()).toEqual(["e1", "e2", "e3"]);
+    expect(snapshot.derivedAt).toBe("2026-07-28T00:00:00.000Z");
+  });
+
+  it("counts pairsNew from unbound pairs only", () => {
+    const snapshot = buildCorporateFamilySnapshot(
+      SNAPSHOT_ROWS,
+      // Second candidate is ALREADY BOUND to the entity it matches — it merely
+      // confirms an existing binding, so it must not count as new.
+      [candidate("Pat Solo"), candidate("New Nobody", { organizationId: "org-2", registryRef: "e4" })],
+      "2026-07-28T00:00:00.000Z",
+    );
+    const counts = corporateFamilyCounts(snapshot);
+    expect(counts.familyCount).toBe(1);
+    expect(snapshot.pairs).toHaveLength(2);
+    expect(counts.pairsNew).toBe(1);
+    expect(counts.pairsStrong).toBeLessThanOrEqual(counts.pairsNew);
+  });
+
+  it("survives the jsonb round trip unchanged — the shape the tables store", () => {
+    // What 0037 persists is JSON.stringify(snapshot parts); what the web reads
+    // back is the parsed jsonb. If a Date, class instance, or other non-JSON
+    // value ever creeps into these types, the persisted snapshot silently stops
+    // matching the derived one — this is the tripwire.
+    const snapshot = buildCorporateFamilySnapshot(
+      SNAPSHOT_ROWS,
+      [candidate("Pat Solo")],
+      "2026-07-28T00:00:00.000Z",
+    );
+    expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+  });
+});
+
+describe("deriveCorporateFamilies — never write a zero on failure", () => {
+  /** A Db whose every use throws: proves the skip paths write NOTHING. */
+  const untouchableDb = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        throw new Error(`db.${String(prop)} must not be touched on a skip`);
+      },
+    },
+  ) as unknown as Db;
+
+  it("seam offline (null rows) ⇒ skips without touching the database", async () => {
+    const result = await deriveCorporateFamilies(untouchableDb, null);
+    expect(result.skipped).toBe("seam_offline");
+  });
+
+  it("EMPTY identity view ⇒ skips — zero rows is a seam fault, not a registry state", async () => {
+    const result = await deriveCorporateFamilies(untouchableDb, []);
+    expect(result.skipped).toBe("empty_view");
   });
 });

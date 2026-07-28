@@ -1,5 +1,11 @@
 import "./env.js";
-import { buildFamilies, loadPersonCandidates, type FamilyGroup } from "@otn/intelligence";
+import {
+  buildFamilies,
+  loadPersonCandidates,
+  readCorporateFamilySnapshot,
+  readCorporateFamilyStamp,
+  type FamilyGroup,
+} from "@otn/intelligence";
 import {
   buildPrincipalPersonIndex,
   fetchRegistryIdentityRows,
@@ -11,7 +17,8 @@ import { db } from "./db.js";
 import { registryPool } from "./registry-db.js";
 
 /**
- * The corporate-family derivation, cached per process with stale-while-revalidate.
+ * The corporate-family snapshot: MATERIALISED first, derived on demand only as
+ * a fallback.
  *
  * WHY. Measured against production on 2026-07-27, per page load:
  *
@@ -26,8 +33,12 @@ import { registryPool } from "./registry-db.js";
  * cockpit a 9-21s page and `/app/admin/corporate-families` a **109-second**
  * page, and it is what tipped the cockpit past `statement_timeout` into a 500.
  *
- * No query tweak fixes that — 73k rows over a WAN is the floor. So the result is
- * derived on a schedule instead of per request.
+ * The nightly maintenance chain now derives once and persists the snapshot
+ * (`corporate_family_summary` + pairs, migration 0037). This module reads that
+ * table first — a cheap same-database read, fast even on the first request
+ * after a deploy. The per-process stale-while-revalidate derivation below
+ * remains as the FALLBACK for a table that has never been written (fresh
+ * database, pre-first-run) or has gone dead (two missed nightly runs).
  *
  * TWO RULES THIS MODULE EXISTS TO KEEP.
  *
@@ -39,10 +50,14 @@ import { registryPool } from "./registry-db.js";
  *    goes stale — a stale honest number beats a fresh fake one. `stale` says so.
  */
 
-/** How long a snapshot is served without triggering a background refresh. */
+/** How long a fallback-derived snapshot is served without a background refresh. */
 const TTL_MS = 15 * 60 * 1000;
 /** Past this the UI should say so out loud rather than quietly showing old counts. */
 export const STALE_WARN_MS = 60 * 60 * 1000;
+/** Nightly cadence: a persisted snapshot older than one missed run is flagged. */
+const TABLE_STALE_WARN_MS = 26 * 60 * 60 * 1000;
+/** Two missed nightly runs ⇒ the table is dead; fall back to deriving on demand. */
+const TABLE_FALLBACK_MS = 48 * 60 * 60 * 1000;
 
 export interface FamilySnapshot {
   families: FamilyGroup[];
@@ -94,15 +109,51 @@ function withStaleness(snapshot: FamilySnapshot, now: number): FamilySnapshot {
 }
 
 /**
+ * The nightly-materialised snapshot, if it is present and alive.
+ *
+ * Steady state costs ONE tiny same-database query per request (the stamp): the
+ * blobs are re-read only when `derived_at` moves. Anything unreadable — table
+ * missing on a pre-0037 database, blob shape drift — falls through to the
+ * on-demand path rather than taking the page down.
+ */
+async function persistedSnapshot(now: number): Promise<FamilySnapshot | null> {
+  try {
+    const stamp = await readCorporateFamilyStamp(db());
+    if (!stamp) return null;
+    const age = now - Date.parse(stamp);
+    if (age > TABLE_FALLBACK_MS) return null;
+    const stale = age > TABLE_STALE_WARN_MS;
+
+    const entry = globalStore.__otnFamilySnapshot;
+    if (entry && entry.snapshot.derivedAt === stamp) {
+      return { ...entry.snapshot, stale };
+    }
+    const snap = await readCorporateFamilySnapshot(db());
+    if (!snap) return null;
+    const full: FamilySnapshot = { ...snap, stale };
+    globalStore.__otnFamilySnapshot = { snapshot: full, refreshing: false };
+    return full;
+  } catch {
+    // A broken fast path must degrade to the slow one, never to a 500.
+    return null;
+  }
+}
+
+/**
  * The current snapshot. `null` means the registry seam is offline — the same
  * null every caller already branches on, never an empty snapshot.
  *
- * Cold (nothing cached): awaits the derivation. Warm and fresh: instant.
- * Warm and past TTL: returns the existing snapshot IMMEDIATELY and refreshes in
+ * Table first (nightly materialisation, cheap read). Fallback: the on-demand
+ * derivation — cold (nothing cached) awaits it; warm and fresh is instant;
+ * warm and past TTL returns the existing snapshot IMMEDIATELY and refreshes in
  * the background, so no single unlucky request pays the 30-second bill.
  */
 export async function familySnapshot(): Promise<FamilySnapshot | null> {
   const now = Date.now();
+
+  const persisted = await persistedSnapshot(now);
+  if (persisted) return persisted;
+
   const entry = globalStore.__otnFamilySnapshot;
 
   if (!entry) {
