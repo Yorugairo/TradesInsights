@@ -509,7 +509,17 @@ one place the spec constrains DOM shape.
 - **VALIDATE**: Keyboard-only navigation to any route; density persists across reload;
   `prefers-reduced-motion` disables the open/close transition.
 
-## PHASE 3 — Retrofit, one page per task
+## PHASE 3 — Retrofit, one page per task · **COMPLETE 2026-07-27**
+
+> Report: [`../reports/cockpit-ui-first-class-product-phase3-report.md`](../reports/cockpit-ui-first-class-product-phase3-report.md)
+> Commits `4864cfe` · `d9a1790` · `63f76af` · `475028d` · `d197935` · `c281b2d` · `1e2a93f` · `dc2b716`
+> Inline styles **281 → 2** (both dynamic and commented). e2e 28/28 after every commit; no spec file edited.
+>
+> **All three phases are delivered. Two items remain and neither is a UI task:**
+> the e2e suite still runs against the hosted production database (`workers: 1`
+> is a compensating control, not a fix — it needs a seeded local corpus), and
+> `/app/admin/cockpit` is a 9.6–21s page that returns a 500 rather than
+> degrading when it crosses `statement_timeout`.
 
 Order by value. **Each task ends with `pnpm test:e2e` green and is independently
 shippable.** Convert page → run e2e → commit. Never batch conversions.
