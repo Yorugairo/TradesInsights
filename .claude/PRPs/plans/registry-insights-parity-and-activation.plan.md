@@ -1,5 +1,8 @@
 # Plan: Registry ⇄ Insights — Competitive Parity, Easy-Win Activation & First-Class Pre-Permit Layer
 
+> **STATUS 2026-07-28 — ARCHIVE CANDIDATE, NOT YET VERIFIED TASK-BY-TASK.** All 29 declared deliverables exist once the registry-side paths are resolved against the BJJ monorepo rather than this repo — including `20260720150000_surface_google_and_trades_in_trades_identity_v1.sql` and `db/baseline-v1.2/26_registry_public_trades_identity_v1_enrichment.sql`, both on `origin/release/trades-staging`. No report exists, and its 38 sections were **not** walked individually, so this is left open deliberately rather than archived on partial evidence. Next close-out should do the task-level pass.
+
+
 ## Summary
 A single cross-repo plan that brings OTN Insights to competitive parity with Shovels.ai and Building Radar and closes the last-mile activation gaps, executed across **two repos together**: the Trades **Registry** (`C:\Users\Snipe\Downloads\WA JiuJitsu Registry-20260608T183757Z-3-001`, branch `release/trades-staging`) and **Insights** (`C:\Users\Snipe\Downloads\TradesInsights`, branch `claude/tmux-install-320aiz`). It captures the live-only registry contract drift into source control, wires Insights to consume the enriched contract (verified GC phone + rating + trade codes), surfaces "who do I call" on every opportunity, fires urgent phase-change alerts, adds outreach templates + a Charlie-style NL assistant on the existing LLM brief layer, ships a CRM/webhook + CSV export tier, formalizes a first-class pre-permit "Decisions" layer with new verify-first early feeds, and documents the six env-gated easy-win activations.
 

@@ -1,7 +1,6 @@
 # Plan: Windowed peer selection for gym_market_comparators
 
-> **STATUS 2026-07-28 — SHIPPED EXCEPT TASK 5, NOT CLOSEABLE.** The report marks *Per-MV transaction (skeleton)* as **NOT STARTED**, deliberately deferred. That is remaining engineering, not a decision: it is blocked on the same 2D000 constraint (plpgsql cannot COMMIT under pg_cron or the pooler), so it needs an out-of-DB driver.
-
+> **STATUS 2026-07-28 (v2) — COMPLETE. ARCHIVED.** The 2026-07-28 v1 banner said "task 5 NOT STARTED" and was WRONG; it read the report and ignored this plan's own inline markers plus work that shipped in the REGISTRY repo. Verified: Task 5a `c1b13646` (cherry-pick of registry `88669d94`) on `origin/release/trades-staging`; **Task 5b shipped as `scripts/refresh-registry-source-mvs.mjs`, commit `d7d3696f` (2026-07-27) on `origin/release/staging`** — *"refresh the source materialized views one statement at a time"*, citing the same 2D000 constraint this plan flagged; Task 6 marked SHIPPED 2026-07-25. All three declared artifacts exist on trades-staging, including migration `20260728020000_gym_market_comparator_windowed_peers.sql`.
 
 ## Summary
 

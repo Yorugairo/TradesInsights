@@ -1,5 +1,8 @@
 # Plan: A local e2e corpus — stop the test suite writing to production
 
+> **STATUS 2026-07-28 — COMPLETE. ARCHIVED.** No PRP report was written, which is why the first close-out pass misfiled this as open. Verified instead against commits and artifacts: T1a `e6e4a42` (purge-e2e-rows CLI, dry-run by default), T2–T5 `7685efa` (suite runs against its own local database), T4 `6f4187f` (mutation POSTs stamped e2e, owner-approved), `0c915b3` (wipe mutation tables at start of run) and `523243c` (otn_e2e migrates itself; wipe list checked against `pg_constraint`). **All 7 declared deliverables present.**
+
+
 > **COMPLETE 2026-07-28** — Tasks 2-5 shipped (`e6e4a42`, `7685efa`).
 > e2e now runs against `otn_e2e`, its own local database: **29/29 in ~25-34s at
 > two workers**, twice consecutively, versus 1.3-1.5m at one worker with

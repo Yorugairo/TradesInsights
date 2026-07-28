@@ -1,36 +1,6 @@
 # Plan: Queue cockpit v2 — fuel the phone lane first, then close the loops
 
-> **STATUS 2026-07-28 — PARTIALLY SHIPPED, NOT CLOSEABLE.** Reports exist for phases A0, B, C and D (`.claude/PRPs/reports/queue-cockpit-phase-{a0,b,c,d}-report.md`). **Remaining: Tasks A1–A6** (the `organization_enrichment` table, export/ingest CLIs, enrichment phones in the match ladder, evidence display) **and Tasks E1–E2** (domain-match evidence path + strategy note, gated on Phase A enrichment coverage). Task B3 (loader `relationship` branch) lives in the REGISTRY repo. Do not archive this plan on the strength of the four phase reports.
-
-
-> **v2 (2026-07-24), supersedes v1 in place.** What changed and why:
-> 1. **Owner reprioritization**: "6 should be resolved first, then 4 and 2. 1, 3, 5
->    will need to be progressively chunked or have more information gathered."
->    Queue 6 (google phone as an Insights match key) is now Phase A; the
->    corporate-family accept loop is Phase B; the cockpit moves up to Phase C so
->    the operator can work queues 2 and 4 immediately; Google Place work is
->    Phase D as an explicit *chunking* strategy; domain is Phase E groundwork.
-> 2. **New live finding — the 926 were NEVER auto-resolved.** Every row tagged
->    "Potential duplicate… resolve automatically from UBI/name/address/phone
->    lineage before asking a human" is still `pending`. The only automation that
->    has ever resolved ANYTHING in the DB queue is `auto:geo_corroboration`
->    (590 rows, all `google_phone_differs_from_lni`, the geo-promote script).
->    The "resolve automatically" label was a *classification* made by the
->    CSV-era triage tool (`google_place_manual_review_triage.py`); the DB-side
->    resolver it presupposed was never built. `google_place_shared_decision_
->    consolidate.py` is not it — its own docstring says "offline… does not call
->    a web service or database". Phase D now builds that missing resolver.
-> 3. **New live finding — queue 6 is UNFUELED, not gated.** Insights holds only
->    **61 distinct party phone numbers** in the whole corpus, and **zero**
->    overlap with registry L&I phones OR registry Google phones (3,596 of
->    which exist registry-side). No gate-tuning can make `binding_google_
->    phone_match` fire; the fuel has to be created. Phase A therefore pairs the
->    match-key activation with its fuel: Google Places enrichment of unbound
->    Insights orgs — the previously-deferred "Phase 4" from the seam roadmap.
->    This is also what the owner means by "it could shift the rest of the
->    queues": enriched org phones → new binding candidates → queue 2 refills
->    with high-quality rows → accepts stamp `registry_ref` → families,
->    rollups, and Google Place corroboration all strengthen.
+> **STATUS 2026-07-28 (v2) — COMPLETE BY DECISION. ARCHIVED.** The v1 banner listed "Tasks A1–A6 and E1–E2 remaining" and was WRONG: **Phase A is BACKLOGGED BY OWNER DECISION (2026-07-24), in this plan's own words "do NOT implement"** — A0 shipped (`d22b41c`, stall fix `866d44b`, both on the Insights trunk), the operator ran it, and the phone-fuel premise was judged worth less than the cockpit itself. **Phase E is transitively closed**: E1 reads `organization_enrichment.root_domain`, a Phase-A artifact that will now never exist (verified absent). Phases B/C/D have reports. A decision closes a plan; unstarted engineering does not — this is the former.
 
 ## Summary
 Every review queue in this system exists to build the SAME asset: a

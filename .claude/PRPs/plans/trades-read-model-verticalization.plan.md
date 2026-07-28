@@ -1,7 +1,6 @@
 # Plan: Trades read-model verticalization (source_mvs rebuild)
 
-> **STATUS 2026-07-28 — TASK 1 ONLY, NOT CLOSEABLE.** The single report (`…-task1-report.md`) covers the refresh profiling. **Task 2 is struck through in the plan itself (abandoned by measurement); Tasks 3 and 4 — trades-native pSEO read models and re-enabling job 1 behind evidence — have no report.** The blocker recorded elsewhere still binds: plpgsql cannot COMMIT under pg_cron or the pooler (2D000), so per-MV commits need an out-of-DB driver.
-
+> **STATUS 2026-07-28 (v2) — TASK 3 OPEN; TASK 4 NEEDS A LIVE CHECK.** Task 1 reported; **Task 2 abandoned by measurement** (superseded by `gym-market-comparator-windowed-peers`, which fixed the quadratic instead of inheriting it). **Task 4** ("re-enable job 1 behind evidence") is very likely delivered by `d7d3696f` — per-MV segmented refresh — but its own VALIDATE is a live registry-DB assertion (`registry_gym_profile_metrics_v1` ≈ 72,952 rows + a committed `source_mvs` audit row reading `success`) that needs registry credentials to confirm. **Task 3** (trades-native read models replacing gym-profile semantics) has no evidence in either repo and is genuinely open.
 
 ## Summary
 

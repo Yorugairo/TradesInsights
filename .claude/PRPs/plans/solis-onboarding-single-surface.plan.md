@@ -1,5 +1,8 @@
 # Plan: fold the calibration intake into the deck — one evidence-and-answer surface
 
+> **STATUS 2026-07-28 — ARCHIVE CANDIDATE, NOT YET VERIFIED TASK-BY-TASK.** All 3 declared deliverables present, and onboarding work landed in `00ee3c5` (public-works lane; fixes the deck silently dropping pill answers) and `f53e0dc` (every deck figure regenerated from one 2026-07-27 snapshot). No report exists and the plan's tasks were not walked individually, so it stays open rather than being archived on partial evidence.
+
+
 > **Working doc + source of truth.** Every claim in GROUND TRUTH was read out of the two files,
 > not inferred. If a claim here disagrees with the code, the code wins and this file gets fixed.
 
