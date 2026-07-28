@@ -1,5 +1,27 @@
 # Plan: Cockpit seam — performance, pool hygiene, and honest degradation
 
+> **COMPLETE 2026-07-27** — all six tasks shipped (`8597fcc`, `120cc65`,
+> `dc8dbce`). Cockpit 21.8s → 1.23s; corporate families 109s → 0.62s; an
+> unreachable seam now returns 200 in 6.45s instead of a 500.
+> Report: [cockpit-seam-performance-report.md](../reports/cockpit-seam-performance-report.md)
+>
+> **RC1 below is WRONG and is kept for the record.** It blames
+> `corporateFamilyRollup`'s query shape. Measured, that call is 3.3s. The real
+> cost is `fetchRegistryIdentityRows` shipping **72,952 rows** across the seam —
+> 5.2s warm, 29–79s cold — plus 6.4s of `loadPersonCandidates`. The remedy the
+> plan proposed (derive on a schedule, not per request) was right anyway; the
+> reasoning under it was not. See the report's timing table.
+>
+> One deviation: implemented as a process-level cache with
+> stale-while-revalidate rather than a `corporate_family_summary` table. Same
+> two rules kept (`derivedAt` renders; a failed refresh never writes a zero),
+> no migration. The table becomes correct the moment this app runs more than
+> one instance.
+>
+> **Still open:** e2e against the hosted production database. `pnpm db:seed`
+> covers only sources/accounts/rules — the corpus the 29 tests need is a
+> multi-hour fixture-authoring task. Not started rather than half-built.
+
 ## Summary
 
 `/app/admin/cockpit` takes 9.6–21.8s and returns a 500 when it crosses
