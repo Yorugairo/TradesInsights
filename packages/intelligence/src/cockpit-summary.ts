@@ -139,6 +139,15 @@ export async function queueSummary(
      * worker). `null` = the caller knows there is nothing to show.
      */
     families?: CockpitFamilies | null;
+    /**
+     * Pre-read Google Place counts. Same contract as `families`: `undefined`
+     * derives inline, `null` means the caller has decided there is nothing to
+     * show. The web cockpit passes this so it can put a TIME BUDGET on the read
+     * — an unreachable-but-configured seam otherwise blocks on the TCP connect
+     * timeout, which measured 25s against a blackholed host even with the
+     * family snapshot already budgeted.
+     */
+    googlePlace?: CockpitGooglePlace | null;
   } = {},
 ): Promise<QueueSummary> {
   // SEQUENTIAL. The app pool max is 2; three concurrent reads meant this page
@@ -155,9 +164,12 @@ export async function queueSummary(
       : registryPool
         ? await familiesSummary(db, registryPool)
         : null;
-  // Seam-dependent, and cheap (a single aggregate over the contract view), so it
-  // still runs inline. Null when the seam is offline — never a zero.
-  const googlePlace = registryPool ? await googlePlaceSummary(registryPool) : null;
+  const googlePlace =
+    opts.googlePlace !== undefined
+      ? opts.googlePlace
+      : registryPool
+        ? await googlePlaceSummary(registryPool)
+        : null;
 
   return { resolutionReview, registryReview, families, googlePlace, lanes };
 }
@@ -257,7 +269,7 @@ async function familiesSummary(db: Db, pool: RegistryPoolLike): Promise<CockpitF
  * not exist until Phase D, so any error (missing relation, missing column) means
  * "not built yet" → null. Never invent a zero for a queue we cannot see.
  */
-async function googlePlaceSummary(pool: RegistryPoolLike): Promise<CockpitGooglePlace | null> {
+export async function googlePlaceSummary(pool: RegistryPoolLike): Promise<CockpitGooglePlace | null> {
   try {
     const res = await pool.query(`
       SELECT

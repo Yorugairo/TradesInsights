@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { queueSummary, type QueueSummary } from "@otn/intelligence";
+import { googlePlaceSummary, queueSummary, type QueueSummary } from "@otn/intelligence";
 import DerivedAt from "../../../../components/proof/DerivedAt.js";
 import PageHeader from "../../../../components/ui/PageHeader.js";
 import { currentSession } from "../../../../lib/auth.js";
@@ -20,7 +20,17 @@ export const dynamic = "force-dynamic";
  * makes you wait 79 seconds for one card is worse than one that tells you the
  * card is not ready.
  */
-const FAMILIES_BUDGET_MS = 4_000;
+const FAMILIES_BUDGET_MS = 3_000;
+
+/**
+ * The same budget for the Google Place read.
+ *
+ * It exists because budgeting only the family snapshot was not enough: against
+ * a configured-but-unreachable seam the page still took 25.4s, because
+ * `googlePlaceSummary` sat on the TCP connect timeout with no ceiling. One
+ * unbudgeted seam call is all it takes to undo the other one.
+ */
+const PLACE_BUDGET_MS = 3_000;
 
 /**
  * Reject rather than hang. The caller turns the rejection into a visible state.
@@ -89,7 +99,17 @@ export default async function CockpitPage() {
     }
   }
 
-  const summary = await queueSummary(db(), pool, { families });
+  let googlePlace: Awaited<ReturnType<typeof googlePlaceSummary>> | null = null;
+  let placeTimedOut = false;
+  if (!seamOffline) {
+    try {
+      googlePlace = await withBudget(googlePlaceSummary(pool), PLACE_BUDGET_MS);
+    } catch {
+      placeTimedOut = true;
+    }
+  }
+
+  const summary = await queueSummary(db(), pool, { families, googlePlace });
 
   return (
     // No page padding here. The app shell owns the gutter; this page used to set
@@ -127,7 +147,7 @@ export default async function CockpitPage() {
       />
       <div className={GRID}>
         <ResolutionReviewCard summary={summary} />
-        <GooglePlaceCard summary={summary} />
+        <GooglePlaceCard summary={summary} timedOut={placeTimedOut} />
       </div>
 
       <SectionHeading
@@ -396,7 +416,20 @@ function ResolutionReviewCard({ summary }: { summary: QueueSummary }) {
   );
 }
 
-function GooglePlaceCard({ summary }: { summary: QueueSummary }) {
+function GooglePlaceCard({ summary, timedOut }: { summary: QueueSummary; timedOut: boolean }) {
+  // Same three-state discipline as the families card. A seam that is configured
+  // and not answering is not the Phase D view being absent, and neither is zero.
+  if (timedOut) {
+    return (
+      <QueueCard n={3} title="Google Place review" count="not measured" hrefLabel="seam did not answer">
+        <span className="text-warn">
+          The registry seam did not answer within {PLACE_BUDGET_MS / 1000}s. This queue's size is
+          unknown right now — not zero, and not the Phase D view being missing.
+        </span>
+      </QueueCard>
+    );
+  }
+
   const g = summary.googlePlace;
   if (!g) {
     // Null means the registry seam is unreachable (no pool, or the contract view
