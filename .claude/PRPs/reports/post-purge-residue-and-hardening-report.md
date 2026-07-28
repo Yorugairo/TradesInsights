@@ -2,13 +2,16 @@
 
 ## Summary
 
-All three tasks implemented and validated. The phase-2 purge sections exist and
-dry-run at exactly the predicted 58/1/1 — **`--apply` remains owner-gated and
-has NOT been run**. The corporate-family derivation is materialised: the
-nightly chain persisted 1401 families / 354 pairs to production, and the web
-now reads the table (281ms stamp probe steady-state, ~1s full read) instead of
-paying a 29–79s cold seam derivation. The e2e suite wipes its own mutations at
-the start of every run: three consecutive runs, no reseed, 29/29 each.
+All four tasks implemented and validated. **The phase-2 purge was APPLIED
+2026-07-28 with owner approval — all six residue tables verify at zero in
+production** (58 feedback / pursuit chain / invitation chain deleted; one
+follow-up run removed the inbound message orphaned by a driver bug, see
+Issues). The corporate-family derivation is materialised: the nightly chain
+persisted 1401 families / 354 pairs to production, and the web now reads the
+table (281ms stamp probe steady-state, ~1s full read) instead of paying a
+29–79s cold seam derivation. The e2e suite wipes its own mutations at the
+start of every run: three consecutive runs, no reseed, 29/29 each — and now
+stamps its POST payloads (Task 4, owner-approved).
 
 ## Assessment vs reality
 
@@ -22,10 +25,10 @@ the start of every run: three consecutive runs, no reseed, 29/29 each.
 
 | # | Task | Status | Notes |
 |---|---|---|---|
-| 1 | Phase-2 residue purge sections | Done — **apply owner-gated** | Dry-run prints 58 feedback / 1 pursuit / 1 invitation; refusal tripwire on >1 opportunity OR >1 user; phase-1 sections verify 0/0 |
+| 1 | Phase-2 residue purge | **Done — APPLIED with owner approval** | Dry-run matched 58/1/1; applied; all six tables verify 0 in production |
 | 2 | Materialise family derivation | Done | `0037`, `deriveCorporateFamilies` on the chain, table-first web read; production populated 2026-07-28 06:13Z |
 | 3 | e2e mutation wipe | Done | 29/29 × 3 with no reseed; first wipe removed real drift from earlier sessions |
-| 4 | Stamp e2e POST payloads | **Not done — owner call by design** | Ships only with explicit approval (spec edit) |
+| 4 | Stamp e2e POST payloads | **Done — owner-approved** | Payload-only edits, no assertions changed; outcome stamp uses `reasonCode` (see Deviations); 29/29 |
 
 ## Validation results
 
@@ -79,6 +82,14 @@ Commits: `806d2ed` (T1), `04c006f` (T2), `0c915b3` (T3).
 
 ## Issues encountered
 
+- **The first `--apply` failed at its LAST statement** (`inbound_messages`)
+  with `22P02` — drizzle hands a JS-array parameter to pg as a plain string
+  and Postgres's `array_in` rejects it. Every earlier delete had already
+  committed (no wrapping transaction), stranding one orphaned message that the
+  invitation-join anchor could no longer find. Fixed (`c33f4ca`): one bound
+  parameter per id, plus a sender-based orphan predicate so a half-applied
+  run stays re-runnable. Second apply removed the orphan; final dry-run shows
+  every section at zero.
 - Scratchpad `.ts` under tsx resolved as CJS (top-level await error) and ESM
   resolution could not find `pg` outside the repo — verification ran as inline
   `node -e` from `packages/db` instead.
@@ -95,11 +106,18 @@ Commits: `806d2ed` (T1), `04c006f` (T2), `0c915b3` (T3).
 - The maintenance chain logs 5 recurring `record_resolutions` insert failures
   in `reevaluatePendingReviews` (pre-existing, spun off as a separate task).
 
+## Deviations (Task 4)
+
+- The outcome stamp is `reasonCode: "e2e"`, not the planned `notes: "e2e"`:
+  the outcomes API (`apps/web/app/api/app/outcomes/route.ts`) accepts
+  `reasonCode` and silently drops unknown fields — a stamp the endpoint
+  discards would leave the row bare while the spec looked stamped. This
+  mirrors the `reason: "e2e"` convention corrections and suppressions already
+  use, and a stamped outcome no longer matches the purge script's bare shape.
+
 ## Next steps
 
-- [ ] **Owner: review the phase-2 dry-run (58/1/1) and, if approved, run
-      `pnpm purge:e2e-rows --apply`** — then verify all three counts are 0 and
-      `/app/pursuits` for Solis shows an empty board.
-- [ ] Owner call on Task 4 (stamp e2e POST payloads with `notes: "e2e"`).
+- [x] Phase-2 purge applied and verified: all six residue tables at 0.
+- [x] Task 4 shipped with owner approval.
 - [ ] After the next production deploy, glance at the cockpit family card:
       populated, fresh `derived_at`, first load fast.
