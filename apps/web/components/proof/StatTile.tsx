@@ -16,9 +16,18 @@ type Props = {
   label: string;
   detail?: string;
   tone?: "gold" | "neutral";
+  /**
+   * Testid for the value element.
+   *
+   * `value` stays `string | number | null` on purpose — widening it to ReactNode
+   * so a caller could pass `<span data-testid=…>` would also let a caller pass
+   * arbitrary markup and route around the em-dash rule above. A page that needs
+   * a hook on the number asks for one instead.
+   */
+  valueTestId?: string;
 };
 
-export default function StatTile({ value, label, detail, tone = "neutral" }: Props) {
+export default function StatTile({ value, label, detail, tone = "neutral", valueTestId }: Props) {
   const display =
     value === null ? "—" : typeof value === "number" ? value.toLocaleString("en-US") : value;
 
@@ -32,6 +41,7 @@ export default function StatTile({ value, label, detail, tone = "neutral" }: Pro
       ].join(" ")}
     >
       <div
+        data-testid={valueTestId}
         className={[
           "text-stat font-extrabold tabular-nums",
           tone === "gold" ? "text-accent-ink" : "text-ink",

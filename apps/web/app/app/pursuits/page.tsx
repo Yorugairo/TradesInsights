@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PURSUIT_STATES, listPursuits } from "@otn/intelligence";
+import StatTile from "../../../components/proof/StatTile.js";
+import EmptyState from "../../../components/ui/EmptyState.js";
+import PageHeader from "../../../components/ui/PageHeader.js";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
 import { accountByKey } from "../../../lib/queries.js";
@@ -24,57 +27,87 @@ export default async function PursuitsPage() {
     list.push(p);
     byState.set(p.state, list);
   }
+  const active = all.filter((p) => p.state !== "archived").length;
+  const overdue = all.filter((p) => p.overdue).length;
 
   return (
     <main>
-      <h1>Pursuits</h1>
-      <p>
-        Active pursuits: <strong data-testid="pursuit-count">{all.filter((p) => p.state !== "archived").length}</strong> ·
-        overdue: <strong>{all.filter((p) => p.overdue).length}</strong>
-      </p>
-      {all.length === 0 && (
-        <p data-testid="pursuits-empty">
-          No pursuits yet. Open one from an opportunity to start tracking a bid/no-bid workflow.
-        </p>
-      )}
-      <div style={{ display: "flex", gap: "0.75rem", overflowX: "auto", paddingBottom: "1rem" }}>
-        {COLUMNS.map((state) => {
-          const items = byState.get(state) ?? [];
-          return (
-            <section
-              key={state}
-              data-testid={`pursuit-col-${state}`}
-              style={{ minWidth: 220, border: "1px solid #eee", borderRadius: 8, padding: "0.5rem" }}
-            >
-              <h3 style={{ fontSize: "0.9rem", marginTop: 0 }}>
-                {state.replaceAll("_", " ")} ({items.length})
-              </h3>
-              {items.map((p) => (
-                <div
-                  key={p.id}
-                  style={{ border: "1px solid #ddd", borderRadius: 6, padding: "0.5rem", marginBottom: "0.5rem" }}
-                >
-                  <Link href={`/app/pursuits/${p.id}`}>
-                    <strong>{p.projectName}</strong>
-                  </Link>
-                  <div style={{ fontSize: "0.8rem", color: "#555" }}>
-                    owner {p.ownerUserId} · tasks {p.openTasks}
-                    {p.overdue && (
-                      <>
-                        {" "}
-                        <Badge tone="red">overdue</Badge>
-                      </>
-                    )}
-                  </div>
-                  {p.nextActionAt && (
-                    <div style={{ fontSize: "0.75rem", color: "#777" }}>next {fmtDate(p.nextActionAt)}</div>
+      <PageHeader
+        title="Pursuits"
+        description={`${account.name} — the bid/no-bid workflow for opportunities you have taken on.`}
+      />
+
+      <div className="mb-[calc(var(--stack)*1.5)] grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {/*
+          `pursuit-count` is asserted, so the number keeps its own element. It
+          moves into a StatTile rather than staying a <strong> in a sentence —
+          same value, same testid, and now it is legible from across the room.
+        */}
+        <StatTile tone="gold" value={active} valueTestId="pursuit-count" label="Active pursuits" />
+        <StatTile
+          value={overdue}
+          label="Overdue"
+          detail={overdue > 0 ? "Next action date has passed" : "Nothing past its next action"}
+        />
+        <StatTile value={all.length} label="All pursuits" detail="Including archived" />
+      </div>
+
+      {all.length === 0 ? (
+        <EmptyState
+          data-testid="pursuits-empty"
+          title="No pursuits yet."
+          reason="A pursuit is opened by hand from an opportunity — nothing creates one automatically, so an empty board means none have been started, not that none were found."
+        />
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-4">
+          {COLUMNS.map((state) => {
+            const items = byState.get(state) ?? [];
+            return (
+              <section
+                key={state}
+                data-testid={`pursuit-col-${state}`}
+                className="min-w-[14rem] shrink-0 rounded-lg border border-line bg-surface p-2"
+              >
+                <h3 className="mb-2 text-2xs uppercase tracking-[0.08em] text-ink-muted">
+                  {state.replaceAll("_", " ")} ({items.length})
+                </h3>
+                <div className="flex flex-col gap-2">
+                  {items.map((p) => (
+                    <div
+                      key={p.id}
+                      className="rounded-md border border-line-strong bg-surface-raised p-2"
+                    >
+                      <Link
+                        href={`/app/pursuits/${p.id}`}
+                        className="font-semibold text-ink underline decoration-line-strong underline-offset-2"
+                      >
+                        {p.projectName}
+                      </Link>
+                      <div className="mt-1 text-xs text-ink-muted">
+                        owner {p.ownerUserId} · tasks {p.openTasks}
+                        {p.overdue && (
+                          <>
+                            {" "}
+                            <Badge tone="red">overdue</Badge>
+                          </>
+                        )}
+                      </div>
+                      {p.nextActionAt && (
+                        <div className="mt-0.5 text-xs tabular-nums text-ink-subtle">
+                          next {fmtDate(p.nextActionAt)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {items.length === 0 && (
+                    <p className="px-1 py-2 text-xs text-ink-subtle">Nothing in this stage.</p>
                   )}
                 </div>
-              ))}
-            </section>
-          );
-        })}
-      </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </main>
   );
 }
