@@ -83,5 +83,21 @@ export default function MapClient({ points }: { points: MapPoint[] }) {
     };
   }, [points]);
 
-  return <div ref={ref} data-testid="opportunity-map" style={{ height: "70vh", minHeight: 420, border: "1px solid #ddd", borderRadius: 8 }} />;
+  // Height stays inline: Leaflet measures its container on init, so the box must
+  // have a resolved height before `L.map()` runs. A utility class would work too,
+  // but the viewport-relative height with a floor is the datum Leaflet needs and
+  // keeping it here puts it next to the code that depends on it.
+  //
+  // Marker colours are deliberately NOT tokenised. They are a categorical legend
+  // printed in `map-summary` ("priority (red), promoted (purple), …"); rebinding
+  // them to theme tokens would make the caption wrong in one of the two
+  // registers, and the caption is what makes the map readable.
+  return (
+    <div
+      ref={ref}
+      data-testid="opportunity-map"
+      className="rounded-lg border border-line-strong"
+      style={{ height: "70vh", minHeight: 420 }}
+    />
+  );
 }

@@ -1,6 +1,8 @@
 import "leaflet/dist/leaflet.css";
 import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
+import SourceChip from "../../../components/proof/SourceChip.js";
+import PageHeader from "../../../components/ui/PageHeader.js";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
 import { accountByKey } from "../../../lib/queries.js";
@@ -45,12 +47,28 @@ export default async function MapPage() {
 
   return (
     <main>
-      <h1>Opportunity map — {account.name}</h1>
-      <p style={{ color: "#666" }} data-testid="map-summary">
-        {points.length} opportunities with a known location ({geocoded} located by address
-        geocoding — labeled as inferences). Marker color: priority (red), promoted (purple),
-        digest (orange), archive (gray). Base map © OpenStreetMap contributors.
-      </p>
+      <PageHeader
+        title="Opportunity map"
+        description={
+          // `map-summary` is asserted to contain "opportunities with a known
+          // location" (app.spec.ts:258), so that phrase is load-bearing. The
+          // geocoded count stays in it: an address-derived point is an
+          // inference about where a project is, and the map cannot show that
+          // difference at a glance the way the sentence can.
+          <span data-testid="map-summary">
+            {points.length} opportunities with a known location ({geocoded} located by address
+            geocoding — labeled as inferences). Marker color: priority (red), promoted (purple),
+            digest (orange), archive (gray). Base map © OpenStreetMap contributors.
+          </span>
+        }
+        meta={
+          <>
+            <SourceChip label="OpenStreetMap" detail="base map" href="https://www.openstreetmap.org/copyright" />
+            <SourceChip label="Project geometry" detail={`${points.length - geocoded} stated`} />
+            <SourceChip label="Census geocoder" detail={`${geocoded} inferred`} />
+          </>
+        }
+      />
       <MapClient points={points} />
     </main>
   );

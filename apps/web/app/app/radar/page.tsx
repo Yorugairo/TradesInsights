@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
+import PageHeader from "../../../components/ui/PageHeader.js";
+import Table, { HeadTr, Td, Th, Tr } from "../../../components/ui/Table.js";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
+import { formatValuation, stageLabel } from "../../../lib/format.js";
 import { accountByKey } from "../../../lib/queries.js";
-import { Badge, cell, fmtDate, fmtMoney, table } from "../../../lib/ui.js";
+import { Badge, fmtDate } from "../../../lib/ui.js";
 
 export const dynamic = "force-dynamic";
 
@@ -39,49 +42,71 @@ export default async function RadarPage() {
 
   return (
     <main>
-      <h1>Radar — {account.name}</h1>
-      <p style={{ color: "#666" }} data-testid="radar-summary">
-        {rows.length} early-stage projects routed to you (pre-application / entitlement / SEPA).
-        This is the 3–9-months-ahead pipeline — plan relationships now, bid later.
-      </p>
-      <table style={table} data-testid="radar-table">
-        <thead>
-          <tr>
-            <th style={cell}>Project</th>
-            <th style={cell}>Stage</th>
-            <th style={cell}>County / Jurisdiction</th>
-            <th style={cell}>Stated valuation</th>
-            <th style={cell}>Last movement</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r["id"] as string}>
-              <td style={cell}>
-                <Link href={`/app/opportunities/${r["id"] as string}`}>
-                  {r["canonical_name"] as string}
-                </Link>{" "}
-                {(r["campus_block"] as string | null) && <Badge tone="green">campus</Badge>}
-              </td>
-              <td style={cell}>{(r["current_stage"] as string).replaceAll("_", " ")}</td>
-              <td style={cell}>
-                {r["county"] as string} / {r["permitting_jurisdiction"] as string}
-              </td>
-              <td style={cell}>
-                {r["max_valuation"] ? fmtMoney(Number(r["max_valuation"])) : "—"}
-              </td>
-              <td style={cell}>{fmtDate(r["last_material_change_at"] as string | null)}</td>
-            </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td style={cell} colSpan={5}>
-                Nothing on the radar right now.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <PageHeader
+        title="Radar"
+        description={
+          // `radar-summary` is asserted to contain "early-stage" (app.spec.ts:299),
+          // so that phrasing is load-bearing, not decorative.
+          <span data-testid="radar-summary">
+            {rows.length} early-stage projects routed to {account.name} (pre-application /
+            entitlement / SEPA). This is the 3–9-months-ahead pipeline — plan relationships now,
+            bid later.
+          </span>
+        }
+      />
+
+      {/*
+        The table is rendered unconditionally: `radar-table` is asserted VISIBLE,
+        so swapping it for an EmptyState would fail the gate. The empty case
+        therefore lives inside the tbody — still with a reason, never a blank.
+      */}
+      <Table
+        data-testid="radar-table"
+        caption="Early-stage projects routed to this account"
+        head={
+          <HeadTr>
+            <Th>Project</Th>
+            <Th>Stage</Th>
+            <Th>County / Jurisdiction</Th>
+            <Th numeric>Stated valuation</Th>
+            <Th>Last movement</Th>
+          </HeadTr>
+        }
+      >
+        {rows.map((r) => (
+          <Tr key={r["id"] as string}>
+            <Td>
+              <Link
+                href={`/app/opportunities/${r["id"] as string}`}
+                className="font-semibold text-ink underline decoration-line-strong underline-offset-2"
+              >
+                {r["canonical_name"] as string}
+              </Link>{" "}
+              {(r["campus_block"] as string | null) && <Badge tone="green">campus</Badge>}
+            </Td>
+            <Td>{stageLabel(r["current_stage"] as string)}</Td>
+            <Td>
+              {r["county"] as string} / {r["permitting_jurisdiction"] as string}
+            </Td>
+            {/* Absent valuation is an em dash, not $0 — nobody stated a number. */}
+            <Td numeric>
+              {formatValuation(r["max_valuation"] === null ? null : Number(r["max_valuation"]))}
+            </Td>
+            <Td className="whitespace-nowrap tabular-nums">
+              {fmtDate(r["last_material_change_at"] as string | null)}
+            </Td>
+          </Tr>
+        ))}
+        {rows.length === 0 && (
+          <Tr>
+            <Td className="text-ink-muted">
+              Nothing on the radar right now — no routed opportunity for this account is at
+              concept, pre-application or entitlement. That is a real empty set, not a missing
+              feed.
+            </Td>
+          </Tr>
+        )}
+      </Table>
     </main>
   );
 }
