@@ -6,8 +6,11 @@
 > intermittent unrelated failures. `workers: 1` removed; perf budget tightened
 > from a 30s placeholder to 5s per route. Docs: [docs/testing.md](../../../docs/testing.md).
 >
-> **Task 1 (the purge) is BUILT BUT NOT APPLIED.** `pnpm purge:e2e-rows` is
-> dry-run by default and needs an owner decision — see below.
+> **Task 1 (the purge) was APPLIED 2026-07-28 with owner approval**:
+> `claim_corrections` 30→0, `opportunity_outcomes` 30→0, verified. Residue
+> (`feedback` 58 — profiled as 100% e2e-attributable — `pursuits` 1,
+> `bid_invitations` ~1) is planned in
+> [post-purge-residue-and-hardening.plan.md](post-purge-residue-and-hardening.plan.md).
 >
 > **One thing the plan did not anticipate: three databases, not two.** The
 > corpus first went into vitest's `otn` and broke `assistant.test.ts` (asserts a
