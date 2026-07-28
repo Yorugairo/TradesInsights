@@ -1,5 +1,27 @@
 # Plan: A local e2e corpus — stop the test suite writing to production
 
+> **COMPLETE 2026-07-28** — Tasks 2-5 shipped (`e6e4a42`, `7685efa`).
+> e2e now runs against `otn_e2e`, its own local database: **29/29 in ~25-34s at
+> two workers**, twice consecutively, versus 1.3-1.5m at one worker with
+> intermittent unrelated failures. `workers: 1` removed; perf budget tightened
+> from a 30s placeholder to 5s per route. Docs: [docs/testing.md](../../../docs/testing.md).
+>
+> **Task 1 (the purge) is BUILT BUT NOT APPLIED.** `pnpm purge:e2e-rows` is
+> dry-run by default and needs an owner decision — see below.
+>
+> **One thing the plan did not anticipate: three databases, not two.** The
+> corpus first went into vitest's `otn` and broke `assistant.test.ts` (asserts a
+> filter returns one row, got two). Same "one suite writes what another reads"
+> defect, one layer down, so it got the same answer rather than a tuned corpus.
+>
+> Four other surprises, all now documented in `docs/testing.md`: five of the
+> tables have no natural unique key (so `ON CONFLICT DO NOTHING` silently
+> duplicates, and `project_roles` has no `id` at all); dotenv resolved `.env`
+> from cwd so Playwright missed `PG_PORT` and hit a different Postgres; a fresh
+> database has no `insights` schema so the first migration silently populated
+> `public`; and a review fixture needs a reason from `HUMAN_DECIDABLE_REASONS`
+> or no `cluster-reject` control renders.
+
 ## Summary
 
 The e2e suite runs against the hosted production database and **writes to it**.
