@@ -22,6 +22,7 @@ import {
   type MatchFeatures,
 } from "./normalize.js";
 import { evaluateFuzzy } from "./fuzzy.js";
+import { classifyOrgNameQuality } from "./org-name-quality.js";
 import {
   findBoundOrganizationByStrongKey,
   findOrganizationBySourceEntityId,
@@ -175,7 +176,15 @@ async function upsertOrganizationsAndRoles(
     if (!orgId) {
       const [inserted] = await db
         .insert(organizations)
-        .values({ canonicalName: norm.canonical })
+        .values({
+          canonicalName: norm.canonical,
+          // Classified at WRITE time so no reader ever has to re-derive it —
+          // this is the only org-creating path in the runtime, and the column
+          // it feeds replaces a regex that had been copy-pasted into four
+          // views (see migration 0039). Stamped from the canonical name, the
+          // same string every one of those predicates tested.
+          nameQuality: classifyOrgNameQuality(norm.canonical),
+        })
         .returning({ id: organizations.id });
       orgId = inserted!.id;
     }

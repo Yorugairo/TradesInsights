@@ -20,6 +20,8 @@
     "flow:check": "tsx src/cli/flow-check.ts",
     "geocode:run": "tsx src/cli/geocode-run.ts",
     "review": "tsx src/cli/review.ts",
+    "orgs:backfill-quality": "tsx src/cli/backfill-org-quality.ts",
+    "audit:data": "tsx src/cli/data-audit.ts",
     "score:run": "tsx src/cli/score-run.ts",
     "extract:run": "tsx src/cli/extract-run.ts",
     "verify:run": "tsx src/cli/verify-run.ts",

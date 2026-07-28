@@ -23,5 +23,8 @@ export * from "./google-place-rescore.js";
 // PROJECT.
 export * from "./entity-corroboration.js";
 export * from "./trade-taxonomy.js";
+// The one definition of "is this string a company" — see the module header for
+// why five copies of it existed before this file.
+export * from "./org-name-quality.js";
 export * from "./corroboration.js";
 export * from "./project-trades.js";

@@ -360,6 +360,13 @@ export const organizations = pgTable(
     website: text("website"),
     status: text("status"),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /** 'business' | 'person_or_unknown' | 'junk' — the single definition of
+     * "is this string a company", stamped by the resolver from
+     * `classifyOrgNameQuality` (packages/resolution/src/org-name-quality.ts).
+     * NULL means not yet classified: read models must tolerate it rather than
+     * assume, and `person_or_unknown` is a legitimate sole proprietor, NOT a
+     * quality problem — see migration 0039's header. */
+    nameQuality: text("name_quality"),
   },
   (t) => [
     index("organizations_name_ix").on(t.canonicalName),

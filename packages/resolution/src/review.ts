@@ -17,6 +17,7 @@ import {
 } from "./resolver.js";
 import { extractFeatures } from "./normalize.js";
 import { classifyNameAgreement, type NameAgreementBasis } from "./registry-identifiers.js";
+import { classifyOrgNameQuality } from "./org-name-quality.js";
 
 /**
  * M2.5 — merge-review / split workflow (spec §10): humans decide ambiguous
@@ -259,7 +260,16 @@ const HUMAN_DECIDABLE_REASONS = new Set<string>([
 export function classifyResolutionReviewState(input: {
   matchedRule: string;
   reasons: readonly string[];
+  /**
+   * `features_json.awaiting`, stamped by `reclassifyComparanda`. The reasons
+   * alone cannot express this: `same_address_name_mismatch` IS a decidable
+   * reason in general, and the 784 rows that carry it while comparing a permit
+   * title to a company name are decidable in form and undecidable in fact. The
+   * tag is what tells the two apart, so it outranks the reason list.
+   */
+  awaiting?: string | null;
 }): ResolutionReviewState {
+  if (input.awaiting) return "awaiting_evidence";
   if (input.reasons.some((r) => NO_HUMAN_SIGNAL_REASONS.has(r))) return "awaiting_evidence";
   return input.reasons.some((r) => HUMAN_DECIDABLE_REASONS.has(r))
     ? "actionable"
@@ -281,6 +291,19 @@ export interface ReviewCluster {
   reviewState: ResolutionReviewState;
   /** Every reason on the cluster — `reasonKey` is only the first. */
   reasons: string[];
+  /**
+   * What the cluster is waiting for, when it is waiting for something specific:
+   * `features_json.awaiting` as stamped by `reclassifyComparanda`. Null means
+   * the cluster was never tagged — which is not the same as "nothing missing",
+   * only "nothing named".
+   */
+  awaiting: string | null;
+  /**
+   * What the resolver actually compared, when it is not the default. `org_roles`
+   * means the row was re-checked against the candidate project's organization
+   * names and they agree — the review is genuinely decidable.
+   */
+  comparanda: string | null;
 }
 
 /**
@@ -315,6 +338,8 @@ export async function triageReviewQueue(db: Db): Promise<ReviewCluster[]> {
       rv.candidate_project_id,
       p.canonical_name AS candidate_name,
       p.county AS candidate_county,
+      rv.features_json->>'awaiting' AS awaiting,
+      rv.features_json->>'comparanda' AS comparanda,
       count(*) AS n,
       min(rv.score) AS min_score,
       max(rv.score) AS max_score,
@@ -323,18 +348,21 @@ export async function triageReviewQueue(db: Db): Promise<ReviewCluster[]> {
     JOIN source_records sr ON sr.id = rv.source_record_id
     LEFT JOIN projects p ON p.id = rv.candidate_project_id
     WHERE rv.status = 'pending'
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
     ORDER BY n DESC, 1, 2`);
   return (res.rows as Record<string, unknown>[]).map((r) => {
     const matchedRule = r["matched_rule"] as string;
     const reasons = ((r["reasons"] as (string | null)[] | null) ?? []).filter(
       (s): s is string => typeof s === "string" && s.length > 0,
     );
+    const awaiting = (r["awaiting"] as string | null) ?? null;
     return {
       matchedRule,
       reasonKey: r["reason_key"] as string,
       reasons,
-      reviewState: classifyResolutionReviewState({ matchedRule, reasons }),
+      awaiting,
+      comparanda: (r["comparanda"] as string | null) ?? null,
+      reviewState: classifyResolutionReviewState({ matchedRule, reasons, awaiting }),
       candidateProjectId: (r["candidate_project_id"] as string | null) ?? null,
       candidateName: (r["candidate_name"] as string | null) ?? null,
       candidateCounty: (r["candidate_county"] as string | null) ?? null,
@@ -658,4 +686,182 @@ export async function auditAddressNameMismatch(
     }
   }
   return audit;
+}
+
+/** `features_json.comparanda` when the row was re-checked against org names. */
+export const COMPARANDA_ORG_ROLES = "org_roles";
+
+/** `features_json.awaiting` when the row has no organization evidence at all. */
+export const AWAITING_ORG_EVIDENCE = "org_evidence";
+
+export interface ReclassifySummary {
+  scanned: number;
+  /** Org-role names AGREE with the record — genuinely decidable, still pending. */
+  upgraded: number;
+  /** No usable organization evidence exists — tagged `awaiting`, still pending. */
+  awaitingTagged: number;
+  /** Org names exist and disagree: two businesses at one address. Left alone. */
+  leftActionable: number;
+  /** Rows already carrying the tag this pass would write (idempotent re-runs). */
+  alreadyTagged: number;
+  /** How the agreeing rows agreed — the class, so a batch can be judged as one. */
+  byBasis: Record<NameAgreementBasis, number>;
+  /** False ⇒ nothing was written. */
+  apply: boolean;
+}
+
+type ComparandaRow = {
+  id: string;
+  record_title: string | null;
+  candidate_name: string | null;
+  org_names: (string | null)[] | null;
+  awaiting: string | null;
+  comparanda: string | null;
+};
+
+/**
+ * Tell the operator which `same_address_name_mismatch` reviews they can actually
+ * decide, and which are a category error nobody can decide.
+ *
+ * `auditAddressNameMismatch` measured the problem and deliberately stopped
+ * there: of 784 pending rows, 0 collapsed under the more forgiving comparison —
+ * 100% `none`. That result is not "the comparison is too strict", it is "the
+ * comparison is against the wrong string". The resolver compared the SOURCE
+ * RECORD'S TITLE ("TENANT IMPROVEMENT — SUITE 200") with the candidate PROJECT'S
+ * canonical name. Neither is a company name, so no threshold could ever have
+ * made them agree.
+ *
+ * This pass asks the question the queue actually needs answered: does the
+ * candidate project carry ORGANIZATION names, and do THOSE agree with the
+ * record? Three outcomes, and only the middle one changes what a human sees:
+ *
+ *   agree      → `comparanda = 'org_roles'` (+ basis, + the name that agreed).
+ *                The row stays pending and becomes genuinely decidable, with the
+ *                evidence a reviewer needs printed on it.
+ *   disagree   → untouched. Two different businesses at one address is exactly
+ *                the case spec §10 wants a human for.
+ *   no orgs    → `awaiting = 'org_evidence'`. Nothing to compare; the row leaves
+ *                the actionable queue and joins the pipeline's backlog.
+ *
+ * WHAT THIS NEVER DOES: change `status`, write `decided_by`, `decided_at` or
+ * `decision_note`, merge, or reject. Nothing here is a decision — the machine
+ * has no business deciding these, which is the entire finding of round 1. It
+ * writes two keys into `features_json` and stops.
+ *
+ * Junk-named organizations (migration 0039's tier) are excluded from the
+ * comparison: "SAME AS OWNER" agreeing with a permit title would be a false
+ * upgrade, and a project whose ONLY org names are junk genuinely has no org
+ * evidence.
+ *
+ * DRY-RUN BY DEFAULT, matching `reevaluatePendingReviews`.
+ */
+export async function reclassifyComparanda(
+  db: Db,
+  opts: {
+    apply?: boolean;
+    limit?: number;
+    logger?: { info(o: unknown, m?: string): void };
+  } = {},
+): Promise<ReclassifySummary> {
+  const apply = opts.apply ?? false;
+  const limit = opts.limit ?? 5000;
+
+  const res = await db.execute<ComparandaRow>(sql`
+    SELECT rv.id,
+           sr.normalized_json->>'title' AS record_title,
+           p.canonical_name AS candidate_name,
+           rv.features_json->>'awaiting' AS awaiting,
+           rv.features_json->>'comparanda' AS comparanda,
+           (SELECT array_agg(DISTINCT og.canonical_name)
+              FROM project_roles pr
+              JOIN organizations og ON og.id = pr.organization_id
+             WHERE pr.project_id = p.id) AS org_names
+    FROM resolution_reviews rv
+    JOIN source_records sr ON sr.id = rv.source_record_id
+    JOIN projects p ON p.id = rv.candidate_project_id
+    WHERE rv.status = 'pending'
+      AND rv.matched_rule = 'address_name'
+      AND rv.reasons_json ? 'same_address_name_mismatch'
+    ORDER BY rv.created_at
+    LIMIT ${limit}`);
+
+  const summary: ReclassifySummary = {
+    scanned: 0,
+    upgraded: 0,
+    awaitingTagged: 0,
+    leftActionable: 0,
+    alreadyTagged: 0,
+    byBasis: { exact: 0, close: 0, contained: 0, none: 0 },
+    apply,
+  };
+
+  for (const row of res.rows) {
+    summary.scanned++;
+    // Only names that could BE a company are worth comparing. A project whose
+    // roles are all placeholders has no org evidence, however many rows it has.
+    const orgNames = (row.org_names ?? []).filter(
+      (n): n is string => typeof n === "string" && classifyOrgNameQuality(n) !== "junk",
+    );
+
+    if (orgNames.length === 0) {
+      if (row.awaiting === AWAITING_ORG_EVIDENCE) {
+        summary.alreadyTagged++;
+        continue;
+      }
+      summary.awaitingTagged++;
+      if (apply) {
+        await db.execute(sql`
+          UPDATE resolution_reviews
+          -- ::text is required, not decorative: jsonb_build_object takes "any",
+          -- so an untyped bind parameter fails analysis with 42P18.
+          SET features_json = features_json || jsonb_build_object('awaiting', ${AWAITING_ORG_EVIDENCE}::text)
+          WHERE id = ${row.id}`);
+      }
+      continue;
+    }
+
+    // Best agreement across every org on the project, in strength order. `close`
+    // is accepted alongside `exact` and `contained`: an 0.85 similarity is a
+    // stronger signal than token containment, and since NOTHING here decides
+    // anything, admitting it only puts more evidence in front of the human.
+    let best: NameAgreementBasis = "none";
+    let bestName: string | null = null;
+    const strength: Record<NameAgreementBasis, number> = {
+      exact: 3,
+      close: 2,
+      contained: 1,
+      none: 0,
+    };
+    for (const name of orgNames) {
+      const basis = classifyNameAgreement(name, row.record_title);
+      if (strength[basis] > strength[best]) {
+        best = basis;
+        bestName = name;
+      }
+    }
+    summary.byBasis[best]++;
+
+    if (best === "none") {
+      summary.leftActionable++;
+      continue;
+    }
+    if (row.comparanda === COMPARANDA_ORG_ROLES) {
+      summary.alreadyTagged++;
+      continue;
+    }
+    summary.upgraded++;
+    if (apply) {
+      await db.execute(sql`
+        UPDATE resolution_reviews
+        SET features_json = features_json || jsonb_build_object(
+              'comparanda', ${COMPARANDA_ORG_ROLES}::text,
+              'comparandaBasis', ${best}::text,
+              'comparandaName', ${bestName}::text
+            )
+        WHERE id = ${row.id}`);
+    }
+  }
+
+  opts.logger?.info(summary, "review comparanda reclassified");
+  return summary;
 }

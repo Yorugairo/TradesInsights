@@ -15,6 +15,19 @@ export const dynamic = "force-dynamic";
 
 const rows = (cs: readonly ReviewCluster[]) => cs.reduce((n, c) => n + c.count, 0);
 
+/**
+ * What a blocked cluster is waiting for, in the reviewer's words. `org_evidence`
+ * is stamped by `pnpm review reclassify`: the resolver compared the record's
+ * TITLE to the candidate project's NAME — neither is a company name — and the
+ * project carries no organization to compare instead. No threshold fixes that,
+ * so the row is a pipeline job, not a review job.
+ */
+const AWAITING_COPY: Record<string, string> = {
+  org_evidence: "needs an organization on the candidate project — nothing to compare yet",
+};
+const awaitingCopy = (a: string | null) =>
+  (a && AWAITING_COPY[a]) ?? "needs parcel or org evidence";
+
 /** The cluster table, reused by the actionable, singleton and blocked sections. */
 function ClusterTable({
   clusters,
@@ -45,6 +58,14 @@ function ClusterTable({
               {c.matchedRule}
               <br />
               <small>{c.reasons.join(" + ") || c.reasonKey || "—"}</small>
+              {c.comparanda === "org_roles" && (
+                <>
+                  <br />
+                  <small className="text-ink-muted">
+                    re-checked against the project&apos;s organization names — they agree
+                  </small>
+                </>
+              )}
             </td>
             <td style={cell}>
               {c.candidateProjectId ? (
@@ -75,7 +96,7 @@ function ClusterTable({
                   count={c.count}
                 />
               ) : (
-                <small className="text-ink-muted">needs parcel or org evidence</small>
+                <small className="text-ink-muted">{awaitingCopy(c.awaiting)}</small>
               )}
             </td>
           </tr>
@@ -109,6 +130,10 @@ export default async function AdminReviewPage() {
   const bulk = decidable.filter((c) => c.count > 1);
   const singletons = decidable.filter((c) => c.count === 1);
 
+  // Named separately from the rest of `blocked` because it is the round-2
+  // finding made visible: rows that LOOK decidable (a same-address name
+  // mismatch is a real reason) but compare a permit title to a project name.
+  const awaitingOrgEvidence = blocked.filter((c) => c.awaiting === "org_evidence");
   const pendingTotal = rows(clusters);
   const half = clustersToCover(decidable, 0.5);
   const eighty = clustersToCover(decidable, 0.8);
@@ -131,7 +156,15 @@ export default async function AdminReviewPage() {
         {blocked.length > 0 ? (
           <>
             A further <strong>{rows(blocked)}</strong> rows are waiting on evidence, not on you (see
-            below). {pendingTotal} pending in total.
+            below)
+            {awaitingOrgEvidence.length > 0 ? (
+              <>
+                {" "}
+                — <strong data-testid="awaiting-org-evidence">{rows(awaitingOrgEvidence)}</strong> of
+                them because the candidate project has no organization to compare against
+              </>
+            ) : null}
+            . {pendingTotal} pending in total.
           </>
         ) : null}
       </p>

@@ -19,6 +19,8 @@ const cluster = (count: number, over: Partial<ReviewCluster> = {}): ReviewCluste
   minScore: 0.5,
   maxScore: 0.55,
   sampleTitles: [],
+  awaiting: null,
+  comparanda: null,
   ...over,
 });
 
@@ -33,6 +35,27 @@ describe("classifyResolutionReviewState (fail closed)", () => {
       "awaiting_evidence",
     );
     expect(state("proximity_org", ["generic_name", "proximity_only"])).toBe("awaiting_evidence");
+  });
+
+  it("lets an `awaiting` tag override an otherwise-decidable reason", () => {
+    // The 784 category-error rows: `same_address_name_mismatch` is a decidable
+    // reason in general, and undecidable on these rows because the resolver
+    // compared a permit title to a project name. Only the tag knows that.
+    expect(
+      classifyResolutionReviewState({
+        matchedRule: "address_name",
+        reasons: ["same_address_name_mismatch"],
+        awaiting: "org_evidence",
+      }),
+    ).toBe("awaiting_evidence");
+    // Untagged rows are unaffected — the tag adds information, never removes it.
+    expect(
+      classifyResolutionReviewState({
+        matchedRule: "address_name",
+        reasons: ["same_address_name_mismatch"],
+        awaiting: null,
+      }),
+    ).toBe("actionable");
   });
 
   it("keeps the reviews that rest on a concrete fact", () => {

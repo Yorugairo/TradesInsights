@@ -615,6 +615,36 @@ describe("insights_public cockpit views (0025)", () => {
     expect(byId.get(projectIds[3]!)).toBeNull(); // Delta
   });
 
+  it("reports the unmatched permit-type residue without changing what gets tagged", async () => {
+    // Round 2, T3. A matcher that maps NOTHING must still produce a full,
+    // ranked residue and an honest untaggable count — that report is the only
+    // way "83% of projects carry no trade_codes" is readable as anything other
+    // than a failure.
+    const blind = await deriveProjectTrades(db, { codes: [], match: () => [] });
+    expect(blind.permitTypesMatched).toBe(0);
+    expect(blind.projectsTagged).toBe(0);
+    expect(blind.topUnmatched.length).toBe(blind.distinctPermitTypes);
+    expect(blind.topUnmatched.map((u) => u.permitType)).toContain("GLAZING PERMIT");
+    for (const u of blind.topUnmatched) expect(u.projects).toBeGreaterThan(0);
+    // Ranked largest-first, so the list reads as a priority order.
+    const counts = blind.topUnmatched.map((u) => u.projects);
+    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+    // Untaggable is a real count of projects with no public permitType at all —
+    // the fixture set has several, and it must not swallow the taggable ones.
+    expect(blind.untaggableProjects).toBeGreaterThan(0);
+
+    // Restore the tags the previous case established: derivation is
+    // reset-then-derive, so leaving the blind run's state behind would break
+    // the market-aggregate cases that follow.
+    const restored = await deriveProjectTrades(db, {
+      codes: ["glazing"],
+      match: (text: string) => (text.includes("GLAZ") ? ["glazing"] : []),
+    });
+    expect(restored.permitTypesMatched).toBeGreaterThanOrEqual(1);
+    // The matched type is gone from the residue — the two lists partition.
+    expect(restored.topUnmatched.map((u) => u.permitType)).not.toContain("GLAZING PERMIT");
+  });
+
   it("market_demand_v1 gates county×trade combos below 5 projects (0029)", async () => {
     const servedTrade = `test_trade_served_${RUN}`;
     const thinTrade = `test_trade_thin_${RUN}`;

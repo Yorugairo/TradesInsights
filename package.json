@@ -34,6 +34,8 @@
     "flow:check": "pnpm --filter @otn/worker flow:check",
     "geocode:run": "pnpm --filter @otn/worker geocode:run",
     "review": "pnpm --filter @otn/worker review",
+    "orgs:backfill-quality": "pnpm --filter @otn/worker orgs:backfill-quality",
+    "audit:data": "pnpm --filter @otn/worker audit:data",
     "score:run": "pnpm --filter @otn/worker score:run",
     "extract:run": "pnpm --filter @otn/worker extract:run",
     "verify:run": "pnpm --filter @otn/worker verify:run",

@@ -231,6 +231,8 @@
     { "idx": 35, "version": "7", "when": 1784345000000, "tag": "0035_project_events_unique", "breakpoints": true },
     { "idx": 36, "version": "7", "when": 1784346000000, "tag": "0036_solicitations", "breakpoints": true },
     { "idx": 37, "version": "7", "when": 1784347000000, "tag": "0037_corporate_family_summary", "breakpoints": true },
-    { "idx": 38, "version": "7", "when": 1784348000000, "tag": "0038_takeoff_field", "breakpoints": true }
+    { "idx": 38, "version": "7", "when": 1784348000000, "tag": "0038_takeoff_field", "breakpoints": true },
+    { "idx": 39, "version": "7", "when": 1784349000000, "tag": "0039_org_name_quality", "breakpoints": true },
+    { "idx": 40, "version": "7", "when": 1784350000000, "tag": "0040_cockpit_view_name_quality", "breakpoints": true }
   ]
 }
