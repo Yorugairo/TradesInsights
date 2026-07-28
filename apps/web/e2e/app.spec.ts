@@ -91,7 +91,7 @@ test.describe("customer surface", () => {
     // Controlled disposition vocabulary (M3.7): known reason accepted,
     // free-form reason rejected (free text belongs in notes).
     const good = await request.post(`/api/app/opportunities/${oppId}/feedback`, {
-      data: { relevant: false, dispositionReason: "wrong_trade" },
+      data: { relevant: false, dispositionReason: "wrong_trade", notes: "e2e" },
     });
     expect(good.ok()).toBe(true);
     const bad = await request.post(`/api/app/opportunities/${oppId}/feedback`, {
@@ -216,7 +216,11 @@ test.describe("customer surface", () => {
     const del = await request.delete(`/api/app/suppressions/${supId}`);
     expect(del.ok()).toBe(true);
 
-    const outcome = await request.post("/api/app/outcomes", { data: { opportunityId: oppId, outcomeType: "won", influencedByOtn: false } });
+    // reasonCode, not notes: the outcomes API accepts reasonCode and drops
+    // unknown fields, and a stamp the endpoint discards is worse than none.
+    // Any future leak is identifiable by field instead of by forensics — and a
+    // stamped row no longer matches the purge script's bare-e2e shape.
+    const outcome = await request.post("/api/app/outcomes", { data: { opportunityId: oppId, outcomeType: "won", influencedByOtn: false, reasonCode: "e2e" } });
     expect(outcome.status()).toBe(201);
 
     // Admin-only immutable correction.
