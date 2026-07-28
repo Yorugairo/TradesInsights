@@ -47,7 +47,8 @@
     "link-evidence:audit": "tsx src/cli/link-evidence.ts --audit",
     "google-place-rescore:preview": "tsx src/cli/google-place-rescore.ts",
     "google-place-rescore:apply": "tsx src/cli/google-place-rescore.ts --apply",
-    "binding-audit": "tsx src/cli/binding-audit.ts"
+    "binding-audit": "tsx src/cli/binding-audit.ts",
+    "purge:e2e-rows": "tsx src/cli/purge-e2e-rows.ts"
   },
   "dependencies": {
     "@otn/adapters": "workspace:*",
