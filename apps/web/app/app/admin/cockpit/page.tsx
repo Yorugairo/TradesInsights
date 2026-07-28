@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createRegistryPool } from "@otn/db";
+import { registryPool } from "../../../../lib/registry-db.js";
 import { queueSummary, type QueueSummary } from "@otn/intelligence";
 import PageHeader from "../../../../components/ui/PageHeader.js";
 import { currentSession } from "../../../../lib/auth.js";
@@ -32,7 +32,7 @@ export default async function CockpitPage() {
   if (!session) redirect("/login");
   if (session.role !== "admin") redirect("/app/opportunities");
 
-  const pool = createRegistryPool();
+  const pool = registryPool();
   const summary = await queueSummary(db(), pool);
   const seamOffline = pool === null;
 

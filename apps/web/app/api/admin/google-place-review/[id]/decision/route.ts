@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createRegistryPool } from "@otn/db";
+import { registryPool } from "../../../../../../lib/registry-db.js";
 import { jsonError, withAdmin } from "../../../../../../lib/api.js";
 
 /**
@@ -29,7 +29,7 @@ export const POST = withAdmin<{ id: string }>(async ({ session, params, req }) =
 
   // First interactive route that needs the registry seam: a batch-style silent
   // skip would leave the operator clicking into the void, so say so explicitly.
-  const pool = createRegistryPool();
+  const pool = registryPool();
   if (!pool) return jsonError(503, "registry seam offline (REGISTRY_DATABASE_URL is not set)");
 
   try {

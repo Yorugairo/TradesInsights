@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createRegistryPool } from "@otn/db";
+import { registryPool } from "../../../../lib/registry-db.js";
 import {
   buildFamilies,
   corporateFamilyRollup,
@@ -57,7 +57,7 @@ export default async function CorporateFamiliesPage({
   const limit = Math.min(Math.max(Number(params.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const showWeak = params.weak === "1";
 
-  const pool = createRegistryPool();
+  const pool = registryPool();
   if (!pool) return <Unavailable reason="REGISTRY_DATABASE_URL is not set — the registry seam is offline." />;
 
   const rows = await fetchRegistryIdentityRows(pool);

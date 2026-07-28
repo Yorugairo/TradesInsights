@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createRegistryPool } from "@otn/db";
+import { registryPool } from "../../../../lib/registry-db.js";
 import { fetchGooglePlaceBlockedSummary, fetchGooglePlaceReviewRows } from "@otn/resolution";
 import { currentSession } from "../../../../lib/auth.js";
 import { Badge, cell, table } from "../../../../lib/ui.js";
@@ -35,7 +35,7 @@ export default async function GooglePlaceReviewPage({
   const params = await searchParams;
   const limit = Math.min(Math.max(Number(params.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
 
-  const pool = createRegistryPool();
+  const pool = registryPool();
   if (!pool) {
     return (
       <main>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createRegistryPool } from "@otn/db";
+import { registryPool } from "../../../../lib/registry-db.js";
 import { groupByPlace, loadContestedPlaces, realConflicts } from "@otn/resolution";
 import { currentSession } from "../../../../lib/auth.js";
 import { Badge, cell, table } from "../../../../lib/ui.js";
@@ -32,7 +32,7 @@ export default async function GooglePlaceContestedPage() {
   if (!session) redirect("/login");
   if (session.role !== "admin") redirect("/app/opportunities");
 
-  const pool = createRegistryPool();
+  const pool = registryPool();
   if (!pool) {
     return (
       <main>
