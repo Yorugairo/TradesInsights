@@ -112,6 +112,7 @@
 | M0.6 manifest loader + fixture harness | ✅ 2026-07-15 | `fake_source` adapter + fixtures |
 | **M0 exit gate** | ✅ | `apps/worker/test/m0-exit-gate.test.ts` — 24/24 tests, E2E 1/1 |
 | De-route sweep + delivery version guard | ✅ 2026-07-26 | **Code is in `fb200c5`, whose subject says `docs(plan): reconcile counts to three sightings` — see the provenance note below.** `apps/worker/test/score-run-deroute.test.ts` — 9/9; full suite 1076/1076, 108 files; lint + typecheck clean; `eval:run` GATES PASS byte-identical |
+| CRM upgrade: takeoff scaffold + field communication (deck A5/A6) | ✅ 2026-07-28 | migration `0038_takeoff_field` (4 tables); `packages/intelligence/src/takeoff.ts` (deterministic evidence→assembly derivation, provenance on every derived line, re-derive NEVER touches manual edits) + `field.ts` (multi-use hashed crew links — deliberately not action_tokens, whose single-use invariant one-tap email depends on; daily logs; change orders decided exactly once, audit note on decision); `/field/{token}` crew page (no session, plain HTML forms, api/action hardening) + cockpit takeoff worksheet & field section; CO email via idempotent `field_notify` deliveries row (env-gated SMTP, send failure never fails the crew POST). 21 unit + 4 e2e tests; e2e 33/33; typecheck clean. Unit costs + valuation shares are OWNER-ASSUMED placeholder figures — calibrate with Solis before trusting a stamped estimate |
 
 ## Commit provenance (read before trusting `git log --oneline` here)
 

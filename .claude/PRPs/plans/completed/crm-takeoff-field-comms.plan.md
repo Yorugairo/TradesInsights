@@ -559,3 +559,25 @@ and e2e surfaces end to end. Two prior assumptions died during exploration: (1) 
 will need building" — both exist with routes; (2) "photos can ride raw_artifacts" — that table
 is source-scoped by construction, so photo storage became the quarantined optional task
 instead of a load-bearing dependency.
+
+**2026-07-28 — v2, IMPLEMENTED.** All of Phase A and Phase B (B7 photos deliberately not
+built, as scoped). Three deviations, none structural:
+
+1. **The e2e sandbox needed two changes the plan missed.** `otn_e2e` is its own database:
+   migration 0038 reached it only via `pnpm db:setup:e2e`, and `global-setup.ts`'s wipe list
+   deletes `pursuits` — every new table FK-references pursuits, so all four had to join
+   MUTATION_TABLES (children before parents) or the wipe itself would have failed. A future
+   migration that adds a pursuit-referencing table must do both again.
+2. **Minted field-link URLs carry `APP_BASE_URL`, which is not the e2e origin.** Correct
+   behaviour (the owner texts that URL to a crew member; it must be the configured public
+   origin, not whatever host served the mint request) — but the spec initially navigated to
+   the absolute URL and hit the dev port. The spec now rebases `new URL(url).pathname` onto
+   the suite's baseURL. Deploy note: `APP_BASE_URL` must be set on hosted or mint responses
+   fall back to the request origin.
+3. **`getTakeoffSheet` (read-only, no create) was added** beyond the planned service list:
+   the pursuit detail page must show sheet state without minting sheets as a side effect of
+   viewing — get-or-create stays on the takeoff page/API, where visiting IS the act.
+
+Validation: 21 new unit tests + 4 new e2e (33/33 suite-wide), full typecheck clean,
+`eval:run` byte-identical, full vitest suite green. Report:
+`.claude/PRPs/reports/crm-takeoff-field-comms-report.md`.

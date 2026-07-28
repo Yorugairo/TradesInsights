@@ -656,6 +656,93 @@ export const pursuitNotes = pgTable(
   (t) => [index("pursuit_notes_pursuit_ix").on(t.pursuitId, t.createdAt)],
 );
 
+// ── Takeoff scaffold + field communication (deck appendix A5/A6) ─────────────
+// Takeoff: an editable assembly worksheet seeded from permit evidence — the A6
+// "estimate, then measure yourself against it" baseline. Field: tokenized crew
+// links (multi-use, unlike single-use action_tokens) carrying daily logs and
+// change orders back into the pursuit.
+
+export const takeoffSheets = pgTable(
+  "takeoff_sheets",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    pursuitId: uuid("pursuit_id").notNull().references(() => pursuits.id),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    /** draft | final (DB CHECK). */
+    status: text("status").notNull().default("draft"),
+    wastePct: doublePrecision("waste_pct").notNull().default(10),
+    overheadPct: doublePrecision("overhead_pct").notNull().default(0),
+    marginPct: doublePrecision("margin_pct").notNull().default(0),
+    /** Evidence snapshot the derivation read — keeps derived qtys auditable. */
+    derivedFromJson: jsonb("derived_from_json"),
+    createdAt: now(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("takeoff_sheets_pursuit_ux").on(t.pursuitId)],
+);
+
+export const takeoffLines = pgTable(
+  "takeoff_lines",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sheetId: uuid("sheet_id").notNull().references(() => takeoffSheets.id),
+    assemblyKey: text("assembly_key").notNull(),
+    description: text("description").notNull(),
+    qty: doublePrecision("qty").notNull().default(0),
+    /** sqft | lf | each | allowance (DB CHECK). */
+    unit: text("unit").notNull(),
+    unitCost: doublePrecision("unit_cost").notNull().default(0),
+    /** derived | manual (DB CHECK) — re-derive replaces derived, never manual. */
+    source: text("source").notNull(),
+    provenance: text("provenance"),
+    sort: integer("sort").notNull().default(0),
+    createdAt: now(),
+  },
+  (t) => [index("takeoff_lines_sheet_ix").on(t.sheetId, t.sort)],
+);
+
+export const fieldLinks = pgTable(
+  "field_links",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    pursuitId: uuid("pursuit_id").notNull().references(() => pursuits.id),
+    accountProfileId: uuid("account_profile_id").notNull().references(() => accountProfiles.id),
+    /** SHA-256 of the raw token — the raw value never lands in the DB. */
+    tokenHash: text("token_hash").notNull(),
+    label: text("label").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: now(),
+  },
+  (t) => [
+    uniqueIndex("field_links_hash_ux").on(t.tokenHash),
+    index("field_links_pursuit_ix").on(t.pursuitId),
+  ],
+);
+
+export const fieldEntries = pgTable(
+  "field_entries",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    pursuitId: uuid("pursuit_id").notNull().references(() => pursuits.id),
+    /** NULL = authored from the cockpit rather than through a field link. */
+    linkId: uuid("link_id").references(() => fieldLinks.id),
+    /** daily_log | change_order | note (DB CHECK). */
+    entryType: text("entry_type").notNull(),
+    body: text("body").notNull(),
+    quantitiesJson: jsonb("quantities_json"),
+    amount: doublePrecision("amount"),
+    submittedName: text("submitted_name"),
+    /** submitted | approved | rejected (DB CHECK). */
+    status: text("status").notNull().default("submitted"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: text("decided_by"),
+    createdAt: now(),
+  },
+  (t) => [index("field_entries_pursuit_ix").on(t.pursuitId, t.createdAt)],
+);
+
 // ── Invitation ingestion (S3, strengthening addendum §6) ─────────────────────
 // Provider-agnostic intake of customer-AUTHORIZED bid invitations (.eml upload,
 // inbound-email webhook, CSV). Never scrapes portals/credentials. Every row is
