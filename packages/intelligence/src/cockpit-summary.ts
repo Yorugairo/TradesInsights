@@ -89,6 +89,17 @@ export interface CockpitFamilies {
   derivedAt?: string;
   /** The snapshot is old enough that the UI should say so out loud. */
   stale?: boolean;
+  /**
+   * Groups DROPPED for exceeding `MAX_FAMILY_ENTITIES` — a registered agent
+   * that slipped both registry-side filters, not a real family.
+   *
+   * This is a REGRESSION SIGNAL, not a statistic: zero is the expected value
+   * and renders nothing at all. It is surfaced because a dropped group is
+   * invisible everywhere else — the families page shows what survived, so a
+   * filter regression would otherwise only appear as families quietly going
+   * missing.
+   */
+  droppedGroups?: number;
 }
 
 export interface CockpitGooglePlace {
@@ -107,6 +118,39 @@ export interface CockpitLanes {
   domainGated: true;
 }
 
+/**
+ * Calibration PROVENANCE for one account — how much of what the product shows
+ * rests on settings the customer has never confirmed.
+ *
+ * `ownerAssumed` are live in scoring today, set by the owner from relationship
+ * knowledge, carrying no customer mandate. `calibrationPending` is the honest
+ * unknown: nobody has answered. `stamped: false` is the third state — the seed
+ * has not written provenance for this account, which is NOT the same as
+ * "nothing outstanding" and must never render as a zero.
+ */
+export interface CockpitCalibrationAccount {
+  key: string;
+  name: string;
+  ownerAssumed: number;
+  calibrationPending: number;
+  stamped: boolean;
+}
+
+/**
+ * Alert posture from the last maintenance run.
+ *
+ * OPEN means `resolved_at IS NULL` — the alert still describes reality. The
+ * 24-hour count is separate because a quiet night with old unresolved alerts
+ * and a noisy night are different situations that a single number would blur.
+ */
+export interface CockpitAlerts {
+  openCritical: number;
+  openWarning: number;
+  firedLast24h: number;
+  /** Open alerts by type, largest first — what is actually wrong. */
+  openByType: { alertType: string; count: number }[];
+}
+
 export interface QueueSummary {
   resolutionReview: CockpitResolutionReview;
   registryReview: CockpitRegistryReview;
@@ -115,6 +159,9 @@ export interface QueueSummary {
   /** null when the seam is offline OR the Phase D Place view is not built yet. */
   googlePlace: CockpitGooglePlace | null;
   lanes: CockpitLanes;
+  /** Active accounts and their unconfirmed-settings counts. */
+  calibration: CockpitCalibrationAccount[];
+  alerts: CockpitAlerts;
 }
 
 /**
@@ -157,6 +204,8 @@ export async function queueSummary(
   const resolutionReview = await resolutionReviewSummary(db);
   const registryReview = await registryReviewSummary(db);
   const lanes = await laneSummary(db);
+  const calibration = await calibrationSummary(db);
+  const alerts = await alertSummary(db);
 
   const families =
     opts.families !== undefined
@@ -171,7 +220,72 @@ export async function queueSummary(
         ? await googlePlaceSummary(registryPool)
         : null;
 
-  return { resolutionReview, registryReview, families, googlePlace, lanes };
+  return { resolutionReview, registryReview, families, googlePlace, lanes, calibration, alerts };
+}
+
+/**
+ * Calibration provenance per active account.
+ *
+ * Reads `account_profiles.calibration_json`, stamped by the seed from
+ * `config/account-profiles.yaml` (migration 0041). It is read from the DATABASE
+ * rather than the yaml because `apps/web` never loads `@otn/config` at runtime
+ * and the hosted deploy is not guaranteed to ship the config directory — a card
+ * that works locally and silently shows nothing in production is worse than no
+ * card.
+ *
+ * A NULL column is reported as `stamped: false`, never as zeros: "the seed has
+ * not run here" and "this account has no open assumptions" are opposite facts.
+ */
+async function calibrationSummary(db: Db): Promise<CockpitCalibrationAccount[]> {
+  const res = await db.execute(sql`
+    SELECT key, name,
+           (calibration_json IS NOT NULL) AS stamped,
+           coalesce(jsonb_array_length(calibration_json -> 'owner_assumed'), 0)::int AS owner_assumed,
+           coalesce(jsonb_array_length(calibration_json -> 'calibration_pending'), 0)::int AS calibration_pending
+    FROM account_profiles
+    WHERE active = true
+    ORDER BY key`);
+  return (res.rows as Record<string, unknown>[]).map((r) => ({
+    key: r["key"] as string,
+    name: r["name"] as string,
+    stamped: r["stamped"] === true,
+    ownerAssumed: Number(r["owner_assumed"] ?? 0),
+    calibrationPending: Number(r["calibration_pending"] ?? 0),
+  }));
+}
+
+/**
+ * Alert posture. One query over `alerts_open_ix (alert_type, resolved_at)`.
+ *
+ * The nightly chain writes alert ROWS before attempting delivery, so these
+ * counts are true even on a night when the mail transport failed — which is
+ * the case that makes a cockpit card worth more than the email.
+ */
+async function alertSummary(db: Db): Promise<CockpitAlerts> {
+  const res = await db.execute(sql`
+    SELECT alert_type, severity,
+           count(*) FILTER (WHERE resolved_at IS NULL)::int AS open_n,
+           count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS recent_n
+    FROM alerts
+    GROUP BY alert_type, severity`);
+  const rows = res.rows as Record<string, unknown>[];
+  const byType = new Map<string, number>();
+  let openCritical = 0;
+  let openWarning = 0;
+  let firedLast24h = 0;
+  for (const r of rows) {
+    const open = Number(r["open_n"] ?? 0);
+    firedLast24h += Number(r["recent_n"] ?? 0);
+    if (open === 0) continue;
+    if (r["severity"] === "critical") openCritical += open;
+    else openWarning += open;
+    const type = r["alert_type"] as string;
+    byType.set(type, (byType.get(type) ?? 0) + open);
+  }
+  const openByType = [...byType.entries()]
+    .map(([alertType, count]) => ({ alertType, count }))
+    .sort((a, b) => b.count - a.count || a.alertType.localeCompare(b.alertType));
+  return { openCritical, openWarning, firedLast24h, openByType };
 }
 
 /**

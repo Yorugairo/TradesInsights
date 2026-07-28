@@ -74,6 +74,14 @@ export default defineConfig({
        * assertion needs registry data.
        */
       REGISTRY_DATABASE_URL: "",
+      /**
+       * A throwaway handoff secret, set so the SSO refusal paths are exercised
+       * for real: with no secret the route short-circuits on "not configured"
+       * and the signature check — the single most important negative case in
+       * the handoff — would never run. It signs nothing here; no test mints a
+       * valid token, and the production secret lives only in the deployment.
+       */
+      INSIGHTS_SSO_SECRET: "e2e-not-a-real-secret",
     },
   },
 });

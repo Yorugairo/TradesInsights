@@ -183,13 +183,14 @@ export async function familySnapshot(): Promise<FamilySnapshot | null> {
   return withStaleness(entry.snapshot, now);
 }
 
-/** Just the three integers the cockpit renders, plus the stamp. */
+/** Just the integers the cockpit renders, plus the stamp. */
 export function familyCounts(s: FamilySnapshot): {
   count: number;
   pairsNew: number;
   pairsStrong: number;
   derivedAt: string;
   stale: boolean;
+  droppedGroups: number;
 } {
   const newPairs = s.pairs.filter((p) => !p.alreadyBound);
   const strong = newPairs.filter((p) => p.verdict === "strong" || p.verdict === "corroborated");
@@ -199,5 +200,9 @@ export function familyCounts(s: FamilySnapshot): {
     pairsStrong: strong.length,
     derivedAt: s.derivedAt,
     stale: s.stale,
+    // Carried to the cockpit because a dropped group is invisible on every
+    // other surface: the families page lists what SURVIVED the cap, so a
+    // registry-side filter regression would look like families going missing.
+    droppedGroups: s.dropped.length,
   };
 }

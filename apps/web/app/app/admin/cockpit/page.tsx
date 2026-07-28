@@ -158,6 +158,19 @@ export default async function CockpitPage() {
         <PhoneLaneCard summary={summary} />
         <DomainLaneCard />
       </div>
+
+      {/* LAST on purpose. These two do not describe a queue to work — they
+          qualify everything above: what the pipeline is complaining about, and
+          how much of the ranking rests on settings no customer has confirmed.
+          Read the queues first, then read what to trust about them. */}
+      <SectionHeading
+        title="What to trust about the numbers above"
+        blurb="Pipeline health, and the settings that shape every count on this page but carry no customer mandate yet."
+      />
+      <div className={GRID}>
+        <AlertsCard summary={summary} />
+        <CalibrationCard summary={summary} />
+      </div>
     </main>
   );
 }
@@ -366,10 +379,136 @@ function FamiliesCard({ summary, timedOut }: { summary: QueueSummary; timedOut: 
       <div className="mt-1 text-ink-subtle">
         {f.count.toLocaleString()} families derived (entities under one L&amp;I principal).
       </div>
+      {/* A REGRESSION SIGNAL, not a statistic — so zero renders nothing at all
+          rather than a reassuring "0 dropped". An over-cap group is a
+          registered agent that slipped both registry-side filters, and it is
+          invisible everywhere else: the families page lists what survived the
+          cap, so a filter regression would otherwise look like families
+          quietly going missing. */}
+      {(f.droppedGroups ?? 0) > 0 && (
+        <div className="mt-1" data-testid="families-dropped">
+          <Badge tone="amber">{f.droppedGroups}</Badge>{" "}
+          <span className="text-ink-muted">
+            over-cap group{f.droppedGroups === 1 ? "" : "s"} dropped — likely a registered agent that
+            slipped the registry-side filters.
+          </span>
+        </div>
+      )}
       {/* The stamp is not decoration. These counts are derived on a schedule, and
           a scheduled number shown without its "as of" reads as live. */}
       {f.derivedAt && <DerivedAt at={f.derivedAt} stale={f.stale === true} />}
     </QueueCard>
+  );
+}
+
+/**
+ * What the product is showing on assumptions nobody confirmed.
+ *
+ * Not a queue — a HONESTY card. Every number on every other card is filtered,
+ * ranked and thresholded by settings the owner set from relationship knowledge
+ * of each customer. Those are live in scoring today and carry no customer
+ * mandate. Showing the queues without showing this makes provisional output
+ * look settled, which is the same failure as an unstamped derived count.
+ */
+function CalibrationCard({ summary }: { summary: QueueSummary }) {
+  const accounts = summary.calibration;
+  const unstamped = accounts.filter((a) => !a.stamped);
+  const outstanding = accounts.reduce((sum, a) => sum + a.ownerAssumed + a.calibrationPending, 0);
+
+  return (
+    <div className={CARD_BASE} data-testid="calibration-card">
+      <div className="flex items-baseline justify-between gap-2">
+        <strong className="text-ink">Calibration provenance</strong>
+        <span className="whitespace-nowrap text-xl font-bold tabular-nums text-ink">
+          {outstanding.toLocaleString()}
+        </span>
+      </div>
+      <div className="text-sm text-ink-muted">
+        Settings that shape every count above but which the customer has never confirmed.
+      </div>
+      <ul className="mt-1 list-none space-y-1 p-0 text-sm">
+        {accounts.map((a) => (
+          <li key={a.key} className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-ink">{a.name}</span>
+            {a.stamped ? (
+              <>
+                <span className="text-ink-muted">
+                  <Badge tone={a.ownerAssumed > 0 ? "amber" : "green"}>{a.ownerAssumed}</Badge>{" "}
+                  owner-assumed
+                </span>
+                <span className="text-ink-subtle">
+                  · {a.calibrationPending} awaiting an answer
+                </span>
+              </>
+            ) : (
+              // Third state. NULL provenance is not "nothing outstanding" — it
+              // means the seed has not stamped this account, and rendering it
+              // as 0 would invent a clean bill of health.
+              <span className="text-ink-subtle">provenance not stamped — run `pnpm db:seed`</span>
+            )}
+          </li>
+        ))}
+        {accounts.length === 0 && <li className="text-ink-subtle">No active accounts.</li>}
+      </ul>
+      {unstamped.length === 0 && outstanding === 0 && (
+        <div className="mt-1 text-sm text-ink-subtle">
+          Every live setting has been confirmed by its customer.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Alert posture from the pipeline itself.
+ *
+ * The nightly chain writes alert ROWS before attempting delivery, so this card
+ * is true even on a night when the mail transport failed — which is precisely
+ * the night nobody gets the email. Open means unresolved, not merely recent.
+ */
+function AlertsCard({ summary }: { summary: QueueSummary }) {
+  const { openCritical, openWarning, firedLast24h, openByType } = summary.alerts;
+  const open = openCritical + openWarning;
+  return (
+    <div className={CARD_BASE} data-testid="alerts-card">
+      <div className="flex items-baseline justify-between gap-2">
+        <strong className="text-ink">Open alerts</strong>
+        <span className="whitespace-nowrap text-xl font-bold tabular-nums text-ink">
+          {open.toLocaleString()}
+        </span>
+      </div>
+      {open === 0 ? (
+        <div className="text-sm text-ink-muted">
+          Nothing unresolved. {firedLast24h.toLocaleString()} fired in the last 24h.
+        </div>
+      ) : (
+        <>
+          <div className="text-sm text-ink-muted">
+            {openCritical > 0 && (
+              <>
+                <Badge tone="red">{openCritical}</Badge> critical{openWarning > 0 ? " · " : ""}
+              </>
+            )}
+            {openWarning > 0 && (
+              <>
+                <Badge tone="amber">{openWarning}</Badge> warning
+              </>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-ink-subtle">
+            {openByType.slice(0, 4).map((t) => (
+              <span key={t.alertType}>
+                <code>{t.alertType}</code> {t.count}
+              </span>
+            ))}
+          </div>
+          <div className="mt-1 text-xs text-ink-subtle">
+            {firedLast24h.toLocaleString()} fired in the last 24h. Alert rows are written before
+            delivery is attempted, so these stand even when email fails.
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

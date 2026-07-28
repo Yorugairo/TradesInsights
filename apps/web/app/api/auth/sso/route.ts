@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { SESSION_COOKIE, encodeSession, newSession, type Session } from "../../../../lib/auth.js";
-import { requireEnv } from "../../../../lib/env.js";
+import "../../../../lib/env.js";
 import { db } from "../../../../lib/db.js";
 import { accountByKey } from "../../../../lib/queries.js";
 import { verifySsoToken } from "../../../../lib/sso.js";
@@ -46,8 +46,18 @@ const INVALID_MESSAGE =
   "That sign-in link is not valid. Open Insights again from your OneTradeNetwork dashboard.";
 
 export async function GET(req: Request): Promise<NextResponse> {
+  // NOT `requireEnv`. A deployment without the handoff configured is a normal
+  // state — the e2e environment is one — and throwing here would turn "this
+  // door is not installed" into a 500 on an unauthenticated route. Refuse the
+  // same way every other failure refuses: a redirect that says something true.
+  const secret = process.env.INSIGHTS_SSO_SECRET;
+  if (!secret) {
+    console.warn(JSON.stringify({ at: "sso", outcome: "not_configured" }));
+    return refuse(req, "Single sign-on is not enabled here. Sign in with your passphrase.");
+  }
+
   const token = new URL(req.url).searchParams.get("token");
-  const verified = verifySsoToken(token, { secret: requireEnv("INSIGHTS_SSO_SECRET") });
+  const verified = verifySsoToken(token, { secret });
   if (!verified.ok) {
     console.warn(JSON.stringify({ at: "sso", outcome: `token_${verified.reason}` }));
     return refuse(req, verified.reason === "expired" ? EXPIRED_MESSAGE : INVALID_MESSAGE);

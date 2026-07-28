@@ -69,3 +69,106 @@ describe("queueSummary", () => {
     expect(summary.googlePlace).toBeNull();
   });
 });
+
+/**
+ * A Db that answers each section differently, keyed on a fragment of its SQL.
+ * The trivial stub above returns one row-set for every query, which cannot
+ * exercise two sections that read different tables.
+ */
+const routedDb = (routes: { match: string; rows: Record<string, unknown>[] }[]): Db =>
+  ({
+    execute: async (q: unknown) => {
+      const text = JSON.stringify(q);
+      const hit = routes.find((r) => text.includes(r.match));
+      return { rows: hit ? hit.rows : [] };
+    },
+  }) as unknown as Db;
+
+describe("queueSummary — calibration provenance", () => {
+  it("reports owner-assumed and pending counts per active account", async () => {
+    const summary = await queueSummary(
+      routedDb([
+        {
+          match: "account_profiles",
+          rows: [
+            { key: "solis_interiors", name: "Solis Interiors", stamped: true, owner_assumed: 7, calibration_pending: 8 },
+            { key: "lacey_glass_commercial", name: "Lacey Glass Commercial", stamped: true, owner_assumed: 0, calibration_pending: 0 },
+          ],
+        },
+      ]),
+      null,
+    );
+    expect(summary.calibration).toEqual([
+      { key: "solis_interiors", name: "Solis Interiors", stamped: true, ownerAssumed: 7, calibrationPending: 8 },
+      { key: "lacey_glass_commercial", name: "Lacey Glass Commercial", stamped: true, ownerAssumed: 0, calibrationPending: 0 },
+    ]);
+  });
+
+  it("distinguishes UNSTAMPED provenance from nothing outstanding", async () => {
+    // The whole point of the third state: a NULL calibration_json means the
+    // seed has not run for that account. Rendering it as 0/0 would invent a
+    // clean bill of health for an account nobody has assessed.
+    const summary = await queueSummary(
+      routedDb([
+        {
+          match: "account_profiles",
+          rows: [{ key: "new_account", name: "New Account", stamped: false, owner_assumed: 0, calibration_pending: 0 }],
+        },
+      ]),
+      null,
+    );
+    expect(summary.calibration[0]?.stamped).toBe(false);
+    expect(summary.calibration[0]?.ownerAssumed).toBe(0);
+  });
+});
+
+describe("queueSummary — alerts", () => {
+  it("splits open alerts by severity and lists the types", async () => {
+    const summary = await queueSummary(
+      routedDb([
+        {
+          match: "FROM alerts",
+          rows: [
+            { alert_type: "source_red", severity: "critical", open_n: 2, recent_n: 3 },
+            { alert_type: "source_stale", severity: "warning", open_n: 4, recent_n: 4 },
+            { alert_type: "spend_budget", severity: "warning", open_n: 1, recent_n: 2 },
+          ],
+        },
+      ]),
+      null,
+    );
+    expect(summary.alerts.openCritical).toBe(2);
+    expect(summary.alerts.openWarning).toBe(5);
+    expect(summary.alerts.firedLast24h).toBe(9);
+    // Largest first — what is actually wrong, not alphabetical order.
+    expect(summary.alerts.openByType[0]).toEqual({ alertType: "source_stale", count: 4 });
+  });
+
+  it("counts recent fires even when everything is resolved", async () => {
+    // A night that fired and self-resolved is not the same as a quiet night,
+    // and an operator reading only "0 open" would not know the difference.
+    const summary = await queueSummary(
+      routedDb([
+        {
+          match: "FROM alerts",
+          rows: [{ alert_type: "source_red", severity: "critical", open_n: 0, recent_n: 6 }],
+        },
+      ]),
+      null,
+    );
+    expect(summary.alerts.openCritical).toBe(0);
+    expect(summary.alerts.openByType).toEqual([]);
+    expect(summary.alerts.firedLast24h).toBe(6);
+  });
+
+  it("returns honest zeros on an empty alerts table", async () => {
+    const summary = await queueSummary(routedDb([]), null);
+    expect(summary.alerts).toEqual({
+      openCritical: 0,
+      openWarning: 0,
+      firedLast24h: 0,
+      openByType: [],
+    });
+    expect(summary.calibration).toEqual([]);
+  });
+});
