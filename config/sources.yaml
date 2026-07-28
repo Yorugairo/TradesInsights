@@ -203,6 +203,24 @@ sources:
       Bellevue is King's #2 job market after Seattle; routes to Solis as
       King-suburb commercial. Public open-data REST, no auth/robots restriction.
       ---
+      2026-07-28: VALUATION coverage measured with count-only probes (no
+      ingestion). All-time rows 440,444; rows with VALUATION > 0 **35,468**
+      (8.1% — the notes above quote this figure and it is exact); rows inside
+      the adapter's trailing 120-day APPLIEDDATE/ISSUEDDATE window **5,901**;
+      rows inside that window with VALUATION > 0 **ZERO**. By ISSUEDDATE:
+      6,503 since 2020, 3,171 since 2023, 996 since 2025, and **0 since
+      2026-01-01** — the latest issued permit carrying a valuation is
+      **2025-11-21**. So Bellevue STOPPED PUBLISHING VALUATION roughly eight
+      months ago; our 4,018 stored records holding no valuation are correct and
+      complete for the window we ingest, and this source's 100% null rate is
+      the publisher's choice, not a parser gap (`pnpm audit:data` reports it as
+      `not published`, DROPPED 0). CONSEQUENCE: widening the ingestion window
+      would recover only HISTORY, not current leads, and even all-time coverage
+      is 8%. Deliberately NOT changing the window here — if a future round wants
+      Bellevue's valuation history it needs its own plan, fixtures and health
+      gates. Worth re-probing periodically: if the field resumes, that is a
+      publisher change worth acting on.
+      ---
       2026-07-27: the fleet audit listed this as "ran twice, never succeeded,
       zero records ever". THAT READING WAS WRONG, and how it was wrong is worth
       keeping. Both runs were ORPHANS — reaped at status='running' with null

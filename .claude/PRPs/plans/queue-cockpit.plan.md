@@ -1,5 +1,8 @@
 # Plan: Queue cockpit v2 — fuel the phone lane first, then close the loops
 
+> **STATUS 2026-07-28 — PARTIALLY SHIPPED, NOT CLOSEABLE.** Reports exist for phases A0, B, C and D (`.claude/PRPs/reports/queue-cockpit-phase-{a0,b,c,d}-report.md`). **Remaining: Tasks A1–A6** (the `organization_enrichment` table, export/ingest CLIs, enrichment phones in the match ladder, evidence display) **and Tasks E1–E2** (domain-match evidence path + strategy note, gated on Phase A enrichment coverage). Task B3 (loader `relationship` branch) lives in the REGISTRY repo. Do not archive this plan on the strength of the four phase reports.
+
+
 > **v2 (2026-07-24), supersedes v1 in place.** What changed and why:
 > 1. **Owner reprioritization**: "6 should be resolved first, then 4 and 2. 1, 3, 5
 >    will need to be progressively chunked or have more information gathered."

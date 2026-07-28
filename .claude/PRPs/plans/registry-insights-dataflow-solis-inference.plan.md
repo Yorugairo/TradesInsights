@@ -1,5 +1,8 @@
 # Plan: Optimize the Insights ⇄ Registry data flow for the best possible Solis inference
 
+> **STATUS 2026-07-28 — NON-GATED SUBSET SHIPPED, NOT CLOSEABLE.** The report's own *Remaining Work* section is explicit: **WS-D and WS-E.2 / E.3 / E.4 are externally gated and not implemented**, and **WS-C C.2 / C.3 need ops credentials**. The Insights-side inference, read-widen and Solis bind-readiness are done.
+
+
 ## Summary
 The Insights ⇄ One Trade Network registry seam is **built but half-consumed and one-directional**: the registry's contract view already publishes **21 identity + geo + provenance columns**, but Insights reads only **10 of them** and — critically — **none of them reach the scorer**. `routeSolis` scores a project on permit text, valuation, stage, and county alone; the registry binding that runs nightly is invisible to it. Meanwhile the **write-back half is built but unmerged**: the `registry_partner` schema, the `otn_insights_reader`/`_writer` roles, and the `ingest-otn-insights.mjs` loader are complete on `origin/claude/insights-integration-seam` (`ae80f657`) and **byte-consistent with the Insights writer**, but not yet promoted to the `release/trades-staging` trunk — so today Insights' rich per-entity project facts have nowhere to land. This plan (executed across **both** repos) widens the read, **wires registry identity into the Solis inference** (signal-now / weight-at-calibration), **promotes and verifies the already-built registry write-back seam** so the loop compounds, and stages the deep **trade-code convergence** behind the registry's own gated Phase 5 — delivering Solis verified-identity, warm-network, and territory-fit signals the two datasets already contain but never combine.
 

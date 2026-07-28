@@ -59,6 +59,24 @@ export interface DataAudit {
     eventDedupeSurplus: number;
     unresolvedNotInReview: number;
     unresolvedTolerance: number;
+    /**
+     * Permit ids resolving to more than one project — a SPLIT PERMIT, where one
+     * real-world permit has been recorded as two projects.
+     *
+     * This was a live defect: 31 PALS records created second projects while
+     * their ArcGIS twins sat in review, plus 15 that merged on `parcel_overlap`
+     * into a project their twin disagreed with. Resolver pass 1b
+     * (`pendingReviewForSamePermit`) and `reevaluatePendingReviews` fixed it —
+     * measured 2026-07-28, all 46 have converged and the graph-wide count is 0.
+     *
+     * It is an invariant rather than a metric because there is no reading of a
+     * non-zero value that is not a bug, and because the repair happened to be
+     * silent: nothing announced that it was fixed, and nothing would have
+     * announced it coming back.
+     */
+    splitExternalIds: number;
+    /** The offending (source, permit id) pairs — a count alone is unfixable. */
+    splitExamples: { source: string; externalId: string; projects: number }[];
   };
   coverage: {
     projects: number;
@@ -104,7 +122,21 @@ export interface DataAudit {
   };
   valuation: {
     byState: { state: string; opportunities: number; withoutValuation: number }[];
-    bySource: { source: string; records: number; withoutValuation: number }[];
+    /**
+     * Per PUBLIC source, split so the actionable bucket is separable from the
+     * two that are facts about the world. `dropped` is the only one that is
+     * ever work — see the query's header for the measurement that proved the
+     * other two are not.
+     */
+    bySource: {
+      source: string;
+      records: number;
+      stated: number;
+      /** Published nothing, an empty string, or <= 0. The source's choice. */
+      notPublished: number;
+      /** Positive raw value present, normalized value absent. A real gap. */
+      dropped: number;
+    }[];
   };
 }
 
@@ -129,6 +161,24 @@ export async function collect(db: Db): Promise<DataAudit> {
           AND NOT EXISTS (SELECT 1 FROM resolution_reviews rv
                            WHERE rv.source_record_id = sr.id AND rv.status = 'pending')
       ) AS unresolved_not_in_review`,
+  );
+
+  // GROUPED ON (source_id, external_id), NOT external_id ALONE. A permit number
+  // is unique within a jurisdiction and nowhere else — two cities can both issue
+  // "26-3410", and grouping on the number alone would report that as a split
+  // permit forever. Measured 2026-07-28: no such collision exists today, which
+  // is exactly why the guard has to be written for the day one does.
+  const splits = await many(
+    db,
+    sql`SELECT s.key AS source, sr.external_id, count(DISTINCT rr.project_id) AS projects
+        FROM record_resolutions rr
+        JOIN source_records sr ON sr.id = rr.source_record_id
+        JOIN sources s ON s.id = sr.source_id AND s.account_profile_id IS NULL
+        WHERE rr.status = 'active'
+        GROUP BY 1, 2
+        HAVING count(DISTINCT rr.project_id) > 1
+        ORDER BY 3 DESC, 1, 2
+        LIMIT 50`,
   );
 
   const cov = await one(
@@ -281,14 +331,48 @@ export async function collect(db: Db): Promise<DataAudit> {
         WHERE o.state <> 'archive'
         GROUP BY 1 ORDER BY 2 DESC`,
   );
-  // Per-source null rate: this is the actionable half of D4. A source publishing
-  // no valuations at all is a parser target; a source publishing some is not.
+  // THREE BUCKETS, AND THE SPLIT IS THE WHOLE POINT OF THIS SECTION.
+  //
+  // The first version of this query reported "% without valuation" per source
+  // and called it a parser-target ranking. It is not one, and reading it as one
+  // sent a session off to write parsers for fields that do not exist. Measured
+  // 2026-07-28: bellevue_permits_arcgis carries a VALUATION key on every row
+  // and a non-empty value on ONE (which is 0); puyallup_permits_arcgis
+  // publishes only FeeAmount, a permit FEE; olympia_smartgov_reports publishes
+  // no valuation field at all; and every one of king_permit_reports' 1,451
+  // nulls is a literal jobValue "0" on a mechanical/fire/sprinkler permit that
+  // the county prices at zero. All five adapters were already correct.
+  //
+  //   stated        we have a number
+  //   notPublished  the source published nothing, an empty string, or <= 0.
+  //                 NOT our gap. A permit priced at $0 by the jurisdiction is
+  //                 not a missing valuation.
+  //   dropped       the raw record carries a POSITIVE valuation-shaped value
+  //                 and the normalized record does not. THE ONLY BUG BUCKET.
   const valuationBySource = await many(
     db,
     sql`SELECT s.key AS source,
                count(*) AS records,
-               count(*) FILTER (WHERE sr.normalized_json ->> 'valuationUsd' IS NULL)
-                 AS without_valuation
+               count(*) FILTER (WHERE sr.normalized_json ->> 'valuationUsd' IS NOT NULL)
+                 AS stated,
+               count(*) FILTER (
+                 WHERE sr.normalized_json ->> 'valuationUsd' IS NULL
+                   AND EXISTS (
+                     SELECT 1 FROM jsonb_each_text(sr.raw_fields_json) AS kv(k, v)
+                     -- ALLOW-LIST, not a pattern. Widening this to '%amount%' or
+                     -- '%cost%' would sweep in puyallup's 1,166 FeeAmount rows and
+                     -- manufacture the exact phantom backlog this bucket exists to
+                     -- prevent: a permit fee is not a construction valuation.
+                     WHERE (kv.k ILIKE '%valuation%'
+                            OR kv.k ILIKE '%jobvalue%'
+                            OR kv.k ILIKE '%projectvalue%'
+                            OR kv.k ILIKE '%constructioncost%')
+                       -- Regex BEFORE the cast: bellevue stores VALUATION as text
+                       -- and an unguarded ::numeric raises 22P02 on the first
+                       -- empty string.
+                       AND kv.v ~ '^[0-9]+(\\.[0-9]+)?$'
+                       AND kv.v::numeric > 0)
+               ) AS dropped
         FROM source_records sr
         JOIN sources s ON s.id = sr.source_id AND s.account_profile_id IS NULL
         GROUP BY 1 ORDER BY 2 DESC`,
@@ -300,6 +384,12 @@ export async function collect(db: Db): Promise<DataAudit> {
       eventDedupeSurplus: num(inv["event_dedupe_surplus"]),
       unresolvedNotInReview: num(inv["unresolved_not_in_review"]),
       unresolvedTolerance: UNRESOLVED_TOLERANCE,
+      splitExternalIds: splits.length,
+      splitExamples: splits.map((r) => ({
+        source: str(r["source"]),
+        externalId: str(r["external_id"]),
+        projects: num(r["projects"]),
+      })),
     },
     coverage: {
       projects: num(cov["projects"]),
@@ -353,7 +443,11 @@ export async function collect(db: Db): Promise<DataAudit> {
       bySource: valuationBySource.map((r) => ({
         source: str(r["source"]),
         records: num(r["records"]),
-        withoutValuation: num(r["without_valuation"]),
+        stated: num(r["stated"]),
+        // Derived, never queried separately: the three buckets must partition
+        // the record count by construction, so there is no arithmetic to drift.
+        notPublished: num(r["records"]) - num(r["stated"]) - num(r["dropped"]),
+        dropped: num(r["dropped"]),
       })),
     },
   };
@@ -375,6 +469,15 @@ export function failedInvariants(a: DataAudit): string[] {
       `${a.invariants.eventDedupeSurplus} duplicate project_event(s) on the 0035 key — the unique index is not holding`,
     );
   }
+  if (a.invariants.splitExternalIds > 0) {
+    const named = a.invariants.splitExamples
+      .slice(0, 5)
+      .map((s) => `${s.source}:${s.externalId} (${s.projects} projects)`)
+      .join(", ");
+    failures.push(
+      `${a.invariants.splitExternalIds} permit id(s) resolve to more than one project — a split permit; resolver pass 1b exists to prevent exactly this: ${named}`,
+    );
+  }
   if (a.invariants.unresolvedNotInReview > a.invariants.unresolvedTolerance) {
     failures.push(
       `${a.invariants.unresolvedNotInReview} public record(s) neither resolved nor queued (tolerance ${a.invariants.unresolvedTolerance}) — they have fallen out of the pipeline`,
@@ -391,6 +494,7 @@ export function render(a: DataAudit): string {
   head("Invariants (a failure here is a bug, not a fact)");
   kv("corroboration NULL", a.invariants.corroborationNull);
   kv("duplicate events (0035 key)", a.invariants.eventDedupeSurplus);
+  kv("split permits (id → 2+ projects)", a.invariants.splitExternalIds);
   kv(
     "unresolved and unqueued",
     `${a.invariants.unresolvedNotInReview} (tolerance ${a.invariants.unresolvedTolerance})`,
@@ -455,10 +559,24 @@ export function render(a: DataAudit): string {
       `${s.opportunities} opportunities, ${s.withoutValuation} without a stated valuation (${pct(s.withoutValuation, s.opportunities)})`,
     );
   }
-  L.push("  per PUBLIC source (parser targets rank by this — nothing is ever invented):");
-  for (const s of a.valuation.bySource) {
+  L.push(
+    "  per PUBLIC source — DROPPED first, because it is the only column that is work:",
+    "  `not published` is the SOURCE's choice, not our gap: a permit the",
+    "  jurisdiction prices at $0, or publishes no valuation field for, is not a",
+    "  missing number. Ranking by it once sent a session to write parsers for",
+    "  fields that do not exist.",
+  );
+  // Sorted by the actionable bucket so the operator reads top-down and stops
+  // when it hits zero — the opposite of the old ordering, which put the largest
+  // pile of legitimate absences at the top.
+  for (const s of [...a.valuation.bySource].sort(
+    (x, y) => y.dropped - x.dropped || y.records - x.records,
+  )) {
     L.push(
-      `    ${s.source.padEnd(28)} ${String(s.records).padStart(7)} records  ${pct(s.withoutValuation, s.records)} without valuation`,
+      `    ${s.source.padEnd(28)} ${String(s.records).padStart(7)} rec  ` +
+        `stated ${String(s.stated).padStart(6)}  ` +
+        `not published ${String(s.notPublished).padStart(6)}  ` +
+        `DROPPED ${String(s.dropped).padStart(5)}`,
     );
   }
 

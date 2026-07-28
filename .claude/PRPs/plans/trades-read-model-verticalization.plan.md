@@ -1,5 +1,8 @@
 # Plan: Trades read-model verticalization (source_mvs rebuild)
 
+> **STATUS 2026-07-28 — TASK 1 ONLY, NOT CLOSEABLE.** The single report (`…-task1-report.md`) covers the refresh profiling. **Task 2 is struck through in the plan itself (abandoned by measurement); Tasks 3 and 4 — trades-native pSEO read models and re-enabling job 1 behind evidence — have no report.** The blocker recorded elsewhere still binds: plpgsql cannot COMMIT under pg_cron or the pooler (2D000), so per-MV commits need an out-of-DB driver.
+
+
 ## Summary
 
 The registry's read-model layer was built for BJJ — ~4,000 gyms nationally — and

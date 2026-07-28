@@ -1,5 +1,8 @@
 # Plan: Puget Sound Source Expansion (Wave 3 Phase 1 — full clean-source inclusion)
 
+> **STATUS 2026-07-28 — SHIPPED EXCEPT THE BACKLOGGED CITIES, NOT CLOSEABLE.** The generic Socrata and ArcGIS engines shipped and several cities are live. **Auburn, Clark and Burien remain backlogged** (Auburn was blocked on the generic Socrata adapter, which has since shipped — so that specific blocker is gone and the wiring is simply not done). Kent operator-local is also still open.
+
+
 ## Summary
 Add every CLEAN, cloud-safe permit source the 2026-07-22 discovery sweep verified across the Puget Sound + WA (11 sources), densifying the region where WA construction $ and our early accounts concentrate. Most of the work is **config + real fixtures per city on reusable adapter classes** — two we already own (ArcGIS, Socrata) plus two new classes (OpenDataSoft, Excel-report). Blocked-but-valuable sources (Kent) ship as operator-local adapters via the authorized genuine-browser capture lane. §12.3 frozen; more records, zero scoring changes.
 

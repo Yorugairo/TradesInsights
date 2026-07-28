@@ -1,10 +1,13 @@
 # Data quality audit — baseline, 2026-07-28
 
 Produced by `pnpm audit:data` against HOSTED production (Supabase `arbmeioglflvzoffgtii`,
-schema `insights`) immediately after data-hygiene round 2 shipped: migrations 0039/0040
-applied, `pnpm orgs:backfill-quality` run, `pnpm review reclassify --apply` run.
+schema `insights`).
 
-This file is the DIFF BASELINE. Round 3 starts by re-running the command and comparing,
+**Regenerated 2026-07-28 (second run of the day)** after the valuation section was reframed and
+the split-permit invariant added — see the Correction below for why the first version of this
+file was actively misleading.
+
+This file is the DIFF BASELINE. The next round starts by re-running the command and comparing,
 not by re-deriving the numbers. Regenerate with:
 
 ```bash
@@ -16,6 +19,7 @@ Invariants (a failure here is a bug, not a fact)
 ------------------------------------------------
   corroboration NULL                 0
   duplicate events (0035 key)        0
+  split permits (id → 2+ projects)   0
   unresolved and unqueued            2 (tolerance 10)
 
 Coverage
@@ -107,36 +111,92 @@ Stated valuation
 ----------------
   weekly_digest                      2603 opportunities, 974 without a stated valuation (37.4%)
   priority_review                    1648 opportunities, 1090 without a stated valuation (66.1%)
-  per PUBLIC source (parser targets rank by this — nothing is ever invented):
-    pierce_permits_arcgis           6423 records  75.2% without valuation
-    tacoma_permits_arcgis           4393 records  31.0% without valuation
-    bellevue_permits_arcgis         4018 records  100.0% without valuation
-    everett_permits_socrata         2976 records  13.1% without valuation
-    seattle_building_permits        2246 records  0.8% without valuation
-    king_permit_reports             1920 records  75.6% without valuation
-    puyallup_permits_arcgis         1228 records  100.0% without valuation
-    olympia_smartgov_reports        1023 records  100.0% without valuation
-    wa_sepa                          599 records  100.0% without valuation
-    pierce_pals_contractor           439 records  100.0% without valuation
-    lewis_issued_permits             394 records  41.9% without valuation
-    centralia_permit_reports         220 records  1.8% without valuation
-    king_public_notices              171 records  100.0% without valuation
-    seattle_land_use_permits         117 records  53.0% without valuation
-    tumwater_development_review       80 records  100.0% without valuation
-    lacey_project_pages               79 records  100.0% without valuation
-    lacey_projects_rest               79 records  100.0% without valuation
-    thurston_active_notices           65 records  100.0% without valuation
-    tumwater_sepa                     59 records  100.0% without valuation
-    lacey_permit_reports              50 records  20.0% without valuation
-    tumwater_development_arcgis       44 records  100.0% without valuation
-    lewis_inspections                 17 records  100.0% without valuation
-    lewis_current_planning            17 records  100.0% without valuation
-    tacoma_solicitations              14 records  100.0% without valuation
-    lewis_source_canary                1 records  100.0% without valuation
-    seattle_source_canary              1 records  100.0% without valuation
+  per PUBLIC source — DROPPED first, because it is the only column that is work:
+  `not published` is the SOURCE's choice, not our gap: a permit the
+  jurisdiction prices at $0, or publishes no valuation field for, is not a
+  missing number. Ranking by it once sent a session to write parsers for
+  fields that do not exist.
+    pierce_permits_arcgis           6423 rec  stated   1596  not published   4827  DROPPED     0
+    tacoma_permits_arcgis           4393 rec  stated   3031  not published   1362  DROPPED     0
+    bellevue_permits_arcgis         4018 rec  stated      0  not published   4018  DROPPED     0
+    everett_permits_socrata         2976 rec  stated   2587  not published    389  DROPPED     0
+    seattle_building_permits        2246 rec  stated   2229  not published     17  DROPPED     0
+    king_permit_reports             1920 rec  stated    469  not published   1451  DROPPED     0
+    puyallup_permits_arcgis         1228 rec  stated      0  not published   1228  DROPPED     0
+    olympia_smartgov_reports        1023 rec  stated      0  not published   1023  DROPPED     0
+    wa_sepa                          599 rec  stated      0  not published    599  DROPPED     0
+    pierce_pals_contractor           439 rec  stated      0  not published    439  DROPPED     0
+    lewis_issued_permits             394 rec  stated    229  not published    165  DROPPED     0
+    centralia_permit_reports         220 rec  stated    216  not published      4  DROPPED     0
+    king_public_notices              171 rec  stated      0  not published    171  DROPPED     0
+    seattle_land_use_permits         117 rec  stated     55  not published     62  DROPPED     0
+    tumwater_development_review       80 rec  stated      0  not published     80  DROPPED     0
+    lacey_project_pages               79 rec  stated      0  not published     79  DROPPED     0
+    lacey_projects_rest               79 rec  stated      0  not published     79  DROPPED     0
+    thurston_active_notices           65 rec  stated      0  not published     65  DROPPED     0
+    tumwater_sepa                     59 rec  stated      0  not published     59  DROPPED     0
+    lacey_permit_reports              50 rec  stated     40  not published     10  DROPPED     0
+    tumwater_development_arcgis       44 rec  stated      0  not published     44  DROPPED     0
+    lewis_inspections                 17 rec  stated      0  not published     17  DROPPED     0
+    lewis_current_planning            17 rec  stated      0  not published     17  DROPPED     0
+    tacoma_solicitations              14 rec  stated      0  not published     14  DROPPED     0
+    lewis_source_canary                1 rec  stated      0  not published      1  DROPPED     0
+    seattle_source_canary              1 rec  stated      0  not published      1  DROPPED     0
 
 INVARIANTS OK — everything above is a measurement, not a verdict.
 ```
+
+## Correction — 2026-07-28, same day
+
+**The per-source valuation table in this file's first version ranked absence as if it were
+failure, and I acted on it within the hour.** It reported `% without valuation` per source, I
+read that as a parser-target ranking, and I recommended a week of parser work against
+`bellevue_permits_arcgis` (100% null), `puyallup_permits_arcgis` (100%),
+`olympia_smartgov_reports` (100%), `pierce_permits_arcgis` (75%) and `king_permit_reports`
+(76%).
+
+**There is no parser defect in any of them.** Measured against `raw_fields_json`:
+
+| Source | What the raw record actually carries |
+|---|---|
+| Bellevue | `VALUATION` key on every row, **non-empty on one** — and that one is `0` |
+| Puyallup | only `FeeAmount` — a permit **fee**, not construction value |
+| Olympia | no valuation-shaped field at all |
+| Pierce | `buildingValuation` on 1,655 rows → **1,596 captured (96%)**; the 59-row residue is **entirely `"0"`** |
+| King | `jobValue` on all 1,920 — **every null is a literal `"0"`** on a mechanical/fire/sprinkler permit |
+
+Both adapters already implement the governing rule — *"0/negative valuation is 'not stated',
+never $0"* (`arcgis-permits.ts:143`, `king-permit-reports.ts:277`) — and they are correct.
+Mapping Puyallup's `FeeAmount` would be fabrication.
+
+So the table was replaced with **stated / not published / DROPPED**, where only `DROPPED` (a
+positive raw value we failed to normalize) is ever work. **Hosted result: `DROPPED = 0` across
+all 26 public sources.** The key allow-list deliberately excludes fee-shaped fields; widening it
+to `%amount%` or `%cost%` would resurrect the phantom backlog.
+
+### Bellevue, measured properly (count-only probes, nothing ingested)
+
+| Query | Count |
+|---|---|
+| all rows | 440,444 |
+| `VALUATION > 0` | 35,468 (8.1%) |
+| inside the adapter's trailing 120-day window | 5,901 |
+| **inside that window with `VALUATION > 0`** | **0** |
+| `VALUATION > 0` by `ISSUEDDATE` ≥ 2020 / 2023 / 2025 / 2026 | 6,503 / 3,171 / 996 / **0** |
+
+The latest issued permit carrying a valuation is **2025-11-21**. Bellevue stopped publishing the
+field roughly eight months ago. Our 4,018 records holding no valuation are correct and complete
+for the window we ingest, and widening the window would recover **history, not current leads** —
+even all-time coverage is 8%. Recorded in `config/sources.yaml`; no ingestion change made.
+
+### The split-permit defect healed itself, and is now guarded
+
+All 46 PALS records (31 originally `new_project`, 15 `parcel_overlap`) now sit on the same
+project as their ArcGIS twin. Graph-wide: **0 permit ids resolving to more than one project, 0
+projects with no active resolution, 0 conflicting registered ids.** Resolver pass 1b plus
+`reevaluatePendingReviews` did it, silently. `splitExternalIds` is now a hard invariant —
+grouped on `(source_id, external_id)`, because a permit number is only unique within a
+jurisdiction.
 
 ## What this run settled that the plan had guessed at
 
@@ -178,19 +238,23 @@ that are genuinely waiting. The first version of this audit reported a single
 conflated "never attempted: 554" and read like a fleet failure. The four buckets
 now partition the project set, and a unit test asserts that they sum.
 
-## Round-3 seeds, ranked by what this run measured
+## Round-4 seeds, ranked by what has actually been measured
 
-1. **Narrow the junk digit rule** (finding 2) — smallest change, recovers real
-   organizations, and the violator list is the test set.
-2. **Valuation parsers**, ranked by the per-source table above: `bellevue_permits_arcgis`
-   (4,018 records, 100% null), `puyallup_permits_arcgis` (1,228, 100%),
-   `olympia_smartgov_reports` (1,023, 100%), `pierce_permits_arcgis` (6,423, 75%),
-   `king_permit_reports` (1,920, 76%). Those five are most of the 1,090
-   priority-band opportunities with no stated valuation.
-3. **The strict view predicate swap** (`name_quality = 'business'`), now that
-   production has carried the column through a full cycle.
-4. **Cryptic permit codes** `BF` (853), `BK` (462), `TJ` (275), `EA` (202),
-   `BN` (195) — decode against official jurisdiction domain tables ONLY. Never
-   guess, and never teach the matcher that `BUILDING` is a trade.
-5. **The 9 name-collision groups** listed above — owner review, not a merge
-   pipeline (the registry disproved merges at 853 groups sharing zero UBIs).
+1. **The fleet is not ingesting.** The scheduled GitHub Actions run fires and dies in ~10s:
+   `DATABASE_URL secret is not set`. Every source's last run is a manual one. Owner action
+   (ten secrets); the workflow also keeps running after its own guard fails and hits
+   `pnpm: command not found`, which is a real fix worth pairing with it.
+2. **Narrow the junk-name digit rule** — 16 named false positives, 2 registry-bound
+   (`123 ELECTRIC SERVICE INC`, `AUBURN SCHOOL DISTRICT NO 408`…). The violator list in this
+   report is its test set. Owner call.
+3. **The strict view predicate swap** (`name_quality = 'business'`), now that production has
+   carried the column through a cycle.
+4. **Cryptic permit codes** `BF` (853), `BK` (462), `TJ` (275), `EA` (202), `BN` (195) — decode
+   against OFFICIAL jurisdiction domain tables only. Never guess, and never teach the matcher
+   that `BUILDING` is a trade.
+5. **Re-probe Bellevue periodically.** If `VALUATION` starts being published again, that is a
+   publisher change worth acting on — and it is invisible unless someone looks.
+6. **The 9 name-collision groups** — owner review, not a merge pipeline.
+
+**NOT a seed: valuation parsers.** Retired above with the measurement that killed it. If a
+future audit shows `DROPPED > 0` for a source, that — and only that — is the signal to write one.

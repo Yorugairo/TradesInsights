@@ -1,5 +1,8 @@
 # Plan: Windowed peer selection for gym_market_comparators
 
+> **STATUS 2026-07-28 — SHIPPED EXCEPT TASK 5, NOT CLOSEABLE.** The report marks *Per-MV transaction (skeleton)* as **NOT STARTED**, deliberately deferred. That is remaining engineering, not a decision: it is blocked on the same 2D000 constraint (plpgsql cannot COMMIT under pg_cron or the pooler), so it needs an out-of-DB driver.
+
+
 ## Summary
 
 `registry_gym_market_comparators_v1` picks peer gyms with a correlated LATERAL that
