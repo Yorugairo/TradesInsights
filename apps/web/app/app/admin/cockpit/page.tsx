@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createRegistryPool } from "@otn/db";
 import { queueSummary, type QueueSummary } from "@otn/intelligence";
+import PageHeader from "../../../../components/ui/PageHeader.js";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
 import { Badge } from "../../../../lib/ui.js";
@@ -36,12 +37,21 @@ export default async function CockpitPage() {
   const seamOffline = pool === null;
 
   return (
-    <main style={{ padding: "1rem", maxWidth: 1050 }}>
-      <h1>Queue cockpit</h1>
+    // No page padding here. The app shell owns the gutter; this page used to set
+    // its own on top of it, which showed as a double margin on every admin screen.
+    <main>
+      <PageHeader
+        title="Queue cockpit"
+        description="Six review streams, in the order they are worth working. Nothing on this page changes data — every card links to the page where a decision is actually made."
+      />
+
       <Mission />
 
       {seamOffline && (
-        <p style={{ color: "#a00", margin: "0.5rem 0" }}>
+        // Not a zero. The registry seam being unreachable and the queue being
+        // empty are different facts, and the whole page is built to keep them
+        // apart.
+        <p className="mb-[calc(var(--stack)*1.5)] rounded-md border border-bad px-4 py-3 text-sm text-bad">
           <strong>Registry seam offline</strong> (<code>REGISTRY_DATABASE_URL</code> unset). Family
           and Google Place sections show what Insights can see on its own — not zeros.
         </p>
@@ -51,7 +61,7 @@ export default async function CockpitPage() {
         title="Work now"
         blurb="Highest-quality signals, smallest queues — the direct differentiator over a commodity L&I pull."
       />
-      <div style={grid}>
+      <div className={GRID}>
         <RegistryReviewCard summary={summary} />
         <FamiliesCard summary={summary} />
       </div>
@@ -60,7 +70,7 @@ export default async function CockpitPage() {
         title="Chunk it down"
         blurb="Large queues worked by pattern, not row by row — decide a shape once, clear all of it."
       />
-      <div style={grid}>
+      <div className={GRID}>
         <ResolutionReviewCard summary={summary} />
         <GooglePlaceCard summary={summary} />
       </div>
@@ -69,7 +79,7 @@ export default async function CockpitPage() {
         title="Match lanes"
         blurb="Automatic binding rules. One is live but unfueled; one is gated until enrichment lands."
       />
-      <div style={grid}>
+      <div className={GRID}>
         <PhoneLaneCard summary={summary} />
         <DomainLaneCard />
       </div>
@@ -83,23 +93,26 @@ function Mission() {
   return (
     <details
       open
-      style={{ border: "1px solid #ddd", borderRadius: 6, padding: "0.6rem 0.8rem", margin: "0.75rem 0" }}
+      className="mb-[calc(var(--stack)*1.5)] rounded-md border border-line bg-surface px-4 py-3"
     >
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>What is this for?</summary>
-      <div style={{ color: "#444", fontSize: "0.9rem", marginTop: "0.5rem" }}>
-        <p style={{ margin: "0.3rem 0" }}>
+      <summary className="cursor-pointer font-semibold text-ink">What is this for?</summary>
+      <div className="mt-2 flex flex-col gap-2 text-sm text-ink-muted">
+        <p>
           Anyone can pull the L&amp;I contractor list. The Registry earns its edge by{" "}
-          <strong>cross-referencing</strong> that list into a knowledge graph — person, contractor,
-          entity, enterprise, DBA — so a customer can see <strong>who to contact</strong> and{" "}
-          <strong>how the money flows</strong> between the companies on a project.
+          <strong className="text-ink">cross-referencing</strong> that list into a knowledge graph —
+          person, contractor, entity, enterprise, DBA — so a customer can see{" "}
+          <strong className="text-ink">who to contact</strong> and{" "}
+          <strong className="text-ink">how the money flows</strong> between the companies on a
+          project.
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Each queue below approves one kind of link. Approving links makes the Registry smarter,
-          which sharpens Insights matches, which surfaces more links — the flywheel. Work them in the
-          order shown: the smallest, highest-confidence queues first.
+          which sharpens Insights matches, which surfaces more links — the flywheel. Work them in
+          the order shown: the smallest, highest-confidence queues first.
         </p>
-        <p style={{ margin: "0.3rem 0", color: "#666" }}>
-          Nothing here changes data. Every card links to the page where a decision is actually made.
+        <p className="text-ink-subtle">
+          Nothing here changes data. Every card links to the page where a decision is actually
+          made.
         </p>
       </div>
     </details>
@@ -108,27 +121,16 @@ function Mission() {
 
 function SectionHeading({ title, blurb }: { title: string; blurb: string }) {
   return (
-    <div style={{ margin: "1.25rem 0 0.5rem" }}>
-      <h2 style={{ margin: 0 }}>{title}</h2>
-      <p style={{ color: "#666", margin: "0.15rem 0 0", fontSize: "0.9rem" }}>{blurb}</p>
+    <div className="mb-2 mt-[calc(var(--stack)*1.5)]">
+      <h2 className="text-lg font-semibold text-ink">{title}</h2>
+      <p className="mt-0.5 max-w-[70ch] text-sm text-ink-muted">{blurb}</p>
     </div>
   );
 }
 
-const grid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-  gap: "0.75rem",
-};
+const GRID = "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(20rem,100%),1fr))]";
 
-const card: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 6,
-  padding: "0.75rem 0.9rem",
-  display: "flex",
-  flexDirection: "column",
-  gap: "0.4rem",
-};
+const CARD_BASE = "flex flex-col gap-1.5 rounded-md border border-line bg-surface px-4 py-3";
 
 /**
  * A queue card: number, one-line claim, a body, and the link that acts on it.
@@ -164,42 +166,36 @@ function QueueCard({
 }) {
   const body = (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-        <strong>
-          <span style={{ color: "#999" }}>Queue {n} · </span>
+      <div className="flex items-baseline justify-between gap-2">
+        <strong className="text-ink">
+          <span className="font-normal text-ink-subtle">Queue {n} · </span>
           {title}
         </strong>
-        <span style={{ fontSize: "1.4rem", fontWeight: 700, whiteSpace: "nowrap" }}>{count}</span>
+        <span className="whitespace-nowrap text-xl font-bold tabular-nums text-ink">{count}</span>
       </div>
-      <div style={{ fontSize: "0.88rem", color: "#333" }}>{children}</div>
+      <div className="text-sm text-ink-muted">{children}</div>
     </>
   );
 
   if (!href) {
     return (
-      <div style={card}>
+      <div className={CARD_BASE}>
         {body}
-        <div style={{ color: "#999", fontSize: "0.85rem" }}>{hrefLabel}</div>
+        <div className="text-xs text-ink-subtle">{hrefLabel}</div>
       </div>
     );
   }
 
   return (
-    <Link href={href} style={cardLink}>
+    <Link
+      href={href}
+      className={`${CARD_BASE} no-underline hover:border-line-strong hover:bg-surface-raised`}
+    >
       {body}
-      <div style={{ color: "#0645ad", fontSize: "0.9rem" }}>{hrefLabel ?? "Open →"}</div>
+      <div className="text-sm font-semibold text-accent-ink">{hrefLabel ?? "Open →"}</div>
     </Link>
   );
 }
-
-/** The actionable variant of `card`. Inherits colour so wrapping the card in a
- * link does not turn every word inside it blue and underlined. */
-const cardLink: React.CSSProperties = {
-  ...card,
-  color: "inherit",
-  textDecoration: "none",
-  cursor: "pointer",
-};
 
 function RegistryReviewCard({ summary }: { summary: QueueSummary }) {
   const { total, byRule, byTier } = summary.registryReview;
@@ -217,26 +213,26 @@ function RegistryReviewCard({ summary }: { summary: QueueSummary }) {
     >
       <div>Org → registry identity bindings awaiting a human accept.</div>
       {byTier.length > 0 && (
-        <div style={{ marginTop: "0.35rem" }}>
+        <div className="mt-1.5 flex flex-wrap gap-2">
           {byTier.map((t) => (
-            <span key={t.tier} style={{ marginRight: "0.5rem" }}>
+            <span key={t.tier}>
               <Badge tone={tone(t.tier)}>{t.count}</Badge> {t.label}
             </span>
           ))}
         </div>
       )}
       {top.length > 0 && (
-        <div style={{ color: "#666", marginTop: "0.25rem" }}>
+        <div className="mt-1 flex flex-wrap gap-3 text-ink-subtle">
           {top.map((r) => (
-            <span key={r.ruleKey} style={{ marginRight: "0.6rem" }}>
+            <span key={r.ruleKey}>
               <code>{r.ruleKey}</code> {r.count}
             </span>
           ))}
         </div>
       )}
-      <div style={{ color: "#666", marginTop: "0.25rem" }}>
+      <div className="mt-1 text-ink-subtle">
         +{phone.toLocaleString()} from the phone lane (30d){" "}
-        {phone === 0 && <span style={{ color: "#999" }}>· unfueled, Phase A backlogged</span>}
+        {phone === 0 && <span>· unfueled, Phase A backlogged</span>}
       </div>
     </QueueCard>
   );
@@ -246,8 +242,16 @@ function FamiliesCard({ summary }: { summary: QueueSummary }) {
   const f = summary.families;
   if (!f) {
     return (
-      <QueueCard n={4} title="Corporate families" count="—" href="/app/admin/corporate-families" hrefLabel="Open →">
-        <span style={{ color: "#a00" }}>Seam offline — families derive from the registry identity view.</span>
+      <QueueCard
+        n={4}
+        title="Corporate families"
+        count="—"
+        href="/app/admin/corporate-families"
+        hrefLabel="Open →"
+      >
+        <span className="text-bad">
+          Seam offline — families derive from the registry identity view.
+        </span>
       </QueueCard>
     );
   }
@@ -263,7 +267,7 @@ function FamiliesCard({ summary }: { summary: QueueSummary }) {
         <Badge tone="green">{f.pairsStrong}</Badge> corroborated principal↔person pairs ready to
         confirm, of {f.pairsNew.toLocaleString()} new.
       </div>
-      <div style={{ color: "#666", marginTop: "0.25rem" }}>
+      <div className="mt-1 text-ink-subtle">
         {f.count.toLocaleString()} families derived (entities under one L&amp;I principal).
       </div>
     </QueueCard>
@@ -288,26 +292,26 @@ function ResolutionReviewCard({ summary }: { summary: QueueSummary }) {
         half of it, <strong>{clustersToEighty}</strong> clear 80%.
       </div>
       {awaitingEvidence > 0 && (
-        <div style={{ color: "#666", marginTop: "0.25rem" }}>
+        <div className="mt-1 text-ink-subtle">
           {awaitingEvidence.toLocaleString()} of {total.toLocaleString()} are waiting on parcel/org
           evidence, not on a reviewer.
         </div>
       )}
       {clusters.length > 0 ? (
-        <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", color: "#333" }}>
+        <ul className="mt-1.5 list-disc pl-4">
           {clusters.map((c, i) => (
             <li key={`${c.matchedRule}-${c.reasonKey}-${c.candidateProjectId ?? "none"}-${i}`}>
               <code>{c.matchedRule}</code> · {c.count.toLocaleString()}
               {c.candidateName ? (
-                <span style={{ color: "#666" }}> → {c.candidateName}</span>
+                <span className="text-ink-subtle"> → {c.candidateName}</span>
               ) : (
-                <span style={{ color: "#999" }}> → new project</span>
+                <span className="text-ink-subtle"> → new project</span>
               )}
             </li>
           ))}
         </ul>
       ) : (
-        <div style={{ color: "#999", marginTop: "0.25rem" }}>Queue empty.</div>
+        <div className="mt-1 text-ink-subtle">Queue empty.</div>
       )}
     </QueueCard>
   );
@@ -321,7 +325,7 @@ function GooglePlaceCard({ summary }: { summary: QueueSummary }) {
     return (
       <QueueCard n={3} title="Google Place review" count="—" hrefLabel="registry seam offline">
         <div>Place ↔ entity matches, split three ways:</div>
-        <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", color: "#333" }}>
+        <ul className="mt-1.5 list-disc pl-4">
           <li>human-ready</li>
           <li>awaiting the lineage auto-resolver</li>
           <li>awaiting evidence-gathering automation</li>
@@ -338,7 +342,7 @@ function GooglePlaceCard({ summary }: { summary: QueueSummary }) {
       hrefLabel="Work the queue →"
     >
       <div>Place ↔ entity matches:</div>
-      <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", color: "#333" }}>
+      <ul className="mt-1.5 list-disc pl-4">
         <li>
           <strong>{g.actionable.toLocaleString()}</strong> human-ready
         </li>
@@ -352,14 +356,19 @@ function GooglePlaceCard({ summary }: { summary: QueueSummary }) {
 function PhoneLaneCard({ summary }: { summary: QueueSummary }) {
   const n = summary.lanes.enrichmentPhoneCandidates30d;
   return (
-    <QueueCard n={6} title="Phone match lane" count={n.toLocaleString()} hrefLabel="Feeds registry review when it fires">
+    <QueueCard
+      n={6}
+      title="Phone match lane"
+      count={n.toLocaleString()}
+      hrefLabel="Feeds registry review when it fires"
+    >
       <div>
-        <Badge tone={n > 0 ? "green" : "gray"}>{n > 0 ? "active" : "unfueled"}</Badge> candidates in the
-        last 30 days.
+        <Badge tone={n > 0 ? "green" : "gray"}>{n > 0 ? "active" : "unfueled"}</Badge> candidates in
+        the last 30 days.
       </div>
-      <div style={{ color: "#666", marginTop: "0.25rem" }}>
-        Structurally unfueled today (61 org phones, zero overlap with any registry or L&amp;I phone).
-        Phase A would fuel it — currently backlogged.
+      <div className="mt-1 text-ink-subtle">
+        Structurally unfueled today (61 org phones, zero overlap with any registry or L&amp;I
+        phone). Phase A would fuel it — currently backlogged.
       </div>
     </QueueCard>
   );
@@ -371,7 +380,7 @@ function DomainLaneCard() {
       <div>
         <Badge tone="gray">gated</Badge> 0 of 3,797 orgs carry a website today.
       </div>
-      <div style={{ color: "#666", marginTop: "0.25rem" }}>
+      <div className="mt-1 text-ink-subtle">
         Activation waits on enrichment coverage being demonstrably real — Insights can fuel domain
         discovery better than the L&amp;I registration ever could.
       </div>
