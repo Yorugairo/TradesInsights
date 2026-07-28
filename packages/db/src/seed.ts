@@ -84,6 +84,14 @@ async function main() {
         territoryJson: a.territory,
         exclusionsJson: { excluded_ubis: a.organization.excluded_ubis },
         deliveryConfigJson: a.delivery,
+        // Calibration PROVENANCE for the cockpit. Stamped here because
+        // `apps/web` never loads this yaml at runtime — see the column comment
+        // in schema.ts. Always written (never left NULL by a successful seed),
+        // so a NULL genuinely means "the seed has not run for this account".
+        calibrationJson: {
+          owner_assumed: a.owner_assumed,
+          calibration_pending: a.calibration_pending,
+        },
       })
       .onConflictDoUpdate({
         target: accountProfiles.key,
@@ -94,6 +102,7 @@ async function main() {
           territoryJson: sql`excluded.territory_json`,
           exclusionsJson: sql`excluded.exclusions_json`,
           deliveryConfigJson: sql`excluded.delivery_config_json`,
+          calibrationJson: sql`excluded.calibration_json`,
         },
       })
       .returning({ id: accountProfiles.id });

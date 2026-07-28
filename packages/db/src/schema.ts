@@ -421,6 +421,21 @@ export const accountProfiles = pgTable(
     exclusionsJson: jsonb("exclusions_json").notNull().default(sql`'{}'::jsonb`),
     capacityJson: jsonb("capacity_json").notNull().default(sql`'{}'::jsonb`),
     deliveryConfigJson: jsonb("delivery_config_json").notNull(),
+    /**
+     * Calibration PROVENANCE, stamped by the seed from `account-profiles.yaml`:
+     * `{owner_assumed: string[], calibration_pending: string[]}`.
+     *
+     * NULLABLE on purpose — NULL means the seed has not stamped this account
+     * yet, which is a different fact from "no assumptions remain" (empty
+     * lists). The cockpit renders those as different states; collapsing them
+     * would let an un-seeded account read as fully calibrated.
+     *
+     * WHY A COLUMN rather than reading the yaml: `apps/web` never loads
+     * `@otn/config` at runtime (only `next.config.ts` references it), and the
+     * hosted deploy is not guaranteed to ship the config directory. A card
+     * that works locally and shows nothing in production is worse than no card.
+     */
+    calibrationJson: jsonb("calibration_json"),
   },
   (t) => [uniqueIndex("account_profiles_key_ux").on(t.key)],
 );
@@ -1319,6 +1334,24 @@ export const corporateFamilySummary = pgTable("corporate_family_summary", {
   /** RegistryIdentityRow[] trimmed to entities the pages can display (~3k of 73k). */
   rowsJson: jsonb("rows_json").notNull(),
   derivedAt: timestamp("derived_at", { withTimezone: true }).notNull(),
+});
+
+/**
+ * Single-use ledger for the OTN → Insights sign-in handoff.
+ *
+ * The token itself is stateless (HMAC-signed claims, 60-second life); this
+ * table exists ONLY so a token cannot be used twice. The INSERT is the claim:
+ * a unique violation IS the replay refusal, which is race-free in a way
+ * read-then-write is not (mirrors the atomic claim in
+ * `delivery/src/actions.ts`, adapted because `action_tokens` cannot carry an
+ * SSO row — its `opportunity_id` is NOT NULL and `action` is CHECK-pinned).
+ *
+ * Rows are pruned opportunistically by the SSO route; nothing else reads them.
+ */
+export const ssoConsumed = pgTable("sso_consumed", {
+  /** The token's `jti` claim — random per mint. */
+  jti: text("jti").primaryKey(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** One PrincipalPersonPair per row, replace-all per derivation. */
