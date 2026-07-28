@@ -1,13 +1,51 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { registryPool } from "../../../../lib/registry-db.js";
 import { queueSummary, type QueueSummary } from "@otn/intelligence";
+import DerivedAt from "../../../../components/proof/DerivedAt.js";
 import PageHeader from "../../../../components/ui/PageHeader.js";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
+import { familyCounts, familySnapshot } from "../../../../lib/registry-families.js";
+import { registryPool } from "../../../../lib/registry-db.js";
 import { Badge } from "../../../../lib/ui.js";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * How long the cockpit waits for the family snapshot before rendering the
+ * "not measured" state instead.
+ *
+ * Warm this resolves in microseconds (the snapshot is cached). The budget only
+ * bites on a cold process, where deriving costs 29-79s — and a dashboard that
+ * makes you wait 79 seconds for one card is worse than one that tells you the
+ * card is not ready.
+ */
+const FAMILIES_BUDGET_MS = 4_000;
+
+/**
+ * Reject rather than hang. The caller turns the rejection into a visible state.
+ *
+ * Two details that are not incidental:
+ *
+ *  - The losing promise is NOT cancelled — it cannot be, and we do not want it
+ *    to be. `familySnapshot()` populates the process cache when it finishes, so
+ *    a request that gave up waiting still leaves the next one fast. Cold start
+ *    costs one operator a "not measured" card, not the whole shift.
+ *  - It gets its own `.catch`. A promise that loses a `Promise.race` and later
+ *    rejects is an UNHANDLED rejection, which in Node is fatal by default —
+ *    a timeout guard that crashes the server is worse than the hang it replaced.
+ */
+function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
+  p.catch(() => {
+    /* handled by whoever awaited the race; this only defuses the loser */
+  });
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`budget ${ms}ms exceeded`)), ms).unref?.(),
+    ),
+  ]);
+}
 
 /**
  * Queue cockpit — the front door to every identity/enrichment review lane.
@@ -33,8 +71,25 @@ export default async function CockpitPage() {
   if (session.role !== "admin") redirect("/app/opportunities");
 
   const pool = registryPool();
-  const summary = await queueSummary(db(), pool);
   const seamOffline = pool === null;
+
+  // THREE STATES, not two. `seamOffline` is a config fact (REGISTRY_DATABASE_URL
+  // unset). `familiesTimedOut` is the seam existing and not answering inside the
+  // budget. A number is the third. Collapsing the middle case into either of the
+  // others is exactly the failure this page 500'd on: it had no way to say "we
+  // could not measure this in time", so it threw instead.
+  let families: Awaited<ReturnType<typeof familyCounts>> | null = null;
+  let familiesTimedOut = false;
+  if (!seamOffline) {
+    try {
+      const snapshot = await withBudget(familySnapshot(), FAMILIES_BUDGET_MS);
+      families = snapshot ? familyCounts(snapshot) : null;
+    } catch {
+      familiesTimedOut = true;
+    }
+  }
+
+  const summary = await queueSummary(db(), pool, { families });
 
   return (
     // No page padding here. The app shell owns the gutter; this page used to set
@@ -63,7 +118,7 @@ export default async function CockpitPage() {
       />
       <div className={GRID}>
         <RegistryReviewCard summary={summary} />
-        <FamiliesCard summary={summary} />
+        <FamiliesCard summary={summary} timedOut={familiesTimedOut} />
       </div>
 
       <SectionHeading
@@ -238,7 +293,28 @@ function RegistryReviewCard({ summary }: { summary: QueueSummary }) {
   );
 }
 
-function FamiliesCard({ summary }: { summary: QueueSummary }) {
+function FamiliesCard({ summary, timedOut }: { summary: QueueSummary; timedOut: boolean }) {
+  // State 2 of 3: the seam is configured and did not answer inside the budget.
+  // Deliberately NOT "seam offline" (that is a config fact) and NOT a dash that
+  // could read as zero — the queue is real and its size is currently unknown.
+  if (timedOut) {
+    return (
+      <QueueCard
+        n={4}
+        title="Corporate families"
+        count="not measured"
+        href="/app/admin/corporate-families"
+        hrefLabel="Open the queue anyway →"
+      >
+        <span className="text-warn">
+          The registry seam did not answer within {FAMILIES_BUDGET_MS / 1000}s, so this count is
+          unknown right now — not zero, and not offline. The derivation refreshes in the
+          background; reload shortly.
+        </span>
+      </QueueCard>
+    );
+  }
+
   const f = summary.families;
   if (!f) {
     return (
@@ -270,6 +346,9 @@ function FamiliesCard({ summary }: { summary: QueueSummary }) {
       <div className="mt-1 text-ink-subtle">
         {f.count.toLocaleString()} families derived (entities under one L&amp;I principal).
       </div>
+      {/* The stamp is not decoration. These counts are derived on a schedule, and
+          a scheduled number shown without its "as of" reads as live. */}
+      {f.derivedAt && <DerivedAt at={f.derivedAt} stale={f.stale === true} />}
     </QueueCard>
   );
 }

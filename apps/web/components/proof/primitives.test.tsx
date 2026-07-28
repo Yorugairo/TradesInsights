@@ -16,6 +16,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
 import ConfidenceMeter, { confidenceState } from "./ConfidenceMeter.js";
+import DerivedAt, { formatAge } from "./DerivedAt.js";
 import GateBadge, { gateBadgeState } from "./GateBadge.js";
 import RangeBar, { rangeMarkerPercent } from "./RangeBar.js";
 import ScoreBar, { scorePercent } from "./ScoreBar.js";
@@ -324,5 +325,48 @@ describe("ScoreBar", () => {
     const html = renderToStaticMarkup(<ScoreBar score={79} priorityMin={80} digestMin={65} />);
     expect(html).toContain("Score 79 of 100");
     expect(html).toContain("Priority review at 80");
+  });
+});
+
+describe("formatAge", () => {
+  const NOW = Date.parse("2026-07-27T12:00:00Z");
+
+  test("uses the coarsest unit that is still honest", () => {
+    expect(formatAge("2026-07-27T11:59:40Z", NOW)).toBe("just now");
+    expect(formatAge("2026-07-27T11:20:00Z", NOW)).toBe("40m ago");
+    expect(formatAge("2026-07-27T06:00:00Z", NOW)).toBe("6h ago");
+    expect(formatAge("2026-07-24T12:00:00Z", NOW)).toBe("3d ago");
+  });
+
+  test("an unparseable stamp says so rather than rendering NaN", () => {
+    // A derived number whose age renders "NaNm ago" is worse than no stamp:
+    // it looks like a bug in the clock rather than a gap in the data.
+    expect(formatAge("not-a-date", NOW)).toBe("at an unknown time");
+  });
+
+  test("a future stamp does not render negative age", () => {
+    // Clock skew between the deriving worker and the web process is real.
+    expect(formatAge("2026-07-27T12:05:00Z", NOW)).toBe("just now");
+  });
+});
+
+describe("DerivedAt", () => {
+  const NOW = Date.parse("2026-07-27T12:00:00Z");
+
+  test("a fresh stamp reads as provenance, not as a warning", () => {
+    const html = renderToStaticMarkup(<DerivedAt at="2026-07-27T11:30:00Z" now={NOW} />);
+    expect(html).toContain("Derived 30m ago");
+    expect(html).toContain('data-derived-stale="false"');
+    expect(html).not.toContain("Stale");
+  });
+
+  test("a stale stamp says the refresh has not succeeded", () => {
+    // The failure this guards: a scheduled job dies, the counts freeze, and the
+    // page keeps showing them as though they were current.
+    const html = renderToStaticMarkup(<DerivedAt at="2026-07-25T12:00:00Z" stale now={NOW} />);
+    expect(html).toContain("Stale");
+    expect(html).toContain("2d ago");
+    expect(html).toContain("refresh has not succeeded");
+    expect(html).toContain('data-derived-stale="true"');
   });
 });

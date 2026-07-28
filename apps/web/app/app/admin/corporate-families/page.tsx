@@ -2,26 +2,23 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { registryPool } from "../../../../lib/registry-db.js";
 import {
-  buildFamilies,
   corporateFamilyRollup,
   loadBoundOrgIdsByEntity,
-  loadPersonCandidates,
   type CorporateFamilyRollupRow,
   type FamilyGroup,
 } from "@otn/intelligence";
 import {
-  buildPrincipalPersonIndex,
   corroborateEntities,
-  fetchRegistryIdentityRows,
   lniVerifyUrl,
-  matchPrincipalsToPeople,
   type CorroborationSignal,
   type CorroborationVerdict,
   type PrincipalPersonPair,
   type RegistryIdentityRow,
 } from "@otn/resolution";
+import DerivedAt from "../../../../components/proof/DerivedAt.js";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
+import { familySnapshot } from "../../../../lib/registry-families.js";
 import { Badge, cell, fmtDate, fmtMoney, table } from "../../../../lib/ui.js";
 import { ConfirmRelationshipButton, type RelationshipClaim } from "./actions.js";
 
@@ -60,13 +57,28 @@ export default async function CorporateFamiliesPage({
   const pool = registryPool();
   if (!pool) return <Unavailable reason="REGISTRY_DATABASE_URL is not set — the registry seam is offline." />;
 
-  const rows = await fetchRegistryIdentityRows(pool);
-  const { families, dropped } = buildFamilies(rows);
+  /*
+    Reads the CACHED derivation instead of pulling the registry identity view
+    per request.
+
+    Measured 2026-07-27: `fetchRegistryIdentityRows` returns 72,952 rows and
+    costs 5.2s warm / 29-79s cold, `loadPersonCandidates` another 6.4s. That is
+    why this page took 109 SECONDS. The derivation on top of those rows is half
+    a second — the cost was never the computation, it was shipping the whole
+    view across the seam to render fifty rows.
+
+    `derivedAt` is rendered below. Derived-on-a-schedule is the right trade for
+    a review queue; presenting it as live would not be.
+  */
+  const snapshot = await familySnapshot();
+  if (!snapshot) {
+    return <Unavailable reason="The registry seam is configured but has not produced a snapshot yet." />;
+  }
+  const { families, dropped, pairs: allPairs, rows } = snapshot;
+
   const rollups = await corporateFamilyRollup(db(), families, { limit });
   const rollupById = new Map(rollups.map((r) => [r.familyId, r]));
 
-  const candidates = await loadPersonCandidates(db());
-  const allPairs = matchPrincipalsToPeople(candidates, buildPrincipalPersonIndex(rows));
   const newPairs = allPairs.filter((p) => !p.alreadyBound);
   const strongPairs = newPairs.filter((p) => p.verdict === "strong" || p.verdict === "corroborated");
   const weakPairs = newPairs.filter((p) => p.verdict === "name_only" || p.verdict === "contradicted");
@@ -100,6 +112,7 @@ export default async function CorporateFamiliesPage({
         <span className="text-ink-muted">
           {families.length} families · {rollups.length} with Insights activity
         </span>
+        <DerivedAt at={snapshot.derivedAt} stale={snapshot.stale} />
         <span>·</span>
         {[50, 100, 300].map((n) => (
           <Link key={n} href={`?limit=${n}${showWeak ? "&weak=1" : ""}`} className={n === limit ? "font-bold text-ink" : "text-ink-muted underline"}>

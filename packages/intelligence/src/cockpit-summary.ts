@@ -78,6 +78,17 @@ export interface CockpitFamilies {
   pairsNew: number;
   /** Of those, the corroborated ones (verdict strong | corroborated). */
   pairsStrong: number;
+  /**
+   * When these counts were derived, ISO-8601. Present when the caller supplied a
+   * cached snapshot; absent when the derivation ran inline for this request.
+   *
+   * The UI is expected to RENDER it. Derived-on-a-schedule is a fine trade for a
+   * dashboard, but a cached count presented as live is the never-fabricate rule
+   * with extra steps.
+   */
+  derivedAt?: string;
+  /** The snapshot is old enough that the UI should say so out loud. */
+  stale?: boolean;
 }
 
 export interface CockpitGooglePlace {
@@ -113,18 +124,40 @@ export interface QueueSummary {
 export async function queueSummary(
   db: Db,
   registryPool: RegistryPoolLike | null,
+  opts: {
+    /**
+     * Pre-derived family counts, normally from the web app's cached snapshot
+     * (`apps/web/lib/registry-families.ts`).
+     *
+     * Deriving families inline means pulling 72,952 identity rows across the
+     * seam — 5.2s warm, up to 79s cold, measured 2026-07-27. That is what made
+     * this page a 9-21s render and tipped it past `statement_timeout` into a
+     * 500. Pass the snapshot and this function never touches the seam for
+     * families.
+     *
+     * `undefined` = derive inline (previous behaviour, kept for tests and the
+     * worker). `null` = the caller knows there is nothing to show.
+     */
+    families?: CockpitFamilies | null;
+  } = {},
 ): Promise<QueueSummary> {
-  const [resolutionReview, registryReview, lanes] = await Promise.all([
-    resolutionReviewSummary(db),
-    registryReviewSummary(db),
-    laneSummary(db),
-  ]);
+  // SEQUENTIAL. The app pool max is 2; three concurrent reads meant this page
+  // held both connections and starved every other in-flight request. Measured
+  // twice during the Phase 3 retrofit: the same shape cost three e2e failures
+  // on pages the change never touched.
+  const resolutionReview = await resolutionReviewSummary(db);
+  const registryReview = await registryReviewSummary(db);
+  const lanes = await laneSummary(db);
 
-  // Both need the seam. Compute in parallel only when the pool exists —
-  // otherwise both stay null (a real "seam offline" state, not zero).
-  const [families, googlePlace] = registryPool
-    ? await Promise.all([familiesSummary(db, registryPool), googlePlaceSummary(registryPool)])
-    : [null, null];
+  const families =
+    opts.families !== undefined
+      ? opts.families
+      : registryPool
+        ? await familiesSummary(db, registryPool)
+        : null;
+  // Seam-dependent, and cheap (a single aggregate over the contract view), so it
+  // still runs inline. Null when the seam is offline — never a zero.
+  const googlePlace = registryPool ? await googlePlaceSummary(registryPool) : null;
 
   return { resolutionReview, registryReview, families, googlePlace, lanes };
 }
