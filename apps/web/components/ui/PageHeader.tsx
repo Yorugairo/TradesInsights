@@ -10,12 +10,23 @@ import type { ReactNode } from "react";
 
 export default function PageHeader({
   title,
+  titleTestId,
   description,
   action,
   meta,
   "data-testid": testId,
 }: {
   title: string;
+  /**
+   * Testid for the <h1> itself, not the wrapper.
+   *
+   * `app.spec.ts:65` asserts `opportunity-title` is visible, and that hook names
+   * the title — not the header block that also contains the description and the
+   * action. Putting it on the wrapper would keep the test passing while quietly
+   * changing what it points at, which is the kind of drift that makes a suite
+   * stop meaning anything.
+   */
+  titleTestId?: string;
   description?: ReactNode;
   /** The primary action for this screen. One. */
   action?: ReactNode;
@@ -27,7 +38,9 @@ export default function PageHeader({
     <header data-testid={testId} className="mb-[calc(var(--stack)*1.5)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+          <h1 data-testid={titleTestId} className="text-2xl font-semibold text-ink">
+            {title}
+          </h1>
           {description ? (
             <p className="mt-1 max-w-[70ch] text-ink-muted">{description}</p>
           ) : null}
