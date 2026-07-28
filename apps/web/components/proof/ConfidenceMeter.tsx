@@ -13,12 +13,24 @@
 //
 // Never feed this fabricated values.
 
-/** Shape of `opportunity.corroboration` — mirrors lib/queries.ts:223-228. */
+/**
+ * Shape of `project.corroboration`, fixed by the writer at
+ * `packages/resolution/src/corroboration.ts:96-100`.
+ *
+ * `sourceCount` is a count, not a list. This type first mirrored an incorrect
+ * declaration in `lib/queries.ts` that named a `sources: string[]` field nothing
+ * has ever written — with the effect that this component reported "Not assessed"
+ * for every project that HAD been assessed. Measured against production: 500 of
+ * 500 rows carried a real corroboration record and 0 rendered as measured. The
+ * component built to stop unknown reading as zero was making measured read as
+ * unknown, which is the same lie pointing the other way.
+ */
 export type CorroborationInput =
   | {
-      sources?: string[];
+      sourceCount?: number;
       stageDepth?: number;
       contradictions?: { field: string; values: unknown[]; recordIds: string[] }[];
+      derivedAt?: string;
     }
   | null
   | undefined;
@@ -42,11 +54,11 @@ export const CONFIDENCE_SEGMENTS = 3;
 
 export function confidenceState(input: CorroborationInput): ConfidenceState {
   if (!input) return { kind: "unknown" };
-  // The jsonb exists but carries no source list: the corroboration pass has not
-  // written this dimension. Still unknown — an absent key is not an empty set.
-  if (!Array.isArray(input.sources)) return { kind: "unknown" };
+  // The jsonb exists but carries no count: the corroboration pass has not written
+  // this dimension. Still unknown — an absent key is not a measured zero.
+  if (typeof input.sourceCount !== "number") return { kind: "unknown" };
 
-  const sourceCount = input.sources.length;
+  const sourceCount = input.sourceCount;
   return {
     kind: "measured",
     sourceCount,

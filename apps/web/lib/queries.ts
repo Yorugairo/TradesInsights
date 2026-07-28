@@ -98,6 +98,11 @@ export interface OpportunityListItem {
   state: string;
   campusBlock: string | null;
   lastMaterialChangeAt: string | null;
+  /** Phase-1 corroboration jsonb, same shape as the detail view. `null` means the
+   * corroboration pass never ran for this project — NOT that it found nothing.
+   * Carried on the list so a row can show how well-sourced it is without a
+   * second query; `p.corroboration` is already in the join. */
+  corroboration: OpportunityDetail["corroboration"];
 }
 
 /** Batch3 #2 — filterable/sortable/paginated list for 1,000+-item accounts. */
@@ -114,6 +119,26 @@ export interface OpportunityListFilter {
   offset?: number;
 }
 
+/**
+ * The non-band predicates, shared by the list and its summary.
+ *
+ * Extracted so the two cannot drift: the summary tiles describe the same book
+ * the band control navigates, and a filter added to one but not the other would
+ * silently produce a header that disagrees with its own table.
+ */
+function opportunityScopeFilters(opts: OpportunityListFilter) {
+  return {
+    county: opts.county ? sql`AND p.county = ${opts.county}` : sql``,
+    stage: opts.stage ? sql`AND p.current_stage = ${opts.stage}` : sql``,
+    campus: opts.campusOnly ? sql`AND p.campus_block IS NOT NULL` : sql``,
+    q: opts.q
+      ? sql`AND (p.canonical_name ILIKE ${"%" + opts.q + "%"}
+          OR p.permitting_jurisdiction ILIKE ${"%" + opts.q + "%"}
+          OR p.address_normalized ILIKE ${"%" + opts.q + "%"})`
+      : sql``,
+  };
+}
+
 export async function listOpportunities(
   db: Db,
   accountProfileId: string,
@@ -127,14 +152,7 @@ export async function listOpportunities(
       : opts.state
         ? sql`AND o.state = ${opts.state}`
         : sql`AND o.state != 'archive'`;
-  const countyFilter = opts.county ? sql`AND p.county = ${opts.county}` : sql``;
-  const stageFilter = opts.stage ? sql`AND p.current_stage = ${opts.stage}` : sql``;
-  const campusFilter = opts.campusOnly ? sql`AND p.campus_block IS NOT NULL` : sql``;
-  const qFilter = opts.q
-    ? sql`AND (p.canonical_name ILIKE ${"%" + opts.q + "%"}
-          OR p.permitting_jurisdiction ILIKE ${"%" + opts.q + "%"}
-          OR p.address_normalized ILIKE ${"%" + opts.q + "%"})`
-    : sql``;
+  const f = opportunityScopeFilters(opts);
   const order =
     opts.sort === "recent"
       ? sql`o.last_material_change_at DESC NULLS LAST`
@@ -142,11 +160,12 @@ export async function listOpportunities(
   const res = await db.execute(sql`
     SELECT o.id, o.project_id, p.canonical_name, p.county, p.permitting_jurisdiction,
       p.current_stage, o.current_score, o.route, o.state, p.campus_block,
+      p.corroboration,
       o.last_material_change_at, count(*) OVER () AS total
     FROM opportunities o
     JOIN projects p ON p.id = o.project_id
     WHERE o.account_profile_id = ${accountProfileId}
-      ${stateFilter} ${countyFilter} ${stageFilter} ${campusFilter} ${qFilter}
+      ${stateFilter} ${f.county} ${f.stage} ${f.campus} ${f.q}
     ORDER BY ${order}
     LIMIT ${limit} OFFSET ${offset}`);
   const rows = res.rows as Record<string, unknown>[];
@@ -164,8 +183,62 @@ export async function listOpportunities(
       state: r["state"] as string,
       campusBlock: (r["campus_block"] as string | null) ?? null,
       lastMaterialChangeAt: (r["last_material_change_at"] as string | null) ?? null,
+      corroboration: (r["corroboration"] as OpportunityDetail["corroboration"]) ?? null,
     })),
   };
+}
+
+export interface OpportunityBandSummary {
+  /** Row count per band, keyed by `o.state`. Absent key = zero rows in that band. */
+  byState: Record<string, number>;
+  /** Rows carrying no score. Unknown, not zero — surfaced as its own number. */
+  unscored: number;
+  /** Every row in scope, all bands including archive. */
+  total: number;
+}
+
+/**
+ * Counts per band for the summary tiles and the band control.
+ *
+ * Deliberately ignores `opts.state`: the tiles describe the whole book under the
+ * county/stage/search/campus filters and stay stable as the operator moves
+ * between bands. The band-filtered number is `total` from `listOpportunities`,
+ * which is what `opportunity-count` reports.
+ */
+export async function opportunityBandSummary(
+  db: Db,
+  accountProfileId: string,
+  opts: OpportunityListFilter = {},
+): Promise<OpportunityBandSummary> {
+  const f = opportunityScopeFilters(opts);
+  // Join `projects` ONLY when a project-level filter needs it. Every predicate
+  // in this query is otherwise on `opportunities`, which carries
+  // `opportunities_state_ix (account_profile_id, state)` — exactly this
+  // aggregate. Joining unconditionally discards that index and makes the
+  // unfiltered case (the one that runs on every page load) scan every project
+  // row for the account. This page already runs a second full query; a summary
+  // that costs as much as the list is what turned the e2e suite from 1.3m into
+  // 4m and started timing the cockpit out.
+  const needsProjects = Boolean(opts.county || opts.stage || opts.campusOnly || opts.q);
+  const joinProjects = needsProjects ? sql`JOIN projects p ON p.id = o.project_id` : sql``;
+  const res = await db.execute(sql`
+    SELECT o.state, count(*) AS n,
+      count(*) FILTER (WHERE o.current_score IS NULL) AS unscored
+    FROM opportunities o
+    ${joinProjects}
+    WHERE o.account_profile_id = ${accountProfileId}
+      ${f.county} ${f.stage} ${f.campus} ${f.q}
+    GROUP BY o.state`);
+  const byState: Record<string, number> = {};
+  let unscored = 0;
+  let total = 0;
+  for (const r of res.rows as Record<string, unknown>[]) {
+    const n = Number(r["n"]);
+    byState[r["state"] as string] = n;
+    unscored += Number(r["unscored"]);
+    total += n;
+  }
+  return { byState, unscored, total };
 }
 
 export interface EvidenceView {
@@ -220,11 +293,21 @@ export interface OpportunityDetail {
     /** Latest stated permit issue date across active records (never inferred). */
     latestIssueDate: string | null;
   };
-  /** Phase-1 corroboration jsonb ({sources, stageDepth, contradictions}) or null (unknown ≠ zero). */
+  /**
+   * Phase-1 corroboration jsonb, or null when the pass has never derived one for
+   * this project (unknown ≠ zero).
+   *
+   * Shape is fixed by the writer, `packages/resolution/src/corroboration.ts:96-100`:
+   * `sourceCount` is a COUNT of distinct public publishers, not a list of them.
+   * This declaration previously said `sources?: string[]`, which no code path has
+   * ever written — every consumer that works (`delivery/src/digest.ts:718`,
+   * `intelligence/src/score-run.ts:181`) reads `sourceCount`.
+   */
   corroboration: {
-    sources?: string[];
+    sourceCount?: number;
     stageDepth?: number;
     contradictions?: { field: string; values: unknown[]; recordIds: string[] }[];
+    derivedAt?: string;
   } | null;
   roles: RoleView[];
   evidence: EvidenceView[];

@@ -244,14 +244,29 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           style={{ border: "1px solid #ddd", borderRadius: 8, padding: "1rem", margin: "1rem 0" }}
         >
           <h2 style={{ marginTop: 0 }}>Corroboration</h2>
+          {/*
+            Reads `sourceCount`, the field the corroboration pass actually writes
+            (packages/resolution/src/corroboration.ts:96-100).
+
+            This block previously read `corroboration.sources`, a string[] that no
+            writer has ever emitted. It was therefore always `undefined`, the
+            `>= 2` branch was unreachable, and EVERY project — including
+            multi-source ones — rendered "Single public source so far". A page
+            whose purpose is to show corroboration was understating it for every
+            row. The count is all the writer stores, so the count is all we claim;
+            naming the publishers would need the list this jsonb does not carry.
+          */}
           <p>
-            {(o.corroboration.sources?.length ?? 0) >= 2 ? (
+            {typeof o.corroboration.sourceCount !== "number" ? (
+              <>Corroboration has not been assessed for this project.</>
+            ) : o.corroboration.sourceCount >= 2 ? (
               <>
-                Seen independently in <strong>{o.corroboration.sources!.length}</strong> public
-                sources: {o.corroboration.sources!.join(", ")}.
+                Seen independently in <strong>{o.corroboration.sourceCount}</strong> public sources.
               </>
+            ) : o.corroboration.sourceCount === 1 ? (
+              <>Single public source so far.</>
             ) : (
-              <>Single public source so far{o.corroboration.sources?.length ? ` (${o.corroboration.sources[0]})` : ""}.</>
+              <>No public source recorded for this project.</>
             )}{" "}
             {typeof o.corroboration.stageDepth === "number" && o.corroboration.stageDepth > 0 && (
               <>Lifecycle confirmed through {o.corroboration.stageDepth} distinct stage{o.corroboration.stageDepth === 1 ? "" : "s"}.</>

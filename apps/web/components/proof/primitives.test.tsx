@@ -18,6 +18,7 @@ import { describe, expect, test } from "vitest";
 import ConfidenceMeter, { confidenceState } from "./ConfidenceMeter.js";
 import GateBadge, { gateBadgeState } from "./GateBadge.js";
 import RangeBar, { rangeMarkerPercent } from "./RangeBar.js";
+import ScoreBar, { scorePercent } from "./ScoreBar.js";
 import SourceChip from "./SourceChip.js";
 import StatTile from "./StatTile.js";
 import EmptyState from "../ui/EmptyState.js";
@@ -73,23 +74,38 @@ describe("confidenceState", () => {
     expect(confidenceState(undefined)).toEqual({ kind: "unknown" });
   });
 
-  test("a corroboration record with no sources key is still unknown", () => {
+  test("a corroboration record with no sourceCount key is still unknown", () => {
     // The jsonb exists because some other pass wrote stageDepth. That says
-    // nothing about how many sources were seen — an absent key is not an
-    // empty set.
+    // nothing about how many sources were seen — an absent key is not a
+    // measured zero.
     expect(confidenceState({ stageDepth: 2 })).toEqual({ kind: "unknown" });
   });
 
-  test("an empty sources array is a measurement of zero, not unknown", () => {
-    const state = confidenceState({ sources: [] });
+  test("reads the PRODUCTION jsonb shape, verbatim", () => {
+    // This exact object is a row from `projects.corroboration` on 2026-07-27.
+    // The regression it pins: the type previously named a `sources: string[]`
+    // field the writer has never emitted, so every real record fell through the
+    // unknown guard and 500 of 500 assessed rows rendered "Not assessed".
+    const state = confidenceState({
+      derivedAt: "2026-07-27T06:48:27Z",
+      stageDepth: 1,
+      sourceCount: 1,
+      contradictions: [],
+    });
+    expect(state.kind).toBe("measured");
+    expect(state).toMatchObject({ sourceCount: 1, stageDepth: 1, level: "single" });
+  });
+
+  test("a sourceCount of zero is a measurement, not unknown", () => {
+    const state = confidenceState({ sourceCount: 0 });
     expect(state.kind).toBe("measured");
     expect(state).toMatchObject({ sourceCount: 0, level: "none" });
   });
 
   test("levels step at 1, 2 and 3 sources", () => {
-    expect(confidenceState({ sources: ["a"] })).toMatchObject({ level: "single" });
-    expect(confidenceState({ sources: ["a", "b"] })).toMatchObject({ level: "corroborated" });
-    expect(confidenceState({ sources: ["a", "b", "c", "d"] })).toMatchObject({
+    expect(confidenceState({ sourceCount: 1 })).toMatchObject({ level: "single" });
+    expect(confidenceState({ sourceCount: 2 })).toMatchObject({ level: "corroborated" });
+    expect(confidenceState({ sourceCount: 4 })).toMatchObject({
       level: "strong",
       sourceCount: 4,
     });
@@ -97,7 +113,7 @@ describe("confidenceState", () => {
 
   test("counts contradictions without resolving them", () => {
     const state = confidenceState({
-      sources: ["a", "b"],
+      sourceCount: 2,
       contradictions: [{ field: "valuation", values: [1, 2], recordIds: ["r1", "r2"] }],
     });
     expect(state).toMatchObject({ contradictionCount: 1 });
@@ -117,23 +133,32 @@ describe("ConfidenceMeter", () => {
   });
 
   test("a measured zero is NOT the unknown state", () => {
-    const html = renderToStaticMarkup(<ConfidenceMeter corroboration={{ sources: [] }} />);
+    const html = renderToStaticMarkup(<ConfidenceMeter corroboration={{ sourceCount: 0 }} />);
     expect(html).toContain('data-confidence="none"');
     expect(html).toContain("No sources recorded");
     expect(html).not.toContain("Not assessed");
     expect(html).not.toContain("border-dashed");
   });
 
-  test("fills one segment per distinct source, capped at three", () => {
-    const two = renderToStaticMarkup(
-      <ConfidenceMeter corroboration={{ sources: ["pals", "webs"] }} />,
+  test("a single-source production record renders as measured, not as unknown", () => {
+    // The commonest real row. If this ever reads "Not assessed" again, the
+    // corroboration type has drifted from the writer a second time.
+    const html = renderToStaticMarkup(
+      <ConfidenceMeter
+        corroboration={{ sourceCount: 1, stageDepth: 1, contradictions: [], derivedAt: "2026-07-27T06:48:27Z" }}
+      />,
     );
+    expect(html).toContain('data-confidence="single"');
+    expect(html).not.toContain("Not assessed");
+    expect(html).toContain("1 independent source");
+  });
+
+  test("fills one segment per distinct source, capped at three", () => {
+    const two = renderToStaticMarkup(<ConfidenceMeter corroboration={{ sourceCount: 2 }} />);
     expect(two.split("bg-accent").length - 1).toBe(2);
     expect(two).toContain("Corroborated");
 
-    const many = renderToStaticMarkup(
-      <ConfidenceMeter corroboration={{ sources: ["a", "b", "c", "d", "e"] }} />,
-    );
+    const many = renderToStaticMarkup(<ConfidenceMeter corroboration={{ sourceCount: 5 }} />);
     expect(many.split("bg-accent").length - 1).toBe(3);
     expect(many).toContain("5 independent sources");
   });
@@ -142,7 +167,7 @@ describe("ConfidenceMeter", () => {
     const html = renderToStaticMarkup(
       <ConfidenceMeter
         corroboration={{
-          sources: ["a", "b"],
+          sourceCount: 2,
           contradictions: [{ field: "units", values: [10, 12], recordIds: ["r1", "r2"] }],
         }}
       />,
@@ -259,5 +284,45 @@ describe("EmptyState", () => {
     );
     expect(html).toContain('data-testid="no-rows"');
     expect(html).toContain("have not run since Tuesday");
+  });
+});
+
+describe("scorePercent", () => {
+  test("maps the fixed 0-100 score scale onto the track", () => {
+    expect(scorePercent(0)).toBe(0);
+    expect(scorePercent(65)).toBe(65);
+    expect(scorePercent(100)).toBe(100);
+  });
+
+  test("clamps rather than overflowing the track", () => {
+    // The scorer clamps at 100, but a stored row predating that clamp must not
+    // paint a bar wider than its container.
+    expect(scorePercent(140)).toBe(100);
+    expect(scorePercent(-5)).toBe(0);
+  });
+});
+
+describe("ScoreBar", () => {
+  test("an unscored opportunity renders dashed and empty, never a zero-width bar", () => {
+    const html = renderToStaticMarkup(<ScoreBar score={null} />);
+    expect(html).toContain('data-score="unscored"');
+    expect(html).toContain("border-dashed");
+    // No filled element at all — a 0% fill is how "not scored" becomes "scored 0".
+    expect(html).not.toContain("width:0%");
+    expect(html).toContain("scorer has not run");
+  });
+
+  test("draws the fill at the score and ticks at the account's own thresholds", () => {
+    const html = renderToStaticMarkup(<ScoreBar score={72} priorityMin={85} digestMin={60} />);
+    expect(html).toContain("width:72%");
+    expect(html).toContain("left:60%");
+    expect(html).toContain("left:85%");
+    expect(html).toContain('data-score="72"');
+  });
+
+  test("states the thresholds in the accessible label, not just the picture", () => {
+    const html = renderToStaticMarkup(<ScoreBar score={79} priorityMin={80} digestMin={65} />);
+    expect(html).toContain("Score 79 of 100");
+    expect(html).toContain("Priority review at 80");
   });
 });
