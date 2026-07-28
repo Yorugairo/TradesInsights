@@ -33,7 +33,7 @@ export function RelationshipActions({
   }
 
   return (
-    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+    <div className="flex flex-wrap items-center gap-2">
       <select data-testid="rel-state" value={state} onChange={(e) => setState(e.target.value)}>
         {STATES.map((s) => (
           <option key={s} value={s}>

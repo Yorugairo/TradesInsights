@@ -48,7 +48,7 @@ export function ClusterDecision({
   }
 
   return (
-    <span style={{ whiteSpace: "nowrap" }}>
+    <span className="inline-flex flex-wrap items-center gap-1 whitespace-nowrap">
       {candidateProjectId && (
         <>
           <button disabled={busy} onClick={() => decide("merge")} data-testid="cluster-merge">
@@ -59,8 +59,8 @@ export function ClusterDecision({
       <button disabled={busy} onClick={() => decide("reject")} data-testid="cluster-reject">
         Reject all
       </button>{" "}
-      <input placeholder="note" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 100 }} />
-      {message && <small style={{ marginLeft: "0.3rem" }}>{message}</small>}
+      <input placeholder="note" value={note} onChange={(e) => setNote(e.target.value)} className="w-24 rounded-sm border border-line-strong bg-surface px-1.5 py-0.5 text-xs text-ink" />
+      {message && <small className="ml-1 text-ink-muted">{message}</small>}
     </span>
   );
 }
@@ -89,15 +89,15 @@ export function ReviewDecision({ reviewId }: { reviewId: string }) {
   }
 
   return (
-    <span style={{ whiteSpace: "nowrap" }}>
+    <span className="inline-flex flex-wrap items-center gap-1 whitespace-nowrap">
       <button disabled={busy} onClick={() => decide("merge")}>
         Merge
       </button>{" "}
       <button disabled={busy} onClick={() => decide("reject")}>
         Reject
       </button>{" "}
-      <input placeholder="note" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 120 }} />
-      {error && <small style={{ color: "crimson", marginLeft: "0.3rem" }}>{error}</small>}
+      <input placeholder="note" value={note} onChange={(e) => setNote(e.target.value)} className="w-28 rounded-sm border border-line-strong bg-surface px-1.5 py-0.5 text-xs text-ink" />
+      {error && <small className="ml-1 font-semibold text-bad">{error}</small>}
     </span>
   );
 }

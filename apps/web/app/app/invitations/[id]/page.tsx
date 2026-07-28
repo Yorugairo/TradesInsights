@@ -43,7 +43,7 @@ export default async function InvitationDetailPage({ params }: { params: Promise
               <td style={cell}>{fmtDate(e.createdAt)}</td>
               <td style={cell}>{e.eventType}</td>
               <td style={cell}>
-                <code style={{ fontSize: "0.8rem" }}>{JSON.stringify(e.metadata)}</code>
+                <code className="text-xs text-ink-muted">{JSON.stringify(e.metadata)}</code>
               </td>
             </tr>
           ))}

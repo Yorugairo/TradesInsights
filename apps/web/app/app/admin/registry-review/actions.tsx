@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReviewTier } from "@otn/resolution";
-import { cell } from "../../../../lib/ui.js";
+import Table, { HeadTr, Td, Th, Tr } from "../../../../components/ui/Table.js";
+
+/** Shared control styling for this queue's dense button rows. */
+const BTN =
+  "inline-flex items-center rounded-sm border border-line-strong bg-surface px-2 py-0.5 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * Registry review — interactive gate. Batch is a CLIENT-SIDE SEQUENTIAL loop
@@ -90,11 +94,19 @@ const TIER_BUTTON_LABELS: Record<ReviewTier, string> = {
   tier3: "Low · inspect",
 };
 
-/** Tier badge palette (green → amber → gray, highest → lowest). */
-const TIER_STYLE: Record<ReviewTier, { bg: string; fg: string }> = {
-  tier1: { bg: "#e6f4ea", fg: "#137333" },
-  tier2: { bg: "#fef7e0", fg: "#a67c00" },
-  tier3: { bg: "#f1f3f4", fg: "#5f6368" },
+/**
+ * Tier badge palette (green → amber → gray, highest → lowest).
+ *
+ * Outlines, not pastel fills. The previous values (#e6f4ea / #fef7e0 / #f1f3f4)
+ * were authored for a white page and rendered as near-white pills with pale
+ * text once the register went dark — the same contrast failure `lib/ui`'s Badge
+ * had. Status colours are legible as TEXT in both registers; a tinted fill would
+ * need a separate foreground per register to stay above AA.
+ */
+const TIER_CLASS: Record<ReviewTier, string> = {
+  tier1: "border-ok text-ok",
+  tier2: "border-warn text-warn",
+  tier3: "border-line-strong text-ink-muted",
 };
 
 type RowState = "accepted" | "rejected" | "skipped" | { error: string };
@@ -156,15 +168,24 @@ function Evidence({ e }: { e: EvidenceView }) {
   if (e.localities.length) lines.push(`in ${e.localities.slice(0, 3).join(", ")}`);
   if (e.roleRecords) lines.push(`${e.roleRecords} role records`);
   return (
-    <small style={{ display: "block", lineHeight: 1.4 }}>
+    <span className="block text-xs leading-relaxed">
       {lines.map((l, i) => (
-        <div key={i}>{l}</div>
+        <span key={i} className="block">
+          {l}
+        </span>
       ))}
-    </small>
+    </span>
   );
 }
 
-const FOCUS_BG = "#eef6ff";
+/**
+ * Keyboard-focus row highlight.
+ *
+ * Was `#eef6ff` — a near-white wash that, on the dark register, painted the
+ * focused row almost the same colour as its own light text. The row an operator
+ * is steering with j/k was the one row they could not read.
+ */
+const FOCUS_ROW_CLASS = "bg-surface-raised";
 
 export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
   const router = useRouter();
@@ -286,35 +307,47 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
   return (
     <>
       <div
-        style={{
-          display: "flex",
-          gap: "0.75rem",
-          alignItems: "center",
-          margin: "0.5rem 0",
-          padding: "0.4rem 0.6rem",
-          background: "#f6f6f6",
-          borderRadius: 4,
-        }}
+        className="mb-3 flex flex-wrap items-center gap-3 rounded-sm border border-line bg-surface-raised px-3 py-2"
         data-testid="batch-bar"
       >
-        <strong>{selected.size} selected</strong>
-        <button disabled={busy || selected.size === 0} onClick={() => void runBatch("accept")} data-testid="batch-accept">
+        <strong className="text-ink">{selected.size} selected</strong>
+        <button
+          className={BTN}
+          disabled={busy || selected.size === 0}
+          onClick={() => void runBatch("accept")}
+          data-testid="batch-accept"
+        >
           Accept selected
         </button>
-        <button disabled={busy || selected.size === 0} onClick={() => void runBatch("reject")} data-testid="batch-reject">
+        <button
+          className={BTN}
+          disabled={busy || selected.size === 0}
+          onClick={() => void runBatch("reject")}
+          data-testid="batch-reject"
+        >
           Reject selected
         </button>
-        <span style={{ color: "#ccc" }}>|</span>
-        <small style={{ color: "#666" }}>group:</small>
+        <span aria-hidden className="text-line-strong">
+          |
+        </span>
+        <span className="text-xs text-ink-muted">group:</span>
         {(["tier1", "tier2", "tier3"] as ReviewTier[])
           .filter((t) => (tierCounts.get(t) ?? 0) > 0)
           .map((t) => (
-            <button key={t} disabled={busy} onClick={() => selectTier(t)} data-testid={`select-${t}`} title={`Select all ${tierCounts.get(t)} ${t} candidates`}>
+            <button
+              key={t}
+              className={BTN}
+              disabled={busy}
+              onClick={() => selectTier(t)}
+              data-testid={`select-${t}`}
+              title={`Select all ${tierCounts.get(t)} ${t} candidates`}
+            >
               {TIER_BUTTON_LABELS[t]} ({tierCounts.get(t)})
             </button>
           ))}
         {googleConfirmedRows.length > 0 && (
           <button
+            className={BTN}
             disabled={busy}
             onClick={() =>
               setSelected(new Set(googleConfirmedRows.map((r) => r.id)))
@@ -327,6 +360,7 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
         )}
         {primaryContractorRows.length > 0 && (
           <button
+            className={BTN}
             disabled={busy}
             onClick={() =>
               setSelected(new Set(primaryContractorRows.map((r) => r.id)))
@@ -337,15 +371,18 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
             Primary contractor ({primaryContractorRows.length})
           </button>
         )}
-        {progress && <small style={{ color: "#555" }}>{progress}</small>}
-        <small style={{ color: "#999", marginLeft: "auto" }}>
-          keys: <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>x</kbd> select · <kbd>a</kbd>/<kbd>r</kbd> decide
-        </small>
+        {progress && <span className="text-xs text-ink-muted">{progress}</span>}
+        <span className="ml-auto text-xs text-ink-subtle">
+          keys: <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>x</kbd> select · <kbd>a</kbd>/<kbd>r</kbd>{" "}
+          decide
+        </span>
       </div>
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9rem" }} data-testid="registry-observations-table">
-        <thead>
-          <tr>
-            <th style={cell}>
+      <Table
+        data-testid="registry-observations-table"
+        caption="Pending registry observations"
+        head={
+          <HeadTr>
+            <Th>
               <input
                 type="checkbox"
                 checked={allVisibleSelected}
@@ -353,90 +390,89 @@ export function RegistryReviewTable({ rows }: { rows: ReviewRow[] }) {
                 aria-label="select all"
                 data-testid="select-all"
               />
-            </th>
-            <th style={cell}>Trust</th>
-            <th style={cell}>Tier</th>
-            <th style={cell}>Type</th>
-            <th style={cell}>Suggestion</th>
-            <th style={cell}>Rule</th>
-            <th style={cell}>Evidence</th>
-            <th style={cell}>Decision</th>
-          </tr>
-        </thead>
-        <tbody>
+            </Th>
+            <Th numeric>Trust</Th>
+            <Th>Tier</Th>
+            <Th>Type</Th>
+            <Th>Suggestion</Th>
+            <Th>Rule</Th>
+            <Th>Evidence</Th>
+            <Th>Decision</Th>
+          </HeadTr>
+        }
+      >
           {rows.map((o, idx) => {
             const state = result[o.id];
             const focused = idx === focus;
             return (
-              <tr
+              <Tr
                 key={o.id}
-                style={focused ? { background: FOCUS_BG } : undefined}
-                onClick={() => setFocus(idx)}
+                className={focused ? FOCUS_ROW_CLASS : ""}
                 data-testid="obs-row"
               >
-                <td style={cell}>
+                <Td>
                   <input
                     type="checkbox"
                     checked={selected.has(o.id)}
                     onChange={() => toggle(o.id)}
                     aria-label={`select ${o.id}`}
                   />
-                </td>
-                <td style={cell}>
+                </Td>
+                <Td numeric>
                   <strong>{o.trustScore.toFixed(2)}</strong>
-                </td>
-                <td style={cell}>
+                </Td>
+                <Td>
                   <span
                     title={o.tierReason}
-                    style={{
-                      background: TIER_STYLE[o.tier].bg,
-                      color: TIER_STYLE[o.tier].fg,
-                      padding: "1px 6px",
-                      borderRadius: 10,
-                      fontSize: "0.72rem",
-                      whiteSpace: "nowrap",
-                    }}
+                    className={`inline-flex whitespace-nowrap rounded-full border px-1.5 py-px text-2xs ${TIER_CLASS[o.tier]}`}
                   >
                     {o.tierLabel}
                   </span>
-                </td>
-                <td style={cell}>{o.observationType.replace(/_/g, " ")}</td>
-                <td style={cell}>{o.suggestion}</td>
-                <td style={cell}>
-                  <code>{o.ruleKey}</code>
-                </td>
-                <td style={cell}>
-                  {o.evidence ? <Evidence e={o.evidence} /> : <small>{o.components}</small>}
-                </td>
-                <td style={cell}>
-                  {state === "accepted" || state === "rejected" || state === "skipped" ? (
-                    <small style={{ color: state === "skipped" ? "#a67c00" : "#137333" }}>{state}</small>
+                </Td>
+                <Td>{o.observationType.replace(/_/g, " ")}</Td>
+                <Td>{o.suggestion}</Td>
+                <Td>
+                  <code className="text-ink-muted">{o.ruleKey}</code>
+                </Td>
+                <Td>
+                  {o.evidence ? (
+                    <Evidence e={o.evidence} />
                   ) : (
-                    <span style={{ whiteSpace: "nowrap" }}>
-                      <button disabled={busy} onClick={() => void decideOne(o.id, "accept")} data-testid="obs-accept">
+                    <span className="text-xs text-ink-muted">{o.components}</span>
+                  )}
+                </Td>
+                <Td>
+                  {state === "accepted" || state === "rejected" || state === "skipped" ? (
+                    <span
+                      className={`text-xs font-semibold ${state === "skipped" ? "text-warn" : "text-ok"}`}
+                    >
+                      {state}
+                    </span>
+                  ) : (
+                    <span className="inline-flex gap-1 whitespace-nowrap">
+                      <button className={BTN} disabled={busy} onClick={() => void decideOne(o.id, "accept")} data-testid="obs-accept">
                         Accept
-                      </button>{" "}
-                      <button disabled={busy} onClick={() => void decideOne(o.id, "reject")} data-testid="obs-reject">
+                      </button>
+                      <button className={BTN} disabled={busy} onClick={() => void decideOne(o.id, "reject")} data-testid="obs-reject">
                         Reject
                       </button>
                       {state && typeof state === "object" && (
-                        <small style={{ color: "crimson", marginLeft: "0.3rem" }}>{state.error}</small>
+                        <span className="text-xs font-semibold text-bad">{state.error}</span>
                       )}
                     </span>
                   )}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             );
           })}
           {rows.length === 0 && (
-            <tr>
-              <td style={cell} colSpan={8}>
+            <Tr>
+              <Td className="text-ink-muted">
                 Queue is empty — the nightly pass regenerates it when the registry connection is configured.
-              </td>
-            </tr>
+              </Td>
+            </Tr>
           )}
-        </tbody>
-      </table>
+      </Table>
     </>
   );
 }

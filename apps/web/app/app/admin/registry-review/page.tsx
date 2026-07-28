@@ -6,9 +6,11 @@ import {
   loadPrimaryContractorOrgIds,
   type ReviewTier,
 } from "@otn/resolution";
+import PageHeader from "../../../../components/ui/PageHeader.js";
+import Panel from "../../../../components/ui/Panel.js";
+import Table, { Td, Tr } from "../../../../components/ui/Table.js";
 import { currentSession } from "../../../../lib/auth.js";
 import { db } from "../../../../lib/db.js";
-import { cell, table } from "../../../../lib/ui.js";
 import { RegistryReviewTable, type EvidenceView, type ReviewRow } from "./actions.js";
 
 export const dynamic = "force-dynamic";
@@ -92,73 +94,89 @@ export default async function RegistryReviewPage({
   };
 
   return (
-    <main style={{ padding: "1rem", maxWidth: 1100 }}>
-      <p>
-        <Link href="/app/admin/cockpit">← cockpit</Link>
-        {" · "}
-        <Link href="/app/admin/review">← resolution review</Link>
-        {" · "}
-        <Link href="/app/admin/corporate-families">corporate families →</Link>
-      </p>
-      <h1>Registry review — One Trade Network seam</h1>
-      <p style={{ color: "#666" }}>
-        Top pending observations by deterministic trust. <strong>Accept</strong> applies immediately:
-        a binding stamps the organization&apos;s registry identity; a phone adoption becomes a
-        customer-visible contact; alias/trade rows queue for the nightly export to the registry.
-        Every decision updates that rule&apos;s accept history, so scoring sharpens each pass.
+    <main>
+      <p className="mb-2 flex flex-wrap gap-2 text-sm text-ink-muted">
+        <Link href="/app/admin/cockpit" className="underline">
+          ← cockpit
+        </Link>
+        <span aria-hidden>·</span>
+        <Link href="/app/admin/review" className="underline">
+          ← resolution review
+        </Link>
+        <span aria-hidden>·</span>
+        <Link href="/app/admin/corporate-families" className="underline">
+          corporate families →
+        </Link>
       </p>
 
-      <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", margin: "0.5rem 0" }}>
-        <span style={{ color: "#666" }}>Window: {fetched.length} of ≤{MAX_LIMIT}</span>
-        <span>·</span>
+      <PageHeader
+        title="Registry review — One Trade Network seam"
+        description="Top pending observations by deterministic trust. Accept applies immediately: a binding stamps the organization's registry identity; a phone adoption becomes a customer-visible contact; alias/trade rows queue for the nightly export to the registry. Every decision updates that rule's accept history, so scoring sharpens each pass."
+      />
+
+      <div className="mb-1 flex flex-wrap items-center gap-3 text-sm">
+        <span className="text-ink-muted">
+          Window: {fetched.length} of ≤{MAX_LIMIT}
+        </span>
+        <span aria-hidden className="text-ink-subtle">
+          ·
+        </span>
         {[50, 100, 200].map((n) => (
-          <Link key={n} href={`?limit=${n}${rule ? `&rule=${rule}` : ""}`} style={{ fontWeight: n === limit ? 700 : 400 }}>
+          <Link
+            key={n}
+            href={`?limit=${n}${rule ? `&rule=${rule}` : ""}`}
+            aria-current={n === limit ? "page" : undefined}
+            className={n === limit ? "font-bold text-ink" : "text-ink-muted underline"}
+          >
             limit {n}
           </Link>
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", margin: "0.25rem 0 0.75rem" }}>
-        <small style={{ color: "#666" }}>Rules (of window):</small>
-        <Link href={linkFor(null)} style={{ fontWeight: rule ? 400 : 700 }}>
-          <small>all {fetched.length}</small>
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-ink-muted">Rules (of window):</span>
+        <Link
+          href={linkFor(null)}
+          aria-current={rule ? undefined : "page"}
+          className={rule ? "text-ink-muted underline" : "font-bold text-ink"}
+        >
+          all {fetched.length}
         </Link>
         {rulePresets.map(([r, n]) => (
-          <Link key={r} href={linkFor(r)} style={{ fontWeight: rule === r ? 700 : 400 }}>
-            <small>
-              <code>{r}</code> {n}
-            </small>
+          <Link
+            key={r}
+            href={linkFor(r)}
+            aria-current={rule === r ? "page" : undefined}
+            className={rule === r ? "font-bold text-ink" : "text-ink-muted underline"}
+          >
+            <code>{r}</code> {n}
           </Link>
         ))}
       </div>
 
-      <h2>
-        Pending — {rows.length} shown{rule ? ` (rule ${rule})` : ""}
-      </h2>
-      <RegistryReviewTable rows={rows} />
+      <Panel title={`Pending — ${rows.length} shown${rule ? ` (rule ${rule})` : ""}`}>
+        <RegistryReviewTable rows={rows} />
+      </Panel>
 
-      <h2>Recently accepted</h2>
-      <table style={table}>
-        <tbody>
+      <Panel title="Recently accepted">
+        <Table caption="Recently accepted registry observations">
           {recent.map((o) => (
-            <tr key={o.id}>
-              <td style={cell}>{o.trustScore.toFixed(2)}</td>
-              <td style={cell}>{o.observationType.replace(/_/g, " ")}</td>
-              <td style={cell}>{describe(o)}</td>
-              <td style={cell}>
-                <small>{o.decidedBy}</small>
-              </td>
-            </tr>
+            <Tr key={o.id}>
+              <Td numeric>{o.trustScore.toFixed(2)}</Td>
+              <Td>{o.observationType.replace(/_/g, " ")}</Td>
+              <Td>{describe(o)}</Td>
+              <Td className="text-xs text-ink-muted">{o.decidedBy}</Td>
+            </Tr>
           ))}
           {recent.length === 0 && (
-            <tr>
-              <td style={cell} colSpan={4}>
-                Nothing accepted yet.
-              </td>
-            </tr>
+            <Tr>
+              <Td className="text-ink-muted">
+                Nothing accepted yet — no observation on this seam has been decided.
+              </Td>
+            </Tr>
           )}
-        </tbody>
-      </table>
+        </Table>
+      </Panel>
     </main>
   );
 }

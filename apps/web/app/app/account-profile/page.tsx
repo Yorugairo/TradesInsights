@@ -30,9 +30,9 @@ export default async function AccountProfilePage() {
   const rules = await accountRules(db(), account.id);
 
   return (
-    <main style={{ padding: "1rem", maxWidth: 900 }}>
-      <h1 style={{ marginBottom: "0.2rem" }}>Your profile</h1>
-      <p style={{ color: "#666", margin: "0 0 1rem" }}>
+    <main className="max-w-[56rem]">
+      <h1 className="text-2xl font-semibold text-ink">Your profile</h1>
+      <p className="mb-4 max-w-[70ch] text-sm text-ink-muted">
         How <strong>{account.name}</strong>&apos;s feed is tuned, and what each setting changes.
       </p>
 
@@ -76,8 +76,8 @@ function Setting({
 }) {
   return (
     <section style={panel}>
-      <h2 style={{ margin: 0, fontSize: "1.05rem" }}>{title}</h2>
-      <div style={{ margin: "0.5rem 0 0" }}>{children}</div>
+      <h2 className="text-base font-semibold text-ink">{title}</h2>
+      <div className="mt-2">{children}</div>
       <p style={effectStyle}>{effect}</p>
     </section>
   );
@@ -86,14 +86,14 @@ function Setting({
 function Empty({ what }: { what: string }) {
   // Never render an empty section as if it were configured-and-blank; an unset
   // setting and a setting set to nothing mean different things to a customer.
-  return <span style={{ color: "#999" }}>No {what} configured.</span>;
+  return <span className="text-ink-subtle">No {what} configured.</span>;
 }
 
 function Orientation() {
   return (
-    <details open style={{ ...panel, background: "#fafafa" }}>
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>How these settings get changed</summary>
-      <p style={{ color: "#444", fontSize: "0.9rem", margin: "0.5rem 0 0" }}>
+    <details open className="my-3 rounded-md border border-line bg-surface-raised px-4 py-3">
+      <summary className="cursor-pointer font-semibold text-ink">How these settings get changed</summary>
+      <p className="mt-2 max-w-[70ch] text-sm text-ink-muted">
         This page is read-only. Anything here changes only in a calibration conversation, and every
         change is versioned and dated — so a shift in what you receive can always be traced back to
         something you actually asked for. If a setting looks wrong, say so and it gets changed with a
@@ -123,7 +123,7 @@ function TerritorySection({ territory }: { territory: unknown }) {
       {included.length === 0 ? (
         <Empty what="territory" />
       ) : (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+        <div className="flex flex-wrap gap-1.5">
           {included.map((c) => (
             <Badge key={c} tone="green">
               {c}
@@ -137,7 +137,7 @@ function TerritorySection({ territory }: { territory: unknown }) {
         </div>
       )}
       {t.notes && (
-        <p style={{ color: "#666", fontSize: "0.85rem", margin: "0.5rem 0 0" }}>{t.notes}</p>
+        <p className="mt-2 text-sm text-ink-muted">{t.notes}</p>
       )}
     </Setting>
   );
@@ -153,7 +153,7 @@ function CapabilitiesSection({ capabilities }: { capabilities: unknown }) {
       {list.length === 0 ? (
         <Empty what="trades" />
       ) : (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+        <div className="flex flex-wrap gap-1.5">
           {list.map((c) => (
             <Badge key={c} tone="gray">
               {c.replace(/_/g, " ")}
@@ -176,7 +176,7 @@ function ThresholdsSection({ delivery }: { delivery: AccountView["delivery"] }) 
       {priority === undefined && digest === undefined ? (
         <Empty what="thresholds" />
       ) : (
-        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.92rem" }}>
+        <ul className="list-disc pl-4 text-sm text-ink">
           {priority !== undefined && (
             <li>
               Scores <strong>{priority} and above</strong> reach you as priority.
@@ -191,7 +191,7 @@ function ThresholdsSection({ delivery }: { delivery: AccountView["delivery"] }) 
             </li>
           )}
           {digest !== undefined && (
-            <li style={{ color: "#666" }}>Below {digest} we track it, but do not send it.</li>
+            <li className="text-ink-muted">Below {digest} we track it, but do not send it.</li>
           )}
         </ul>
       )}
@@ -209,7 +209,7 @@ function EasyWinSection({ easyWin }: { easyWin: AccountView["delivery"]["easy_wi
       title="⚡ Winnable now"
       effect="These rules decide the short list at the top of your digest — the jobs close enough, recent enough, and the right size to act on today."
     >
-      <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.92rem" }}>
+      <ul className="list-disc pl-4 text-sm text-ink">
         {bands && bands.length > 0 ? (
           <li>
             Ordered by distance, nearest first:{" "}
@@ -254,7 +254,7 @@ function ExclusionsSection({ exclusions }: { exclusions: unknown }) {
       title="Never show me these"
       effect="Hard filters. Anything matching is removed before scoring — it will not appear in any digest."
     >
-      <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.92rem" }}>
+      <ul className="list-disc pl-4 text-sm text-ink">
         {list.map((e) => (
           <li key={e}>{e}</li>
         ))}
@@ -292,21 +292,21 @@ function RulesSection({
   if (rules.length === 0) return null;
   return (
     <section style={panel}>
-      <h2 style={{ margin: 0, fontSize: "1.05rem" }}>Routing rules</h2>
-      <p style={{ color: "#666", fontSize: "0.85rem", margin: "0.25rem 0 0.6rem" }}>
+      <h2 className="text-base font-semibold text-ink">Routing rules</h2>
+      <p className="mb-2 mt-1 max-w-[70ch] text-sm text-ink-muted">
         Rules are append-only — an edit creates a new version rather than overwriting the old one, so
         the history of what your feed did and when stays intact.
       </p>
       {rules.map((r) => (
-        <details key={r.ruleType} style={{ marginBottom: "0.4rem" }}>
-          <summary style={{ cursor: "pointer" }}>
+        <details key={r.ruleType} className="mb-2">
+          <summary className="cursor-pointer text-ink">
             <strong>{r.ruleType.replace(/_/g, " ")}</strong>{" "}
-            <span style={{ color: "#999" }}>
+            <span className="text-ink-subtle">
               v{r.version} · in effect since {fmtDate(r.effectiveAt)}
             </span>
           </summary>
           {RULE_MEANING[r.ruleType] && (
-            <p style={{ ...effectStyle, marginTop: "0.4rem" }}>{RULE_MEANING[r.ruleType]}</p>
+            <p style={effectStyle} className="mt-2">{RULE_MEANING[r.ruleType]}</p>
           )}
           <RuleBody rule={r.rule} />
         </details>
@@ -329,11 +329,11 @@ function RuleBody({ rule }: { rule: unknown }) {
   if (!readable) return <pre style={preStyle}>{JSON.stringify(rule, null, 2)}</pre>;
 
   return (
-    <dl style={{ margin: "0.4rem 0 0", fontSize: "0.9rem" }}>
+    <dl className="mt-2 text-sm">
       {entries.map(([k, v]) => (
-        <div key={k} style={{ marginBottom: "0.35rem" }}>
-          <dt style={{ fontWeight: 600 }}>{k.replace(/_/g, " ")}</dt>
-          <dd style={{ margin: "0.1rem 0 0 1rem", color: "#444" }}>
+        <div key={k} className="mb-1.5">
+          <dt className="font-semibold text-ink">{k.replace(/_/g, " ")}</dt>
+          <dd className="ml-4 mt-0.5 text-ink-muted">
             {Array.isArray(v) ? v.map((i) => String(i).replace(/_/g, " ")).join(", ") : String(v)}
           </dd>
         </div>

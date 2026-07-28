@@ -38,10 +38,10 @@ export default async function GooglePlaceReviewPage({
   const pool = createRegistryPool();
   if (!pool) {
     return (
-      <main style={{ padding: "1rem", maxWidth: 1200 }}>
+      <main>
         <Crumbs />
         <h1>Google Place review</h1>
-        <p style={{ color: "#a00" }}>
+        <p className="font-semibold text-bad">
           REGISTRY_DATABASE_URL is not set — the registry seam is offline.
         </p>
       </main>
@@ -55,17 +55,18 @@ export default async function GooglePlaceReviewPage({
   const blockedTotal = blocked.reduce((n, b) => n + b.count, 0);
 
   return (
-    <main style={{ padding: "1rem", maxWidth: 1200 }}>
+    <main>
       <Crumbs />
       <h1>Google Place review — is this Google listing this contractor?</h1>
 
       <Orientation />
 
-      <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", margin: "0.5rem 0" }}>
-        <span style={{ color: "#666" }}>{rows.length} actionable shown</span>
+      <div className="my-2 flex flex-wrap items-center gap-3 text-sm">
+        <span className="text-ink-muted">{rows.length} actionable shown</span>
         <span>·</span>
         {[50, 100, 500].map((n) => (
-          <Link key={n} href={`?limit=${n}`} style={{ fontWeight: n === limit ? 700 : 400 }}>
+          <Link key={n} href={`?limit=${n}`} aria-current={n === limit ? "page" : undefined}
+            className={n === limit ? "font-bold text-ink" : "text-ink-muted underline"}>
             limit {n}
           </Link>
         ))}
@@ -75,13 +76,13 @@ export default async function GooglePlaceReviewPage({
           server-rendered table cannot hold shared checkbox state. */}
       <PlaceReviewTable rows={rows} />
       {rows.length === 0 && blockedTotal > 0 && (
-        <p style={{ color: "#666" }}>
+        <p className="max-w-[70ch] text-sm text-ink-muted">
           {blockedTotal.toLocaleString()} pending rows are not human decisions yet — see below.
         </p>
       )}
 
       <h2>Not human decisions yet — {blockedTotal.toLocaleString()} pending</h2>
-      <p style={{ color: "#666", marginTop: 0 }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         These are counted, never hidden. If a reason string drifts registry-side its rows land
         here instead of silently becoming your work — so a number moving in this table is the
         signal to re-check the contract view.
@@ -95,7 +96,7 @@ export default async function GooglePlaceReviewPage({
                   {b.reviewState.replace(/_/g, " ")}
                 </Badge>
               </td>
-              <td style={{ ...cell, fontWeight: 600 }}>{b.count.toLocaleString()}</td>
+              <td style={cell} className="font-semibold">{b.count.toLocaleString()}</td>
               <td style={cell}>
                 <small>{b.reason}</small>
               </td>
@@ -129,21 +130,21 @@ function Orientation() {
   return (
     <details
       open
-      style={{ border: "1px solid #ddd", borderRadius: 6, padding: "0.6rem 0.8rem", margin: "0.75rem 0" }}
+      className="my-3 rounded-md border border-line bg-surface px-4 py-3"
     >
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>What am I looking at?</summary>
-      <div style={{ color: "#444", fontSize: "0.9rem", marginTop: "0.5rem" }}>
-        <p style={{ margin: "0.3rem 0" }}>
+      <summary className="cursor-pointer font-semibold text-ink">What am I looking at?</summary>
+      <div className="mt-2 flex flex-col gap-2 text-sm text-ink-muted">
+        <p>
           Each row pairs one <strong>WA L&amp;I licensed contractor</strong> with one{" "}
           <strong>Google Maps listing</strong> a scraper thought might be the same business. You are
           judging exactly one thing: <em>is this listing that contractor?</em>
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Compare the address first — it is the strongest signal. A different phone is common and
           weak evidence on its own (businesses change numbers; L&amp;I registrations go stale). A
           different <em>address</em> usually means a different business.
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Your decision is <strong>queued for the registry</strong>, not applied here — the registry
           owns this queue and applies decisions itself, so a row someone else already resolved is
           never overwritten. L&amp;I remains the identity and phone authority throughout.

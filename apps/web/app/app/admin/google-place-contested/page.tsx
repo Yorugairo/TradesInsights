@@ -35,10 +35,10 @@ export default async function GooglePlaceContestedPage() {
   const pool = createRegistryPool();
   if (!pool) {
     return (
-      <main style={{ padding: "1rem", maxWidth: 1200 }}>
+      <main>
         <Crumbs />
         <h1>Contested Google listings</h1>
-        <p style={{ color: "#a00" }}>
+        <p className="font-semibold text-bad">
           REGISTRY_DATABASE_URL is not set — the registry seam is offline.
         </p>
       </main>
@@ -51,13 +51,13 @@ export default async function GooglePlaceContestedPage() {
   const mislabelled = groups.filter((g) => !g.isRealConflict);
 
   return (
-    <main style={{ padding: "1rem", maxWidth: 1200 }}>
+    <main>
       <Crumbs />
       <h1>Contested Google listings — which business owns this listing?</h1>
 
       <Orientation />
 
-      <p style={{ color: "#666" }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         <strong>{conflicts.length.toLocaleString()}</strong> genuine conflict
         {conflicts.length === 1 ? "" : "s"} to decide, from {rows.length.toLocaleString()} held-back
         link{rows.length === 1 ? "" : "s"} across {groups.length.toLocaleString()} listing
@@ -66,15 +66,15 @@ export default async function GooglePlaceContestedPage() {
 
       <h2>Genuine conflicts — {conflicts.length.toLocaleString()}</h2>
       {conflicts.length === 0 ? (
-        <p style={{ color: "#666" }}>No listing is claimed by more than one business.</p>
+        <p className="text-sm text-ink-muted">No listing is claimed by more than one business.</p>
       ) : (
         conflicts.map((g) => (
-          <section key={g.googlePlaceId} style={{ margin: "1rem 0" }}>
-            <h3 style={{ marginBottom: "0.25rem" }}>
+          <section key={g.googlePlaceId} className="my-4">
+            <h3 className="mb-1 text-base font-semibold text-ink">
               {g.scrapedName ?? "(listing has no name)"}{" "}
               <Badge tone="amber">{g.claimants.length} claimants</Badge>
             </h3>
-            <p style={{ margin: "0 0 0.4rem", color: "#666", fontSize: "0.9rem" }}>
+            <p className="mb-2 text-sm text-ink-muted">
               Google listing phone {g.scrapedPhone ?? "—"} · place id <code>{g.googlePlaceId}</code>
               {g.profileUrl && (
                 <>
@@ -97,7 +97,7 @@ export default async function GooglePlaceContestedPage() {
               <tbody>
                 {g.claimants.map((c) => (
                   <tr key={`${c.entityId}:${c.lniLicenseNumber ?? ""}`}>
-                    <td style={{ ...cell, fontWeight: 600 }}>{c.lniName ?? c.entityName ?? "—"}</td>
+                    <td style={cell} className="font-semibold">{c.lniName ?? c.entityName ?? "—"}</td>
                     <td style={cell}>{c.lniPhone ?? "—"}</td>
                     <td style={cell}>
                       <small>{c.lniLicenseNumber ?? "—"}</small>
@@ -119,7 +119,7 @@ export default async function GooglePlaceContestedPage() {
         Not a conflict — {mislabelled.length.toLocaleString()} listing
         {mislabelled.length === 1 ? "" : "s"}
       </h2>
-      <p style={{ color: "#666", marginTop: 0 }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         One business, several L&amp;I licences, its own listing. These are held back as{" "}
         <code>not_public_pending_review</code> by a scorer defect that counted licences instead of
         businesses. The scorer is fixed, but the fix does not heal rows already written — these are
@@ -151,7 +151,7 @@ export default async function GooglePlaceContestedPage() {
         </tbody>
       </table>
       {mislabelled.length > 200 && (
-        <p style={{ color: "#666" }}>
+        <p className="max-w-[70ch] text-sm text-ink-muted">
           Showing the first 200 of {mislabelled.length.toLocaleString()}.
         </p>
       )}
@@ -176,21 +176,21 @@ function Orientation() {
   return (
     <details
       open
-      style={{ border: "1px solid #ddd", borderRadius: 6, padding: "0.6rem 0.8rem", margin: "0.75rem 0" }}
+      className="my-3 rounded-md border border-line bg-surface px-4 py-3"
     >
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>What am I looking at?</summary>
-      <div style={{ color: "#444", fontSize: "0.9rem", marginTop: "0.5rem" }}>
-        <p style={{ margin: "0.3rem 0" }}>
+      <summary className="cursor-pointer font-semibold text-ink">What am I looking at?</summary>
+      <div className="mt-2 flex flex-col gap-2 text-sm text-ink-muted">
+        <p>
           Each section is <strong>one Google Maps listing</strong> that{" "}
           <strong>more than one WA L&amp;I contractor</strong> matched on both phone and name. A
           listing cannot belong to two companies, so at most one claimant is right.
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Compare each claimant&apos;s L&amp;I name and phone against the listing. A shared phone is
           common between related companies and is weak on its own; the <em>name</em> is the
           independent signal here, which is why these reached this page at all.
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Nothing is decided here. These links are held back from every public surface until the
           registry resolves them — this page exists so the conflict is visible rather than silently
           pending.

@@ -40,7 +40,7 @@ export default async function FeedbackPage() {
           </>
         )}
       </p>
-      <p style={{ color: "#666" }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         Feedback informs the next rule version; rules are only ever changed by an explicit,
         versioned edit — never automatically.
       </p>

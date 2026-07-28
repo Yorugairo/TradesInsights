@@ -150,7 +150,7 @@ export function PlaceReviewTable({ rows }: { rows: GooglePlaceReviewRow[] }) {
   return (
     <>
       <div style={barStyle} data-testid="place-batch-bar">
-        <label style={{ fontSize: "0.85rem" }}>
+        <label className="text-sm text-ink-muted">
           <input
             type="checkbox"
             checked={allSelected}
@@ -165,12 +165,12 @@ export function PlaceReviewTable({ rows }: { rows: GooglePlaceReviewRow[] }) {
             type="button"
             onClick={() => setSelected(new Set(addressMatches.map((r) => r.reviewId)))}
             title="The address is the strongest signal on this queue"
-            style={{ fontSize: "0.8rem" }}
+            className="rounded-sm border border-line-strong bg-surface px-2 py-0.5 text-xs font-semibold text-ink disabled:opacity-50"
           >
             select {addressMatches.length} address matches
           </button>
         )}
-        <strong style={{ fontSize: "0.85rem" }}>{selectedRows.length} selected</strong>
+        <strong className="text-sm text-ink">{selectedRows.length} selected</strong>
         {RESOLUTIONS.map((r) => (
           <button
             key={r}
@@ -179,13 +179,13 @@ export function PlaceReviewTable({ rows }: { rows: GooglePlaceReviewRow[] }) {
             onClick={() => void runBatch(r)}
             title={TITLE[r]}
             data-testid={`place-batch-${r}`}
-            style={{ fontSize: "0.8rem" }}
+            className="rounded-sm border border-line-strong bg-surface px-2 py-0.5 text-xs font-semibold text-ink disabled:opacity-50"
           >
             {LABEL[r]} selected
           </button>
         ))}
-        {progress && <small style={{ color: "#666" }}>{progress}</small>}
-        <small style={{ color: "#888", marginLeft: "auto" }}>j/k move · x select</small>
+        {progress && <small className="text-ink-muted">{progress}</small>}
+        <small className="ml-auto text-ink-subtle">j/k move · x select</small>
       </div>
 
       <table style={table} data-testid="google-place-table">
@@ -264,7 +264,7 @@ function PlaceRow({
       <td style={cell}>
         <strong>{row.lni.businessName ?? row.entityName ?? "—"}</strong>
         <br />
-        <small style={{ color: "#666" }}>
+        <small className="text-ink-muted">
           {row.lni.licenseNumber ?? "no licence"}
           {row.lni.licenseType ? ` · ${row.lni.licenseType}` : ""}
           {row.ubi ? ` · UBI ${row.ubi}` : ""}
@@ -275,25 +275,25 @@ function PlaceRow({
           {row.lni.city ? `, ${row.lni.city}` : ""} {row.lni.zip ?? ""}
         </small>
         <br />
-        <small style={{ color: "#666" }}>{row.lni.phone ?? "no phone"}</small>
+        <small className="text-ink-muted">{row.lni.phone ?? "no phone"}</small>
       </td>
       <td style={cell}>
         <strong>{row.google.name ?? "—"}</strong>
         {row.google.rating !== null && (
-          <small style={{ color: "#666" }}>
+          <small className="text-ink-muted">
             {" "}
             ★ {row.google.rating}
             {row.google.reviewCount !== null ? ` (${row.google.reviewCount.toLocaleString()})` : ""}
           </small>
         )}
         <br />
-        <small style={{ color: sameAddress ? "#137333" : "#a00" }}>
+        <small className={sameAddress ? "text-ok" : "text-bad"}>
           {row.google.address ?? "—"} {sameAddress ? "✓ same address" : ""}
         </small>
         <br />
-        <small style={{ color: "#666" }}>{row.google.phone ?? "no phone"}</small>
+        <small className="text-ink-muted">{row.google.phone ?? "no phone"}</small>
         {row.google.category ? (
-          <small style={{ color: "#666" }}> · {row.google.category}</small>
+          <small className="text-ink-muted"> · {row.google.category}</small>
         ) : null}
         <br />
         <small>
@@ -315,20 +315,20 @@ function PlaceRow({
       <td style={cell}>
         <Badge tone="amber">{row.reason}</Badge>
         <br />
-        <small style={{ color: "#666" }}>
+        <small className="text-ink-muted">
           {row.match.status ?? "?"}
           {row.match.confidence !== null ? ` · confidence ${row.match.confidence}` : ""}
         </small>
         {row.match.conflictFlags.length > 0 && (
           <>
             <br />
-            <small style={{ color: "#a00" }}>{row.match.conflictFlags.join(", ")}</small>
+            <small className="font-semibold text-bad">{row.match.conflictFlags.join(", ")}</small>
           </>
         )}
       </td>
       <td style={cell}>
         {state === undefined ? (
-          <span style={{ whiteSpace: "nowrap" }}>
+          <span className="inline-flex flex-wrap gap-1 whitespace-nowrap">
             {RESOLUTIONS.map((r) => (
               <button
                 key={r}
@@ -337,18 +337,18 @@ function PlaceRow({
                 onClick={() => void onDecide(row.reviewId, r)}
                 title={TITLE[r]}
                 data-testid={`place-${r}`}
-                style={{ fontSize: "0.8rem", marginRight: "0.25rem" }}
+                className="rounded-sm border border-line-strong bg-surface px-2 py-0.5 text-xs font-semibold text-ink disabled:opacity-50"
               >
                 {LABEL[r]}
               </button>
             ))}
           </span>
         ) : typeof state === "object" ? (
-          <small style={{ color: "crimson" }}>{state.error}</small>
+          <small className="font-semibold text-bad">{state.error}</small>
         ) : state === "already" ? (
-          <small style={{ color: "#666" }}>already recorded</small>
+          <small className="text-ink-muted">already recorded</small>
         ) : (
-          <small style={{ color: "#137333" }}>✓ {LABEL[state]} — queued</small>
+          <small className="font-semibold text-ok">✓ {LABEL[state]} — queued</small>
         )}
       </td>
     </tr>

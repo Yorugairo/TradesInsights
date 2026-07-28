@@ -76,10 +76,10 @@ export function PursuitActions({
   }
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
+    <div className="grid gap-4">
       <div>
         <h3>Advance state</h3>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+        <div className="flex flex-wrap items-center gap-2">
           <select data-testid="transition-to" value={to} onChange={(e) => setTo(e.target.value)}>
             <option value="">move to…</option>
             {allowedTransitions.map((s) => (
@@ -92,13 +92,13 @@ export function PursuitActions({
             <input placeholder="reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} />
           )}
           {needsDate && <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
-          <input placeholder="value $" value={value} onChange={(e) => setValue(e.target.value)} style={{ width: 100 }} />
+          <input placeholder="value $" value={value} onChange={(e) => setValue(e.target.value)} className="w-24 rounded-sm border border-line-strong bg-surface px-2 py-1 text-sm text-ink" />
           <button disabled={busy || !to} onClick={transition} data-testid="transition-btn">
             Apply
           </button>
         </div>
         {err && (
-          <p data-testid="transition-error" style={{ color: "#b00" }}>
+          <p data-testid="transition-error" className="font-semibold text-bad">
             {err}
           </p>
         )}
@@ -106,7 +106,7 @@ export function PursuitActions({
 
       <div>
         <h3>Add task</h3>
-        <form action={addTask} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <form action={addTask} className="flex flex-wrap gap-2">
           <input name="title" placeholder="task title" required />
           <select name="taskType" required>
             {TASK_TYPES.map((t) => (
@@ -121,8 +121,8 @@ export function PursuitActions({
 
       <div>
         <h3>Add note</h3>
-        <form action={addNote} style={{ display: "flex", gap: "0.5rem" }}>
-          <input name="body" placeholder="note" required style={{ flex: 1 }} />
+        <form action={addNote} className="flex gap-2">
+          <input name="body" placeholder="note" required className="flex-1 rounded-sm border border-line-strong bg-surface px-2 py-1 text-sm text-ink" />
           <button disabled={busy}>Add note</button>
         </form>
       </div>

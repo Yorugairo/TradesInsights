@@ -30,11 +30,11 @@ export default async function SourceRunPage({ params }: { params: Promise<{ id: 
         {String(run["error_count"])}
       </p>
       <h2>Metrics / dead letters</h2>
-      <pre style={{ whiteSpace: "pre-wrap", background: "#f7f7f7", padding: "0.5rem" }}>
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded-sm border border-line bg-surface-raised p-2 text-xs text-ink">
         {JSON.stringify(run["metrics_json"], null, 2)}
       </pre>
       <h2>Checkpoint</h2>
-      <pre style={{ whiteSpace: "pre-wrap", background: "#f7f7f7", padding: "0.5rem" }}>
+      <pre className="overflow-x-auto whitespace-pre-wrap rounded-sm border border-line bg-surface-raised p-2 text-xs text-ink">
         {JSON.stringify(run["checkpoint_json"], null, 2)}
       </pre>
     </main>

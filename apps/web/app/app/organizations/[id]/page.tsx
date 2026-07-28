@@ -80,7 +80,7 @@ export default async function OrganizationDetailPage({ params }: { params: Promi
       <RelationshipActions organizationId={view.organization.id} current={view.relationship} />
 
       <h2>Working history with {view.organization.name}</h2>
-      <p style={{ color: "#666" }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         Your opportunities on this GC&apos;s projects — open the opportunity for the memo, brief,
         and outreach draft.
       </p>

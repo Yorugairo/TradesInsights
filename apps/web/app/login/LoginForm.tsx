@@ -35,7 +35,7 @@ export function LoginForm({ accounts }: { accounts: { key: string; name: string 
   }
 
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: "0.75rem", maxWidth: 360 }}>
+    <form onSubmit={submit} className="grid max-w-[22.5rem] gap-3">
       <label>
         Role{" "}
         <select value={role} onChange={(e) => setRole(e.target.value as "customer" | "admin")} data-testid="login-role">
@@ -68,7 +68,7 @@ export function LoginForm({ accounts }: { accounts: { key: string; name: string 
         {busy ? "Signing in…" : "Sign in"}
       </button>
       {error && (
-        <p role="alert" style={{ color: "crimson" }} data-testid="login-error">
+        <p role="alert" className="font-semibold text-bad" data-testid="login-error">
           {error}
         </p>
       )}

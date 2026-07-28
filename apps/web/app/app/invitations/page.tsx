@@ -57,8 +57,8 @@ export default async function InvitationsPage() {
         </table>
       )}
 
-      <h2 style={{ marginTop: "2rem" }}>Authorized export records</h2>
-      <p style={{ color: "#666" }}>
+      <h2 className="mt-8 text-lg font-semibold text-ink">Authorized export records</h2>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         Private to your account: customer-authorized exports only, never scraped. Access to these
         records is audited. Only an explicit invitation/solicitation confirms bidding.
       </p>

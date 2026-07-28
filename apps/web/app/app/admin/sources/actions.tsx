@@ -28,14 +28,14 @@ export function SourceActions({ sourceKey, enabled }: { sourceKey: string; enabl
   }
 
   return (
-    <span style={{ whiteSpace: "nowrap" }}>
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <button disabled={busy} onClick={run}>
         Run
       </button>{" "}
       <button disabled={busy} onClick={toggle}>
         {enabled ? "Disable" : "Enable"}
       </button>
-      {msg && <small style={{ marginLeft: "0.4rem" }}>{msg}</small>}
+      {msg && <small className="text-ink-muted">{msg}</small>}
     </span>
   );
 }

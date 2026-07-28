@@ -40,7 +40,7 @@ function ClusterTable({
       <tbody>
         {clusters.map((c, i) => (
           <tr key={`${c.matchedRule}:${c.reasonKey}:${c.candidateProjectId ?? "none"}:${i}`}>
-            <td style={{ ...cell, fontWeight: 600 }}>{c.count}</td>
+            <td style={cell} className="font-semibold">{c.count}</td>
             <td style={cell}>
               {c.matchedRule}
               <br />
@@ -75,7 +75,7 @@ function ClusterTable({
                   count={c.count}
                 />
               ) : (
-                <small style={{ color: "#666" }}>needs parcel or org evidence</small>
+                <small className="text-ink-muted">needs parcel or org evidence</small>
               )}
             </td>
           </tr>
@@ -139,7 +139,7 @@ export default async function AdminReviewPage() {
       <h2>
         Work these first — {rows(bulk)} rows in {bulk.length} clusters
       </h2>
-      <p style={{ color: "#666" }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         One row per (rule, reason, candidate project), largest first. Bulk decisions apply the same
         per-review provenance as deciding rows one at a time. Bulk <em>reject</em> is the safe mass
         action (each record re-resolves with the candidate excluded); bulk <em>merge</em> joins

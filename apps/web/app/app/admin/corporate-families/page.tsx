@@ -81,7 +81,7 @@ export default async function CorporateFamiliesPage({
   const byId = new Map(rows.map((r) => [r.entityId, r] as const));
 
   return (
-    <main style={{ padding: "1rem", maxWidth: 1150 }}>
+    <main>
       <p>
         <Link href="/app/admin/cockpit">← cockpit</Link>
         {" · "}
@@ -91,25 +91,25 @@ export default async function CorporateFamiliesPage({
 
       <Orientation />
 
-      <p style={{ color: "#a00" }}>
+      <p className="font-semibold text-bad">
         <strong>Private individuals.</strong> Principal names appear here because this page is
         admin-only and authenticated. Do not copy them into a digest, an export, or a public page.
       </p>
 
-      <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", margin: "0.5rem 0" }}>
-        <span style={{ color: "#666" }}>
+      <div className="my-2 flex flex-wrap items-center gap-3 text-sm">
+        <span className="text-ink-muted">
           {families.length} families · {rollups.length} with Insights activity
         </span>
         <span>·</span>
         {[50, 100, 300].map((n) => (
-          <Link key={n} href={`?limit=${n}${showWeak ? "&weak=1" : ""}`} style={{ fontWeight: n === limit ? 700 : 400 }}>
+          <Link key={n} href={`?limit=${n}${showWeak ? "&weak=1" : ""}`} className={n === limit ? "font-bold text-ink" : "text-ink-muted underline"}>
             limit {n}
           </Link>
         ))}
       </div>
 
       {dropped.length > 0 && (
-        <p style={{ color: "#a00" }}>
+        <p className="font-semibold text-bad">
           <strong>{dropped.length} group(s) dropped</strong> for exceeding the size cap (
           {dropped.map((d) => `${d.principalKey}: ${d.entityCount}`).join(", ")}). A group this large
           is an agent that slipped both registry-side filters, not a family — dropped rather than
@@ -118,7 +118,7 @@ export default async function CorporateFamiliesPage({
       )}
 
       <h2>1. Families — {Math.min(families.length, limit)} shown</h2>
-      <p style={{ color: "#666", marginTop: 0 }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         <strong>Claim:</strong> these registry companies share an officer, so they are one buying
         decision-maker. <strong>Weakest link</strong> is the fewest agreeing fields across any
         member-to-member pair — judge the family on that, not on its best pair.
@@ -159,21 +159,21 @@ export default async function CorporateFamiliesPage({
       <h2>
         2. Principal ↔ person discovery — {shownPairs.length} shown of {newPairs.length}
       </h2>
-      <p style={{ color: "#666", marginTop: 0 }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         <strong>Claim:</strong> this person named on an Insights permit is the officer L&amp;I has on
         file for that registry company — which, if true, adds a company to a family we could not
         otherwise see. Permit data carries no middle name, so the match key is coarse (surname +
         given name) and <strong>collisions are expected</strong>; the evidence column is how you tell
         them apart. Nothing here binds anything.
       </p>
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", margin: "0.5rem 0" }}>
-        <Link href={`?limit=${limit}`} style={{ fontWeight: showWeak ? 400 : 700 }}>
+      <div className="my-2 flex flex-wrap gap-3 text-sm">
+        <Link href={`?limit=${limit}`} className={showWeak ? "text-ink-muted underline" : "font-bold text-ink"}>
           corroborated only ({strongPairs.length})
         </Link>
-        <Link href={`?limit=${limit}&weak=1`} style={{ fontWeight: showWeak ? 700 : 400 }}>
+        <Link href={`?limit=${limit}&weak=1`} className={showWeak ? "font-bold text-ink" : "text-ink-muted underline"}>
           include name-only &amp; contradicted ({weakPairs.length})
         </Link>
-        <span style={{ color: "#666" }}>
+        <span className="text-ink-muted">
           {allPairs.length - newPairs.length} pair(s) merely confirm an existing binding — hidden.
         </span>
       </div>
@@ -208,26 +208,26 @@ export default async function CorporateFamiliesPage({
  * queues and the tab alone does not say what claim is being judged. */
 function Orientation() {
   return (
-    <details open style={{ border: "1px solid #ddd", borderRadius: 6, padding: "0.6rem 0.8rem", margin: "0.75rem 0" }}>
-      <summary style={{ cursor: "pointer", fontWeight: 700 }}>What am I looking at?</summary>
-      <div style={{ color: "#444", fontSize: "0.9rem", marginTop: "0.5rem" }}>
-        <p style={{ margin: "0.3rem 0" }}>
+    <details open className="my-3 rounded-md border border-line bg-surface px-4 py-3">
+      <summary className="cursor-pointer font-semibold text-ink">What am I looking at?</summary>
+      <div className="mt-2 flex flex-col gap-2 text-sm text-ink-muted">
+        <p>
           WA L&amp;I identifies a contractor at two levels: the <strong>UBI</strong> is the legal
           entity, the <strong>contractor licence</strong> is the operating brand. Both are already
           modelled. Neither can see <em>common control</em> — one person owning several separate
           UBIs. This page derives that third tier from the officer L&amp;I records on each licence.
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           <strong>Section 1</strong> asks: are these companies really one owner?{" "}
           <strong>Section 2</strong> asks: is this person on an Insights permit the same human as
           that registry officer?
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Every claim shows its evidence <em>count</em> — how many independent fields agree beyond
           the name. Zero means only the name matches. A <em>middle-initial conflict</em> means
           L&amp;I itself spells two different people, and is close to decisive against.
         </p>
-        <p style={{ margin: "0.3rem 0" }}>
+        <p>
           Links go to L&amp;I&apos;s public verification page for the company and to the source
           permit, so every claim is checkable at source.{" "}
           <strong>Nothing on this page changes any data</strong> — the queue is read-only by design.
@@ -252,11 +252,11 @@ const VERDICT_LABEL: Record<CorroborationVerdict, string> = {
 
 /** Agreeing signals in black, disagreeing in red with a leading ✗. */
 function Signals({ signals }: { signals: CorroborationSignal[] }) {
-  if (signals.length === 0) return <small style={{ color: "#666" }}>no other field agrees</small>;
+  if (signals.length === 0) return <small className="text-ink-muted">no other field agrees</small>;
   return (
-    <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+    <ul className="list-disc pl-4">
       {signals.map((s) => (
-        <li key={s.key} style={{ color: s.agrees ? "#111" : "#a00" }}>
+        <li key={s.key} className={s.agrees ? "text-ok" : "text-bad"}>
           <small>
             {s.agrees ? "" : "✗ "}
             {s.label}
@@ -302,7 +302,7 @@ function FamilyRow({
       <td style={cell}>
         <strong>{family.principalNames.join(" · ")}</strong>
         <br />
-        <small style={{ color: "#666" }}>
+        <small className="text-ink-muted">
           <code>{family.familyId}</code>
         </small>
       </td>
@@ -325,7 +325,7 @@ function FamilyRow({
         </Badge>
         {family.pairs.length > 0 && (
           <details>
-            <summary style={{ cursor: "pointer" }}>
+            <summary className="cursor-pointer text-ink">
               <small>{family.pairs.length} pair(s)</small>
             </summary>
             {family.pairs.map((p) => {
@@ -333,18 +333,18 @@ function FamilyRow({
               // (button disabled — nothing to record the observation against).
               const anchor = anchorByEntity.get(p.entityAId) ?? anchorByEntity.get(p.entityBId) ?? null;
               return (
-                <div key={`${p.entityAId}-${p.entityBId}`} style={{ marginTop: "0.35rem" }}>
+                <div key={`${p.entityAId}-${p.entityBId}`} className="mt-1.5">
                   <small>
                     <em>
                       {p.entityAName} ↔ {p.entityBName}
                     </em>
                   </small>
                   <Signals signals={p.corroboration.signals} />
-                  <small style={{ color: "#555" }}>{p.corroboration.explanation}</small>
+                  <small className="text-ink-muted">{p.corroboration.explanation}</small>
                   {/* No confirm on a contradicted pair — one click must not
                       override a middle-initial conflict L&I itself records. */}
                   {p.corroboration.verdict !== "contradicted" && (
-                    <div style={{ marginTop: "0.2rem" }}>
+                    <div className="mt-1">
                       <ConfirmRelationshipButton
                         claim={{
                           organizationId: anchor,
@@ -374,13 +374,13 @@ function FamilyRow({
             <small>{rollup.orgNames.join(", ")}</small>
           </>
         ) : (
-          <small style={{ color: "#666" }}>none bound</small>
+          <small className="text-ink-muted">none bound</small>
         )}
       </td>
       <td style={cell}>
         {rollup ? `${rollup.projects} (${rollup.projects90d} in 90d)` : "—"}
         <br />
-        <small style={{ color: "#666" }}>{rollup?.counties.join(", ")}</small>
+        <small className="text-ink-muted">{rollup?.counties.join(", ")}</small>
       </td>
       <td style={cell}>{rollup ? fmtMoney(rollup.statedValuationTotal) : "—"}</td>
       <td style={cell}>
@@ -419,7 +419,7 @@ function PairRow({ pair, byId }: { pair: PrincipalPersonPair; byId: Map<string, 
       <td style={cell}>
         <strong>{c.personName}</strong>
         <br />
-        <small style={{ color: "#666" }}>
+        <small className="text-ink-muted">
           <Badge tone={c.source === "organization" ? "amber" : "gray"}>{c.source}</Badge>{" "}
           {c.role ?? "role unknown"} · {c.projectCount ?? 0} project(s)
         </small>
@@ -436,37 +436,37 @@ function PairRow({ pair, byId }: { pair: PrincipalPersonPair; byId: Map<string, 
         {(c.jurisdictions?.length ?? 0) > 0 && (
           <>
             <br />
-            <small style={{ color: "#666" }}>{c.jurisdictions!.slice(0, 3).join(", ")}</small>
+            <small className="text-ink-muted">{c.jurisdictions!.slice(0, 3).join(", ")}</small>
           </>
         )}
       </td>
       <td style={cell}>
         <LniLink row={pair.entity.row}>{pair.entity.entityName ?? pair.entity.entityId}</LniLink>
         <br />
-        <small style={{ color: "#666" }}>
+        <small className="text-ink-muted">
           L&amp;I officer: {pair.entity.principalName} (<code>{pair.entity.principalKey}</code>)
         </small>
         {pair.entity.cityToken && (
           <>
             <br />
-            <small style={{ color: "#666" }}>registered in {pair.entity.cityToken}</small>
+            <small className="text-ink-muted">registered in {pair.entity.cityToken}</small>
           </>
         )}
       </td>
       <td style={cell}>
         <Badge tone={VERDICT_TONE[pair.verdict]}>{VERDICT_LABEL[pair.verdict]}</Badge>
         <br />
-        <small style={{ color: "#666" }}>
+        <small className="text-ink-muted">
           {pair.points} signal{pair.points === 1 ? "" : "s"} ·{" "}
           {pair.namesakes === 1 ? "unique name" : `${pair.namesakes} namesakes`}
         </small>
       </td>
       <td style={cell}>
         <Signals signals={pair.signals} />
-        <small style={{ color: "#555" }}>{pair.explanation}</small>
+        <small className="text-ink-muted">{pair.explanation}</small>
         {relClaim && (
-          <div style={{ marginTop: "0.3rem" }}>
-            <small style={{ color: "#666" }}>
+          <div className="mt-1.5">
+            <small className="text-ink-muted">
               links to <strong>{relClaim.labelB}</strong>:{" "}
             </small>
             <ConfirmRelationshipButton claim={relClaim} />
@@ -479,9 +479,9 @@ function PairRow({ pair, byId }: { pair: PrincipalPersonPair; byId: Map<string, 
 
 function Unavailable({ reason }: { reason: string }) {
   return (
-    <main style={{ padding: "1rem", maxWidth: 1150 }}>
+    <main>
       <h1>Corporate families</h1>
-      <p style={{ color: "#a00" }}>{reason}</p>
+      <p className="font-semibold text-bad">{reason}</p>
     </main>
   );
 }

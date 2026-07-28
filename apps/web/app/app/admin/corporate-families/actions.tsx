@@ -85,7 +85,7 @@ export function ConfirmRelationshipButton({ claim }: { claim: RelationshipClaim 
   }
 
   if (state === "confirmed") {
-    return <small style={{ color: "#137333" }}>✓ confirmed — queued for registry export</small>;
+    return <small className="font-semibold text-ok">✓ confirmed — queued for registry export</small>;
   }
 
   // `name_only` = only the surname/given name links them; enabled but de-emphasized
@@ -93,16 +93,16 @@ export function ConfirmRelationshipButton({ claim }: { claim: RelationshipClaim 
   // reaches here — the parent renders no button for it.
   const deEmphasized = claim.corroboration.verdict === "name_only";
   return (
-    <span style={{ whiteSpace: "nowrap" }}>
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <button
         disabled={state === "posting"}
         onClick={() => void onClick()}
         title={deEmphasized ? "only the name links these — confirm only with outside knowledge" : "confirm shared control"}
-        style={{ fontSize: "0.8rem", opacity: deEmphasized ? 0.7 : 1 }}
+        className={`rounded-sm border border-line-strong bg-surface px-2 py-0.5 text-xs font-semibold text-ink disabled:opacity-50 ${deEmphasized ? "opacity-70" : ""}`}
       >
         {state === "posting" ? "…" : "confirm link"}
       </button>
-      {typeof state === "object" && <small style={{ color: "crimson", marginLeft: "0.3rem" }}>{state.error}</small>}
+      {typeof state === "object" && <small className="font-semibold text-bad">{state.error}</small>}
     </span>
   );
 }

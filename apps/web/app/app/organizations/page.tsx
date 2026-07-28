@@ -40,13 +40,13 @@ export default async function OrganizationsPage({
   return (
     <main>
       <h1>Organizations — {account.name}</h1>
-      <p style={{ color: "#666" }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         Who keeps running work that routes to you. Relationship state is yours alone; activity
         comes from the shared record graph (roles, counties, stated valuations).
       </p>
 
       <h2>Worth meeting ({targets.length})</h2>
-      <p style={{ color: "#666" }}>
+      <p className="max-w-[70ch] text-sm text-ink-muted">
         Active on ≥2 of your routed projects, no relationship recorded yet. Open one, set its
         state, and it leaves this list.
       </p>
@@ -71,7 +71,7 @@ export default async function OrganizationsPage({
       </table>
 
       <h2>League table</h2>
-      <form method="get" style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0.5rem 0" }}>
+      <form method="get" className="my-2 flex flex-wrap items-center gap-2">
         <select name="county" defaultValue={params.county ?? ""}>
           <option value="">All counties</option>
           {COUNTIES.map((c) => (
@@ -111,7 +111,7 @@ export default async function OrganizationsPage({
                   </Badge>
                 ))}
               </td>
-              <td style={{ ...cell, fontWeight: 600 }}>{o.relevantProjects}</td>
+              <td style={cell} className="font-semibold">{o.relevantProjects}</td>
               <td style={cell}>{o.projects}</td>
               <td style={cell}>{o.projects90d}</td>
               <td style={cell}>{o.counties.join(", ")}</td>

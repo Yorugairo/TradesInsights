@@ -33,9 +33,9 @@ export function InvitationUpload() {
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: "1rem", margin: "1rem 0" }}>
-      <h3 style={{ marginTop: 0 }}>Upload a bid-invitation email (.eml)</h3>
-      <p style={{ color: "#666", fontSize: "0.85rem" }}>
+    <div className="my-4 rounded-lg border border-line bg-surface p-4">
+      <h3 className="text-base font-semibold text-ink">Upload a bid-invitation email (.eml)</h3>
+      <p className="mt-1 text-sm text-ink-muted">
         Paste a customer-authorized invitation email. Parsed deterministically; nothing is scraped.
         Re-uploading the same email is idempotent.
       </p>
@@ -44,14 +44,14 @@ export function InvitationUpload() {
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
         rows={6}
-        style={{ width: "100%", fontFamily: "monospace" }}
+        className="mt-2 w-full rounded-sm border border-line-strong bg-surface p-2 font-mono text-xs text-ink"
         placeholder="From: ...\nSubject: Invitation to Bid\n\nProject: ...\nBids due: ..."
       />
-      <div style={{ marginTop: "0.5rem" }}>
+      <div className="mt-2 flex items-center gap-2">
         <button disabled={busy || !raw.trim()} onClick={upload} data-testid="eml-upload-btn">
           Ingest invitation
         </button>
-        {msg && <span style={{ marginLeft: "0.5rem" }}>{msg}</span>}
+        {msg && <span className="text-sm text-ink-muted">{msg}</span>}
       </div>
     </div>
   );
