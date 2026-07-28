@@ -793,6 +793,87 @@ ul.list.num li::before{
   </div>
 </section>
 
+<!-- PUBLIC WORKS — THE LANE -->
+<section class="slide" aria-labelledby="sPW1">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">A fifth book &mdash; and the one we see earliest</span>
+      <h2 id="sPW1" class="reveal">Washington built a bidding lane<br>for crews exactly your size.</h2>
+      <p class="lede reveal">No agency wants to run a fully advertised public bid to repaint a school
+        corridor. So the state gave them a shortcut &mdash; and the shortcut is entered by
+        <em>registering</em>, not by bidding.</p>
+    </div>
+    <div class="body">
+      <div class="kpis reveal">
+        <div class="kpi hero"><div class="n">$350<span class="u">k</span></div>
+          <div class="l">small works roster ceiling &mdash; rising in steps to <strong>$650k</strong> by July 2030</div></div>
+        <div class="kpi"><div class="n">$150<span class="u">k</span></div>
+          <div class="l">and under, an agency may <em>direct contract</em> &mdash; no competitive bid at all</div></div>
+        <div class="kpi"><div class="n">6</div>
+          <div class="l">certified small businesses on a roster and the award <em>must</em> go to one of them</div></div>
+      </div>
+      <div class="stack s reveal">
+        <span class="chip">How the lane actually works</span>
+        <ul class="list">
+          <li>One statewide roster, run by <strong>MRSC</strong> on behalf of most agencies
+            (RCW 39.04.151) &mdash; you register once, by county and by trade category.</li>
+          <li>Agencies must <strong>rotate</strong> awards rather than re-hire the same firm, so a
+            roster place is a queue position, not a lottery ticket.</li>
+          <li>Where six or more certified small businesses are listed, direct contracting
+            <strong>must</strong> go to one of them &mdash; certification is what puts you in that
+            rotation (RCW 39.04.152).</li>
+          <li>The buyers are steady-maintenance owners: <strong>school districts, ports, municipal
+            buildings</strong>. Specialty repair, repeatable, and rarely chased by large GCs.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal"><strong>This is the one book where our sourcing is strongest, not
+        weakest.</strong> Public projects are published early because the law requires it &mdash; where
+        restoration is structurally invisible to us, this is structurally visible.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PUBLIC WORKS — THE REAL CONSTRAINT -->
+<section class="slide dark" aria-labelledby="sPW2">
+  <div class="slide-content">
+    <div class="head">
+      <span class="eyebrow reveal">The inversion test</span>
+      <h2 id="sPW2" class="reveal">Bonding is not the gate.<br>Payroll is.</h2>
+      <p class="lede reveal">Ask why a five-person crew fails on public works and the answer is always
+        <em>bonding</em>. The statute already solved bonding. What it did not solve is the two months
+        between doing the work and being paid for it.</p>
+    </div>
+    <div class="body">
+      <div class="split reveal">
+        <div class="card lead" style="max-height:none">
+          <span class="idx">The gate everyone names</span>
+          <div class="ct">Performance &amp; payment bonds</div>
+          <div class="cd">Real &mdash; and bypassable. On a contract of <strong>$150,000 or less</strong>
+            you may ask the agency to hold <strong>10% retainage</strong> for 30 days after final
+            acceptance <em>instead of</em> a bond. No underwriter, no business credit, no liquid assets
+            (RCW 39.08.010). Below $5,000 an agency may waive both outright.</div>
+        </div>
+        <div class="card warn" style="max-height:none">
+          <span class="idx">The gate that actually bites</span>
+          <div class="ct">Sixty days of prevailing wage, out of pocket</div>
+          <div class="cd">Public work pays state <strong>prevailing wage</strong> and requires certified
+            payroll &mdash; Intents and Affidavits filed with L&amp;I. If your residential work runs on a
+            deposit up front, this inverts the model: you fund payroll and materials first, then invoice
+            against <strong>~30&ndash;60 day</strong> terms after completion and inspection.</div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <p class="callout reveal"><strong>So the question was never &ldquo;are you bonded&rdquo;.</strong>
+        It is whether you can carry two months of crew and materials before the first cheque lands
+        &mdash; a credit-line question, not an underwriting one. Above $150k the bond does come back,
+        so this is a lane, not a loophole.</p>
+    </div>
+  </div>
+</section>
+
 <!-- THE KING TENSION -->
 <section class="slide wide" data-ask="territory" aria-labelledby="sD">
   <div class="slide-content">
@@ -1744,6 +1825,16 @@ class Capture {
       const v = el.value.trim();
       if (v) answers[el.dataset.k] = v;
     });
+    // PILL ANSWERS. This branch was missing when collect() was lifted from
+    // intake.html, and its absence was invisible: isAnswered() counts a checked
+    // radio, so the progress figure said "answered" for every pill while collect()
+    // silently dropped it. The operator got on-screen confirmation and an export
+    // that did not contain the answer. Every pill question — the weight vector,
+    // the relationship price, closed windows, public works — was affected.
+    document.querySelectorAll('.pills[data-group]').forEach((g) => {
+      const picked = g.querySelector('input:checked');
+      if (picked) answers[g.dataset.group] = picked.value;
+    });
     const gcs = this.gcBody
       ? Array.from(this.gcBody.querySelectorAll('tr')).map((tr) => ({
           name: tr.querySelector('.gc-name').value.trim(),
@@ -1789,7 +1880,11 @@ class Capture {
     });
     Object.entries(saved.answers || {}).forEach(([k, v]) => {
       const el = document.querySelector(`[data-k="${k}"]`);
-      if (el) el.value = v;
+      if (el) { el.value = v; return; }
+      // …and the matching restore side. Without it a reload mid-session wipes
+      // every pill the customer had already answered.
+      const pill = document.querySelector(`.pills[data-group="${k}"] input[value="${v}"]`);
+      if (pill) pill.checked = true;
     });
     if (this.gcBody) {
       const need = (saved.gcs || []).length - this.gcBody.children.length;

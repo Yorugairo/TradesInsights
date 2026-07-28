@@ -162,6 +162,51 @@ test.describe("calibration deck", () => {
     ]);
   });
 
+  /**
+   * Pill answers exported from the DECK, not just the intake.
+   *
+   * collect() was lifted from intake.html without its `.pills[data-group]` branch,
+   * so every radio answer typed into the deck was dropped from the export — and
+   * the loss was invisible, because isAnswered() counts a checked radio. The
+   * progress figure said the question was answered while the JSON did not contain
+   * it. That is worse than an obvious failure: the operator gets confirmation on
+   * screen and discovers the gap only when applying the config diff, days later.
+   *
+   * Assert the whole round trip — answer, export, reload, still answered.
+   */
+  test("a pill answer survives export and reload on the deck", async ({ page }) => {
+    // Pin a viewport the deck actually targets. At the runner's small default the
+    // three-card ask column packs tight enough that a neighbour wins the hit test;
+    // this deck is built for 4K with 1440x900 as its declared laptop fallback, and
+    // both are asserted to fit by the viewport tests above.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(DECK);
+    // The deck scrolls smoothly, so an element's box keeps moving after
+    // scrollIntoView() returns. Kill the animation rather than forcing the click —
+    // a forced click would also pass if the control were genuinely unreachable.
+    await page.addStyleTag({ content: "*{scroll-behavior:auto !important}" });
+
+    const pill = page.locator(".ask .pills[data-group]").first();
+    await pill.scrollIntoViewIfNeeded();
+    const group = await pill.getAttribute("data-group");
+    const radio = pill.locator("input[type=radio]").first();
+    const value = await radio.getAttribute("value");
+
+    await radio.check();
+    await page.waitForTimeout(150);
+
+    const exported = await page.evaluate(
+      (g) => JSON.parse(localStorage.getItem("solis-intake-2026-07-26") || "{}").answers?.[g],
+      group,
+    );
+    expect(exported, `pill "${group}" was answered but never reached the export`).toBe(value);
+
+    await page.reload();
+    await expect(
+      page.locator(`.pills[data-group="${group}"] input[value="${value}"]`),
+    ).toBeChecked();
+  });
+
   test("every question in the model reaches the deck", async ({ page }) => {
     await page.goto(DECK);
     // Guards the same class of loss generally: a question defined but never mounted

@@ -225,15 +225,66 @@
         { type: 'text', k: 'capacity_sweet_spot', label: 'Sweet-spot job size', placeholder: 'e.g. $40k–$250k' },
       ],
     },
+    // ── Public works — the small works roster lane ───────────────────────────
+    // This block replaced a single question that asked "are you bonded? if not we
+    // exclude public work". That framing was WRONG IN THE DIRECTION THAT COSTS
+    // MONEY: RCW 39.08.010(3) lets a contractor swap the performance & payment
+    // bond for 10% retainage on any contract of $150,000 or less, which is the
+    // exact band a 3-5 person drywall crew works in. Answering "not bonded" would
+    // have suppressed the one public-works segment that needs no bond at all.
+    //
+    // The three questions below separate what that one question conflated:
+    // roster REGISTRATION (a form, and the actual blocker), WORKING CAPITAL (the
+    // real constraint), and CERTIFICATION (which changes who agencies may award
+    // to). Statutory figures verified against MRSC 2026-07-27 — see the deck
+    // slides sPW1/sPW2 for the citations shown to the customer.
     {
-      id: 'public_work', slide: null,
-      ask: 'Public work, bonding, prevailing wage',
-      why: 'Public projects are a large share of what we can see earliest. If you are not bonded or will not take prevailing-wage work, we should stop surfacing them entirely.',
+      id: 'mrsc_roster', slide: 'sPW1', new: true,
+      ask: 'Are you on the MRSC small works roster?',
+      why: 'This is the whole lane. Agencies award work up to <b>$350k</b> off a roster instead of an advertised bid, and under <b>$150k</b> they may direct-contract with no competition at all &mdash; but only to companies already registered. There is no way to bid your way in from outside; it is a registration, and it is free. If the answer is no, that is the highest-value action item in this session and it has nothing to do with our scoring.',
+      yamlPath: 'organization.rosters[] (not yet wired)',
+      controls: [
+        { type: 'pills', group: 'mrsc_roster', options: [
+          ['registered', 'Registered'], ['lapsed', 'Was, has lapsed'],
+          ['no', 'Not registered'], ['unknown', 'Never heard of it'] ] },
+        { type: 'text', k: 'roster_agencies', label: 'Which agencies / counties, if registered', placeholder: 'Thurston County, Olympia SD, Port of Olympia…' },
+      ],
+    },
+    {
+      id: 'cert_small_business', slide: 'sPW1', new: true,
+      ask: 'Are you certified as a small, minority-, women- or veteran-owned business?',
+      why: 'Not a diversity checkbox &mdash; a <b>procurement rule</b>. When six or more certified small businesses sit on a project roster the agency <b>must</b> direct-contract with one of them, and must rotate between them rather than re-award the same firm. Certification is what puts you in that rotation. OMWBE certification is the state route; some agencies also accept self-certified small-business status.',
+      yamlPath: 'organization.certifications[] (not yet wired)',
+      controls: [
+        { type: 'pills', group: 'cert_small_business', options: [
+          ['omwbe', 'OMWBE certified'], ['self', 'Self-certified small business'],
+          ['no', 'Neither'], ['unsure', 'Not sure' ] ] },
+      ],
+    },
+    {
+      // ID, GROUP AND OPTION VALUES DELIBERATELY UNCHANGED. Labels and `why` are
+      // rewritten, but `public_work` + its three values are localStorage keys —
+      // renaming them orphans any answer already captured under STORE, silently.
+      id: 'public_work', slide: 'sPW2',
+      ask: 'Prevailing wage and certified payroll — in, or out?',
+      why: 'Separate from bonding, and the part that does not have a statutory workaround. Public work pays state prevailing wage and requires certified payroll &mdash; Intents and Affidavits filed with L&amp;I on every job. It is real administrative weight on a small office. If you will not take it, say so and we stop surfacing public work entirely rather than filling your list with jobs you would decline.',
       yamlPath: 'rules -> exclusion',
       controls: [
         { type: 'pills', group: 'public_work', options: [
           ['yes_active', 'Yes, we do public work'], ['yes_would', 'Not yet, but would'], ['no', 'No — exclude it'] ] },
         { type: 'text', k: 'bonding_notes', label: 'Bonding limit, union status, anything else', placeholder: 'e.g. bonded to $500k, non-union' },
+      ],
+    },
+    {
+      id: 'public_capital', slide: 'sPW2', new: true,
+      ask: 'Could you carry roughly sixty days of crew and materials before the first payment?',
+      why: 'This is the question that actually decides it. Residential work often runs on a deposit up front; public work inverts that &mdash; you fund prevailing-wage payroll and materials first and invoice after completion and inspection. A crew that says yes to public work without a line of credit behind it takes the job and then cannot make payroll. <b>Your answer sets the ceiling we route to you</b>, not whether we show public work at all.',
+      yamlPath: 'rules -> routing (public works value banding)',
+      controls: [
+        { type: 'pills', group: 'public_capital', options: [
+          ['comfortable', 'Yes — line of credit in place'], ['small_only', 'Only on smaller jobs'],
+          ['no', 'No — that would break us'], ['unsure', 'Would need to check'] ] },
+        { type: 'text', k: 'public_ceiling', label: 'Largest public job you would take today', placeholder: 'e.g. $75k' },
       ],
     },
     {

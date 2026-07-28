@@ -309,3 +309,39 @@ conversation, were wrong and are corrected here:
 
 The genuinely hard part is neither: it is that `Deck`'s keyboard handler calls `preventDefault()`
 on Space with no input guard, so the deck is unusable as a form until Task 2 lands.
+
+**2026-07-27 — v2. Task 5's "lift `collect()` unchanged" was not done unchanged, and it cost
+every pill answer on the deck.**
+
+The lift dropped one branch:
+
+```js
+document.querySelectorAll('.pills[data-group]').forEach((g) => {   // absent from the deck
+  const picked = g.querySelector('input:checked');
+  if (picked) answers[g.dataset.group] = picked.value;
+});
+```
+
+…and its `restore()` counterpart. Consequence: **radio answers typed into the deck never
+reached the export, and were wiped on reload.** Every pill question was affected — the weight
+vector, relationship price, closed windows, review depth, certs, scope book, threshold, age
+window — i.e. most of what the audit added in the first place.
+
+What made it survive review is worth recording, because the same shape will recur:
+
+1. **The progress counter validated the wrong thing.** `isAnswered()` checks
+   `q.querySelector('input:checked')`, so a pill counted as answered. The operator got
+   on-screen confirmation *and* an export missing the answer — strictly worse than a visible
+   failure, because it is discovered days later while applying the config diff.
+2. **The existing tests could not catch it.** "Every question in the model reaches the deck"
+   asserts *mounting*. Mounting was never broken; **harvesting** was. A shared question model
+   with per-surface I/O needs a **round-trip** test per surface, not a render test.
+
+Pinned by `tests/deck-4k.spec.ts → "a pill answer survives export and reload on the deck"`.
+That test must set its own viewport: at the runner's small default the three-card ask column
+packs tightly enough that a neighbouring card wins the hit test, which reads as a product bug
+and is not one — the deck targets 4K, with 1440×900 as its declared laptop fallback.
+
+Also added in v2: the public-works pair (`sPW1`/`sPW2`) and four questions replacing the single
+`public_work` ask, whose framing ("not bonded ⇒ exclude public work") was backwards. See the
+session README for the statutory table and its verification date.
