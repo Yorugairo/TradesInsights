@@ -27,7 +27,7 @@
    * becomes a different setting.
    *
    * `slide` is the id of the slide whose evidence this question is about. That is
-   * the whole point of the merge: ask "is +3 right?" while the 67 is on screen.
+   * the whole point of the merge: ask "is +3 right?" while the 72 is on screen.
    */
   const ASSUMPTIONS = [
     {
@@ -42,7 +42,7 @@
       id: 'geo_weight',
       slide: 's9',
       setting: 'Home metro outranks King commercial; Pierce sits about even.',
-      why: 'We down-weighted King as distant volume, cutting it from 334 priority jobs to 142. <b>Distance is probably the wrong filter.</b> A drive is only expensive relative to what you drove past: a data centre, a rated shaftwall or a Level 5 job in Medina pays for the mileage, while generic Level 4 hanging in King means passing dozens of equivalent Pierce jobs to get there. The likely fix is qualifying by <b>job type</b> rather than de-rating a whole county.',
+      why: 'We down-weighted King as distant volume, cutting it from 334 priority jobs to 142 — and it now sits at <b>85</b>. <b>Distance is probably the wrong filter.</b> A drive is only expensive relative to what you drove past: a data centre, a rated shaftwall or a Level 5 job in Medina pays for the mileage, while generic Level 4 hanging in King means passing dozens of equivalent Pierce jobs to get there. The likely fix is qualifying by <b>job type</b> rather than de-rating a whole county.',
       yamlPath: 'score_components -> geography',
       ask: 'Should we qualify King by job type instead of de-rating the county?',
     },
@@ -58,7 +58,7 @@
       id: 'warm_gc',
       slide: 's13',
       setting: 'A GC that is active near you, on your kind of work, gives the job +3 points.',
-      why: 'Note what this is NOT: it does not mean you have worked with them &mdash; we have never asked, so we do not know. It means the same verified company keeps turning up in your territory on relevant jobs (2+ projects). Small on purpose: a nudge, not a reordering. Until this week it had never once fired, so today is the first run where it moved anything.',
+      why: 'Note what this is NOT: it does not mean you have worked with them &mdash; we have never asked, so we do not know. It means the same verified company keeps turning up in your territory on relevant jobs (2+ projects). Small on purpose: a nudge, not a reordering. Until this week it had never once fired; it now carries <b>72</b> of your jobs, <b>16</b> of them on the priority list.',
       yamlPath: 'score_components -> warm_gc_active',
       ask: 'Is +3 right, too shy, or too much?',
     },
@@ -133,24 +133,29 @@
     {
       id: 'verified_price', slide: 's13', new: true,
       ask: 'And a confirmed real company — worth anything on its own?',
-      why: '120 of your jobs carry it and it is currently worth nothing. It is the signal that says you can actually find out who to call, which may matter more than whether they are nearby.',
+      why: '<b>125</b> of your jobs carry it — <b>31</b> of them on your priority list — and it is currently worth nothing. It is the signal that says you can actually find out who to call, which may matter more than whether they are nearby.',
       yamlPath: 'score_components -> verified_gc_on_project',
       controls: [{ type: 'pills', group: 'verified_price', options: [
         ['none', 'Nothing — just show me'], ['small', 'A small lift'], ['strong', 'A real lift'] ] }],
     },
     {
+      // Values hide/demote/keep are localStorage keys — labels and `why` may be
+      // rewritten, the three values may not. The question changed meaning when
+      // v1.12.0 shipped: "demote" went from a proposal to the status quo, so it
+      // is now labelled as such. Asking it unchanged would have invited a decision
+      // about 108 rows that is really about 9.
       id: 'closed_windows', slide: 's4', new: true,
-      ask: 'What should we do with the ones already past bidding?',
-      why: 'They are 46% of your priority list. We show them today because a late call sometimes still lands — but if they are noise to you, that is nearly half the list back.',
+      ask: 'We demoted the ones already past bidding. Right call?',
+      why: '46% of your priority list when we built this deck; <b>3.9%</b> after the scoring change — 9 rows. The other <b>194</b> dropped to the weekly digest rather than vanishing. So: did we go far enough, or too far?',
       yamlPath: 'rules -> routing (closed-window handling)',
       controls: [{ type: 'pills', group: 'closed_windows', options: [
-        ['hide', 'Hide them'], ['demote', 'Show, but lower'],
-        ['keep', 'Keep — late calls land'] ] }],
+        ['hide', 'Go further — hide them'], ['demote', 'Demoted is right — what we do now'],
+        ['keep', 'Too far — late calls land'] ] }],
     },
     {
       id: 'review_depth', slide: 's4', new: true,
       ask: 'A permit has been sitting in plan review for three months. Still worth a call?',
-      why: 'We now rank a fresh filing above a stale one — but we had to pick the curve ourselves. Of your 496 application-stage jobs, <b>147</b> were filed in the last month and <b>124</b> have been in review over three months. WA commercial land-use routinely runs 4&ndash;12+ months, so a long review can still be a live window rather than a dead lead — you are the one who knows which.',
+      why: 'We rank a fresh filing above a stale one, but we picked the curve ourselves. Of your <b>531</b> application-stage jobs, <b>170</b> were filed in the last month and <b>96</b> have been in review over three months. WA land-use routinely runs 4&ndash;12+ months, so a long review can still be live. <b>Application stage is now 62% of your priority list</b> — this curve orders most of what you see.',
       yamlPath: 'score_components -> timing (application-stage freshness)',
       controls: [{ type: 'pills', group: 'review_depth', options: [
         ['live', 'Still live — WA reviews run long'],
@@ -313,7 +318,7 @@
     {
       id: 'threshold', slide: null,
       ask: 'Does forty-odd a week feel right?',
-      why: 'About <b>42</b> jobs cross your threshold in a typical week — averaged over 30 days, because ingest arrives in bursts and any single week is a coin flip (the five weeks to 23 July ran 13, 49, 45, 51, 38). Lower the threshold and you see more, earlier, with more noise; raise it and only the strongest reach you.',
+      why: 'About <b>29</b> jobs cross your threshold in a typical week — averaged over 30 days, because ingest arrives in bursts and any single week is a coin flip. Lower the threshold and you see more, earlier, with more noise; raise it and only the strongest reach you: <b>99</b> standing if you moved to 85, and just <b>23</b> at 90 — about 3 a week, too quiet to build relationships on.',
       yamlPath: 'delivery.priority_review_min',
       controls: [{ type: 'pills', group: 'threshold', options: [
         ['more', 'Show me more'], ['right', 'About right'], ['fewer', 'Fewer, stronger only'] ] }],

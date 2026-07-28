@@ -36,18 +36,28 @@ operator ends up reading a runbook that disagrees with the screen mid-session.
 9. **Appendix A1–A6** — only if the conversation goes there. Capability ladder, margin
    levers, route into Tier-1 bidding, and two software concepts.
 
-## The four findings to lead with
+## The five findings to lead with
 
 - **Slide 9 — assumption 2 may be backwards.** Commercial TI concentrates in Seattle and
   Bellevue; Level 5 luxury in Bellevue, Medina, Mercer Island and Kirkland. All King County
-  — the county the geographic weighting cut from 334 priority opportunities to 142. If A
-  and B are where the money is, the setting is suppressing his best work. This is the single
-  highest-value correction available in the session.
+  — the county the geographic weighting cut from 334 priority opportunities to 142, and which
+  now sits at **85** after the v1.12.0 issued shave. If A and B are where the money is, the
+  setting is suppressing his best work. This is the single highest-value correction available
+  in the session.
 - **Slide 8 — restoration is structurally invisible.** Insurance patch work generally pulls
   no permit, so the book with the best net margin is one the sourcing cannot reach. Say it
   before he discovers it.
-- **Slide 16 — the verified-contractor signal fires zero times.** Volunteering a gap he
-  cannot yet see is what makes the numbers credible.
+- **"Nearly half your list was past bidding" — lead with the fix, not the problem.** That
+  slide used to argue 46% of the priority list was already too late to bid. Scorer v1.12.0's
+  issued shave changed it: re-measured 2026-07-27 it is **3.9%** (9 of 233), and application
+  stage went 38% → **62%**. The slide now runs as a before/after. **Do not present it as an
+  open problem** — you would be showing Solis an unsolved version of something already fixed.
+  The honest half: the 194 closed-window jobs were *demoted to the digest*, not deleted.
+- **The contractor signals no longer fire zero times.** `verified_gc_on_project` now carries
+  **125** jobs (**31** on the priority list) and `warm_gc_active` **72** (**16** priority).
+  The old "it fires zero times" disclosure has **expired** — it was a good credibility play
+  while true, and repeating it now would be inaccurate in our own favour's opposite direction.
+  The live disclosure is that verified-GC is still **worth nothing to the score**.
 - **"Bonding is not the gate" — we were about to exclude the wrong thing.** The form used
   to ask one question, *"are you bonded? if not we exclude public work"*. That is wrong in
   the direction that costs money: **RCW 39.08.010** lets a contractor swap the performance
@@ -126,16 +136,37 @@ Nothing is transmitted anywhere until someone presses download.
 
 ## Numbers in the deck
 
-All from `docs/calibration-prep-solis.md` §0, regenerated 2026-07-26 via
+Originally from `docs/calibration-prep-solis.md` §0 (2026-07-26), **re-measured against
+production 2026-07-27** after scorer v1.12.0 landed. Regenerate with
 `cd apps/worker && set -a && . ../../.env && set +a && pnpm exec tsx calibration-sensitivity.mts`.
 
-Two are worth knowing before you present them:
+**Every figure in the deck now comes from the same 2026-07-27 snapshot.** That matters more
+than any single number: the previous deck mixed a pre-v1.12.0 slide (s4's 46%) with a
+post-v1.12.0 world, and the two contradicted each other on screen. If you refresh one figure,
+refresh them all from one run.
 
-- **Slide 12 says a signal fires zero times, and that is deliberate.**
-  `verified_gc_on_project` and `warm_gc_active` have never fired for Solis. Leading with
-  that costs nothing and buys the credibility that makes the rest believable.
-- **Slide 8's Thurston bar is small on purpose.** The home-metro up-weight is working;
-  Thurston volume is genuinely thin (38 of 477). That is a coverage problem to own, not
+The current snapshot, for cross-checking:
+
+| | Value |
+|---|---|
+| Live pool (score ≥ 65, not archived) | 1,244 |
+| Priority (≥ 80) | 233 |
+| Weekly flow at 80 (30-day average) | ~29 |
+| Stage mix of priority | applied 145 (62%) · issued 84 (36%) · later 4 |
+| Past bidding, in priority | 9 (3.9%) |
+| Past bidding, whole pool | 194 — demoted to digest |
+| County mix | Pierce 123 · King 85 · Thurston 13 · Lewis 12 |
+| `verified_gc_on_project` | 125 (31 priority) |
+| `warm_gc_active` | 72 (16 priority) |
+| Application-stage jobs | 531 — 170 filed ≤4wk, 96 in review >12wk |
+
+Two things worth knowing before you present them:
+
+- **The weekly figure is the 30-day average, not a single week.** A one-week point measure
+  on this data is one sample of a bursty process — it read 13/wk on 2026-07-26 against a true
+  ~29, understating the product roughly 2×. Quote the averaged number.
+- **Slide 9's Thurston bar is small on purpose.** The home-metro up-weight is working;
+  Thurston volume is genuinely thin (13 of 233). That is a coverage problem to own, not
   a weighting problem to explain away.
 
 ## After the session

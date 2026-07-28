@@ -53,6 +53,37 @@ async function slideIndex(page: Page): Promise<number> {
 }
 
 test.describe("calibration deck", () => {
+  /**
+   * Interaction tests drive real clicks, and two things make that unreliable here.
+   * Neither is a product defect, and neither should be papered over with
+   * `{force:true}` — a forced click would also pass if a control were genuinely
+   * unreachable, which is exactly the bug worth catching.
+   *
+   *  1. **Viewport.** The runner's default is smaller than any size this deck
+   *     supports (see SIZES). Ask columns are `overflow-y:auto` BY DESIGN — the
+   *     plan calls for it and the wheel guard exists to make it usable — so below
+   *     a supported size the panels scroll and a click can land on a neighbour.
+   *     These tests used to pass at the default only because the busiest slide
+   *     happened to fit; adding two lines of copy to it broke four of them at
+   *     once, which is a property of the runner, not of the deck.
+   *  2. **Smooth scrolling.** `scroll-behavior:smooth` means an element's box keeps
+   *     moving after scrollIntoView() resolves, so Playwright hit-tests a position
+   *     the element has already left.
+   *
+   * Pin a declared size and kill the animation. Fit at BOTH real sizes is still
+   * asserted independently by the viewport tests below.
+   */
+  test.use({ viewport: { width: 1440, height: 900 } });
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        const s = document.createElement("style");
+        s.textContent = "*{scroll-behavior:auto !important}";
+        document.head.appendChild(s);
+      });
+    });
+  });
+
   for (const size of SIZES) {
     test(`every slide fits at ${size.name}`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
@@ -175,17 +206,7 @@ test.describe("calibration deck", () => {
    * Assert the whole round trip — answer, export, reload, still answered.
    */
   test("a pill answer survives export and reload on the deck", async ({ page }) => {
-    // Pin a viewport the deck actually targets. At the runner's small default the
-    // three-card ask column packs tight enough that a neighbour wins the hit test;
-    // this deck is built for 4K with 1440x900 as its declared laptop fallback, and
-    // both are asserted to fit by the viewport tests above.
-    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(DECK);
-    // The deck scrolls smoothly, so an element's box keeps moving after
-    // scrollIntoView() returns. Kill the animation rather than forcing the click —
-    // a forced click would also pass if the control were genuinely unreachable.
-    await page.addStyleTag({ content: "*{scroll-behavior:auto !important}" });
-
     const pill = page.locator(".ask .pills[data-group]").first();
     await pill.scrollIntoViewIfNeeded();
     const group = await pill.getAttribute("data-group");
