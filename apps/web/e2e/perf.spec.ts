@@ -8,36 +8,25 @@
  * eventually crossed `statement_timeout` and started returning 500s during an
  * unrelated e2e run. Nothing measured latency, so nothing objected to it.
  *
- * WHY THE CEILING IS LOOSE. These budgets run against the hosted PRODUCTION
- * database (the same finding as `playwright.config.ts`'s `workers: 1` note), so
- * absolute numbers vary with WAN latency and whatever else is querying. The
- * ceiling here is set to catch a REGRESSION IN KIND — a page going from
- * ~1s to ~30s because someone reintroduced a per-request seam pull — not to
- * police a p95. Tighten it to something meaningful once e2e runs against a
- * seeded local corpus.
+ * THE CEILING IS NOW REAL. It was 30s while the suite ran against the hosted
+ * database, where absolute numbers moved with WAN latency and whatever else was
+ * querying. Against the local corpus the whole 29-test suite finishes in ~28s,
+ * so a per-page ceiling can be tight enough to catch a regression the day it
+ * lands rather than the month someone notices.
  *
- * Measured 2026-07-27 after the seam fix, warm:
- *   /app/admin/sources              0.42s
- *   /app/admin/review               1.61s
- *   /app/admin/cockpit              1.44s   (was 21.8s)
- *   /app/admin/corporate-families   0.61s   (was 109s)
+ * Measured 2026-07-28, local corpus, two workers: every route below responds in
+ * well under a second. 5s leaves generous room for a cold route compile and CI
+ * being slower than a laptop, while still failing loudly if someone
+ * reintroduces a per-request seam pull (the defect that made the cockpit 21.8s
+ * and /app/admin/corporate-families 109s).
  */
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const PASSWORD = process.env.AUTH_SECRET ?? "";
 
-/** Deliberately generous — see the header note. */
-const BUDGET_MS = 30_000;
-
-/**
- * The cold-start allowance for the FIRST request of the run.
- *
- * The corporate-family snapshot is derived on demand and costs 22-79s the first
- * time a process needs it. That is by design (see `lib/registry-families.ts`);
- * this test warms it once and then holds every subsequent page to `BUDGET_MS`.
- */
-const WARMUP_MS = 120_000;
+/** Per-route ceiling. See the header note for why 5s and not 30s or 1s. */
+const BUDGET_MS = 5_000;
 
 const ROUTES = [
   "/app/opportunities",
@@ -69,13 +58,14 @@ async function timed(page: Page, path: string): Promise<number> {
 
 test.describe("response budgets", () => {
   test("every admin and customer page responds inside its budget", async ({ page, request }) => {
-    test.setTimeout(WARMUP_MS + ROUTES.length * BUDGET_MS);
+    test.setTimeout(ROUTES.length * BUDGET_MS * 3);
     await login(request);
     await page.context().addCookies(await request.storageState().then((s) => s.cookies));
 
-    // Warm the process: the family snapshot derives on first demand.
-    await timed(page, "/app/admin/corporate-families");
-
+    // No warm-up pass. `REGISTRY_DATABASE_URL` is unset for e2e
+    // (playwright.config.ts), so the family snapshot never derives and the
+    // seam-dependent pages render their "seam offline" state immediately —
+    // which is itself worth having under a budget.
     const slow: string[] = [];
     for (const path of ROUTES) {
       const ms = await timed(page, path);

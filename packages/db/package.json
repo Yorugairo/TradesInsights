@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "seed:e2e": "tsx src/seed-e2e.ts",
+    "setup:e2e": "tsx src/setup-e2e.ts"
   },
   "dependencies": {
     "@otn/config": "workspace:*",

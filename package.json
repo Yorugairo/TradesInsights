@@ -46,7 +46,9 @@
     "delivery:metrics": "pnpm --filter @otn/worker delivery:metrics",
     "alerts:run": "pnpm --filter @otn/worker alerts:run",
     "export:run": "pnpm --filter @otn/worker export:run",
-    "purge:e2e-rows": "pnpm --filter @otn/worker purge:e2e-rows"
+    "purge:e2e-rows": "pnpm --filter @otn/worker purge:e2e-rows",
+    "db:seed:e2e": "pnpm --filter @otn/db seed:e2e",
+    "db:setup:e2e": "pnpm --filter @otn/db setup:e2e"
   },
   "devDependencies": {
     "@ast-grep/cli": "^0.44.1",
