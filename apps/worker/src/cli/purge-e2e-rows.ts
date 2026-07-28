@@ -222,6 +222,21 @@ async function profileInvitations(db: Db, plan: PurgePlan): Promise<void> {
       plan.inboundMessageIds.push(r["source_message_id"] as string);
     }
   }
+
+  // Orphaned acme-gc messages: a prior --apply that failed AFTER the
+  // invitation delete leaves the parent message with no invitation to find it
+  // through, so the join above yields nothing. The sender predicate is the
+  // fallback anchor; NOT EXISTS keeps it to true orphans.
+  const orphans = await db.execute(sql`
+    SELECT m.id, m.sender, m.subject
+    FROM inbound_messages m
+    WHERE m.sender ILIKE '%acme-gc%'
+      AND NOT EXISTS (SELECT 1 FROM bid_invitations b WHERE b.source_message_id = m.id)
+      AND NOT EXISTS (SELECT 1 FROM bid_invitation_events e WHERE e.source_message_id = m.id)`);
+  for (const r of orphans.rows as Row[]) {
+    console.log(`  orphaned message ${r["id"]}  "${r["subject"] ?? "—"}" from ${r["sender"]}  ← CANDIDATE`);
+    plan.inboundMessageIds.push(r["id"] as string);
+  }
 }
 
 // ── Apply — children before parents, nothing on any refusal ─────────────────
@@ -256,11 +271,18 @@ async function applyDeletes(db: Db, plan: PurgePlan): Promise<void> {
   if (plan.inboundMessageIds.length > 0) {
     // Parents of the invitations just deleted — captured before the delete
     // because the join predicate no longer exists. NOT EXISTS guards the case
-    // where another (kept) invitation or event shares the message.
+    // where another (kept) invitation or event shares the message. One param
+    // per id, NOT a JS-array param: drizzle hands an array to pg as a plain
+    // string and Postgres's array_in rejects it (22P02) — measured, this
+    // statement failed exactly that way on 2026-07-28.
+    const idList = sql.join(
+      plan.inboundMessageIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
     await del(
       "inbound_messages",
       sql`DELETE FROM inbound_messages m
-          WHERE m.id = ANY(${plan.inboundMessageIds}::uuid[])
+          WHERE m.id IN (${idList})
             AND NOT EXISTS (SELECT 1 FROM bid_invitations b WHERE b.source_message_id = m.id)
             AND NOT EXISTS (SELECT 1 FROM bid_invitation_events e WHERE e.source_message_id = m.id)`,
     );
