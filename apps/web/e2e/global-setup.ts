@@ -1,5 +1,8 @@
+import { existsSync } from "node:fs";
 import net from "node:net";
-import { e2eDatabaseUrl } from "@otn/db";
+import { resolve } from "node:path";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { createDb, e2eDatabaseUrl } from "@otn/db";
 
 /**
  * Playwright global setup — the door that was left open.
@@ -16,11 +19,21 @@ import { e2eDatabaseUrl } from "@otn/db";
  * copies of "which database may tests touch" is how the two harnesses drift,
  * and the whole failure here was one harness not sharing the other's guard.
  *
- * This file does four things, in order of how loudly they fail:
+ * This file does six things, in order of how loudly they fail:
  *   1. Refuses to run against a non-local database at all.
  *   2. Checks the database is actually up, and says `pnpm infra:up` if not.
- *   3. Checks the corpus is present, and says `pnpm db:setup:e2e` if not.
- *   4. Wipes what previous RUNS wrote, so every run starts from the corpus
+ *   3. MIGRATES `otn_e2e` itself — the same thing vitest's `testDb()` does for
+ *      `otn`. Before this, a new migration reached the e2e database only when
+ *      someone remembered `pnpm db:setup:e2e`, and the forgetting cost a real
+ *      debugging session (0038: new e2e tests 500ing on missing tables while
+ *      all the old ones passed). Schema freshness is now structural; the seed
+ *      command remains only for (re)building the CORPUS.
+ *   4. Checks the corpus is present, and says `pnpm db:setup:e2e` if not.
+ *   5. Verifies MUTATION_TABLES against pg_constraint: every table that
+ *      FK-references a listed table must itself be listed, children before
+ *      parents. The list used to be enforced by tribal knowledge and failed as
+ *      FK errors mid-wipe; now it fails at suite start, naming the table.
+ *   6. Wipes what previous RUNS wrote, so every run starts from the corpus
  *      alone instead of drifting until someone reseeds.
  */
 
@@ -47,6 +60,13 @@ const MUTATION_TABLES: readonly (readonly [table: string, writtenBy: string])[] 
   ["takeoff_sheets", "the takeoff GET's first-call derive — child of pursuits"],
   ["field_entries", "crew log/CO submissions — child of field_links and pursuits"],
   ["field_links", "minted crew links — child of pursuits"],
+  // The next two were the tripwire's first catch (2026-07-28), latent since
+  // their features shipped: roi_events was never listed at all, and
+  // relationship_interactions sat after pursuits, which it FK-references.
+  // Either would have failed the wipe the first time a run wrote a
+  // pursuit-linked row.
+  ["roi_events", "ROI attribution log — child of pursuits and opportunities"],
+  ["relationship_interactions", "child of account_organization_relationships AND pursuits"],
   ["pursuit_transitions", "child of pursuits"],
   ["pursuit_tasks", "child of pursuits"],
   ["pursuit_notes", "child of pursuits (takeoff stamp + CO decisions write these)"],
@@ -55,7 +75,6 @@ const MUTATION_TABLES: readonly (readonly [table: string, writtenBy: string])[] 
   ["bid_documents", "child of bid_invitations"],
   ["bid_invitations", "the .eml invitation upload"],
   ["inbound_messages", "the .eml upload's parent message"],
-  ["relationship_interactions", "child of account_organization_relationships"],
   ["account_organization_relationships", "relationship confirm actions"],
   ["account_suppressions", "suppression toggles (its test cleans up; belt and braces)"],
   ["action_tokens", "action links minted during runs"],
@@ -120,11 +139,24 @@ export default async function globalSetup(): Promise<void> {
     );
   }
 
-  // 3. Is the corpus there? Without it every test fails on an empty table and
-  // reads as 29 broken assertions rather than one missing command.
   const pg = await import("pg");
   const pool = new pg.default.Pool({ connectionString: url, max: 1 });
   try {
+    // 3. MIGRATE. Resolved by candidate-walk rather than import.meta (Playwright
+    // transpiles this graph to CJS, where import.meta is a syntax error — the
+    // same constraint test-urls.ts documents for its .env walk). Idempotent and
+    // ~fast when up to date; the corpus survives because migrations here are
+    // additive by policy.
+    const migrationsFolder = ["../../packages/db/migrations", "packages/db/migrations", "../packages/db/migrations"]
+      .map((p) => resolve(process.cwd(), p))
+      .find((p) => existsSync(p));
+    if (!migrationsFolder) {
+      throw new Error("cannot locate packages/db/migrations from " + process.cwd());
+    }
+    await migrate(createDb(pool), { migrationsFolder });
+
+    // 4. Is the corpus there? Without it every test fails on an empty table and
+    // reads as 29 broken assertions rather than one missing command.
     const res = await pool.query(
       `SELECT count(*)::int AS n FROM opportunities WHERE score_version = 'e2e-1'`,
     );
@@ -145,7 +177,39 @@ export default async function globalSetup(): Promise<void> {
     }
     console.log(`[e2e] corpus present: ${n} opportunities on ${host}:${port}`);
 
-    // 4. THE WIPE. Tests write and do not clean up (that is what made them
+    // 5. THE TRIPWIRE. The wipe below deletes parents (pursuits, deliveries'
+    // children, …), so any table that FK-references a listed table MUST also be
+    // listed, before its parent — or the wipe dies on an FK error halfway
+    // through, and before this check existed the symptom was worse: a
+    // migration's new child table simply never joined the list and the suite
+    // 500ed. pg_constraint is the source of truth; the hand-written list is now
+    // checked against it on every run instead of trusted.
+    const listed = MUTATION_TABLES.map(([t]) => t);
+    const fks = await pool.query(
+      `SELECT DISTINCT c.conrelid::regclass::text AS child, c.confrelid::regclass::text AS parent
+       FROM pg_constraint c
+       WHERE c.contype = 'f' AND c.confrelid::regclass::text = ANY($1::text[])`,
+      [listed],
+    );
+    const problems: string[] = [];
+    for (const { child, parent } of fks.rows as { child: string; parent: string }[]) {
+      if (child === parent) continue;
+      const ci = listed.indexOf(child);
+      if (ci === -1) {
+        problems.push(
+          `${child} FK-references ${parent} but is not in MUTATION_TABLES — add it BEFORE ${parent}`,
+        );
+      } else if (ci > listed.indexOf(parent)) {
+        problems.push(`${child} must come BEFORE ${parent} in MUTATION_TABLES (children are deleted first)`);
+      }
+    }
+    if (problems.length > 0) {
+      throw new Error(
+        ["", "  MUTATION_TABLES is out of date with the schema:", ...problems.map((p) => `  - ${p}`), ""].join("\n"),
+      );
+    }
+
+    // 6. THE WIPE. Tests write and do not clean up (that is what made them
     // dangerous against production); here the sandbox absorbs the writes and
     // this wipe returns it to the corpus baseline, so the third run sees the
     // same database as the first. Table names are literals from the list above.
@@ -154,6 +218,12 @@ export default async function globalSetup(): Promise<void> {
       const del = await pool.query(`DELETE FROM ${table}`);
       if ((del.rowCount ?? 0) > 0) wiped.push(`${table} ${del.rowCount}`);
     }
+    // Field-notify deliveries are run residue too (idempotency key
+    // `field-co:{entryId}`, new entry ids every run — they accumulate). The
+    // delete is BY TYPE because `deliveries` as a whole may carry corpus
+    // rows (weekly digests); only this feature's rows are ours to remove.
+    const fieldNotify = await pool.query(`DELETE FROM deliveries WHERE delivery_type = 'field_notify'`);
+    if ((fieldNotify.rowCount ?? 0) > 0) wiped.push(`deliveries[field_notify] ${fieldNotify.rowCount}`);
     console.log(
       wiped.length > 0
         ? `[e2e] wiped prior-run rows: ${wiped.join(", ")}`
