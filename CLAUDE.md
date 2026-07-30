@@ -237,3 +237,41 @@ content it points at, resolve it:
 - Reading very small files (<1KB) where compression can't help.
 
 <!-- END sqz-claude-guidance -->
+
+## Three different things are called "trades" — do not confuse them
+
+Measured 2026-07-29. Getting these wrong has already caused wrong conclusions about what
+deploys where.
+
+| Thing | Repo | Vercel project | Domain |
+|---|---|---|---|
+| **OTN Insights** (this repo) | `Yorugairo/TradesInsights` | *none on the BJJ team* | — |
+| **Trades registry vertical** | `Yorugairo/BJJRegistry` @ `apps/registry` | `onetradenetwork` | `staging.onetradenetwork.com` |
+| **OneTradeNetwork worktree** at `~/Downloads/OneTradeNetwork` | **also `Yorugairo/BJJRegistry`** (worktree on `codex/otn-app-extraction`) | — | — |
+
+The Vercel project named `onetradenetwork` does **not** build this repo. It builds the BJJ
+Registry app with the Trades skin (`packages/shared-routes/vertical-skin.ts`), from the
+`BJJRegistry` monorepo, on branch `release/trades-staging`. `onetradenetwork.com` itself does not
+resolve — only the staging subdomain is attached.
+
+### The `[trades]` commit-tag requirement (BJJRegistry monorepo only)
+
+**A push to `release/trades-staging` only builds if the commit message contains `[trades]`.**
+
+```
+git commit -m "feat(trades): widen the credential projection [trades]"
+```
+
+Why: `onetradenetwork` and `bjj-registry-registry-app` both declare Root Directory
+`apps/registry`, so *every* Registry commit looked like a Trades change. Trades was consuming
+5,532 of 10,039 build seconds across the three projects — 55%, more than the launched product —
+for a vertical with no public domain. The gate now requires an explicit opt-in. Implemented in
+`apps/registry/vercel.json` (`ignoreCommand`, discriminating on
+`VERCEL_PROJECT_PRODUCTION_URL`).
+
+Without the tag the deployment is skipped silently — that is the intended behaviour, not a
+failure. `vercel --prod` from `apps/registry` still deploys manually regardless of the tag.
+
+**This does not apply to this repo.** OTN Insights has its own stack and deploy path; nothing
+here is gated on a commit tag. The rule is recorded here only because the same people work
+across both surfaces and the naming collision invites the mistake.
