@@ -339,3 +339,32 @@ the hook, never the product sold to the searcher.
 inline Phase-0 was disproven by the owner's recollection + a jsonb-aware re-measure
 (99% coverage already stored); insurance confirmed one dataset away on the same join key.
 Recorded in [[contractor-page-competitive-ceiling]] with the column-sweep lesson.
+
+---
+
+## SHIPPED 2026-07-31 — registry `eca20d07` + `88493510` (`release/trades-staging`)
+
+Tasks 1, 2, 3, 4, 6, 7, 8 complete. Report:
+`.claude/PRPs/reports/contractor-pages-credentials-and-monetization-report.md`.
+
+**Task 5 (public principals section) is NOT shipped — HELD for an owner
+decision.** Migration `20260724000000_registry_entity_principals.sql` states in
+its own header that no public registry page, pSEO surface, or unauthenticated
+route may read a principal, and a grep confirms zero public renders exist today.
+`/contractor/[slug]` is exactly such a surface, so shipping it would put ~74,193
+named private individuals onto indexable pages against a written policy, and it
+is not reversible once crawled. The data is already available as column 29 of
+`trades_identity_v1` if the owner approves.
+
+**Task 6 deviated deliberately.** The specified denominator (72,952 licensed
+contractors) would have made the lowest-scoring business read "more active than
+98% of Washington contractors", because `contractor_activity_score_v1` holds only
+881 rows — one per business with permit evidence. The rank is against the scored
+population, and the copy says so.
+
+**Corrections to this plan's own premises, recorded rather than dropped:** the
+insurance expiry filter is currently a no-op (L&I publishes zero expired rows);
+the real hazard was tied expiration dates, which Socrata's ordering does not
+break. The tenant-side join key needs non-alphanumerics stripped or 12,673
+contractors are silently lost. The baseline mirror had already drifted five
+columns before this plan started.
