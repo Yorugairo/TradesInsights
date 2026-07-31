@@ -3,15 +3,16 @@
 **Date:** 2026-07-31
 **Plan:** `.claude/PRPs/plans/completed/contractor-pages-credentials-and-monetization.plan.md`
 **Code repo:** BJJRegistry monorepo, branch `release/trades-staging` (npm)
-**Commits:** `eca20d07` (ingestion, backfill, contract view, mirror guard) · `88493510` (credential card, empty state, monetization)
+**Commits:** `eca20d07` (ingestion, backfill, contract view, mirror guard) · `88493510` (credential card, empty state, monetization) · `4e162a2f` (principals + disclosure-policy hardening)
 **Hosted DB:** `arbmeioglflvzoffgtii`
 
 ## Summary
 
-Bond and general-liability insurance now render on every contractor profile, flow
-through the Insights contract view, and the lead → claim → upsell loop the pages
-feed is wired. 7 of 8 tasks shipped. Task 5 (public principals section) is held
-for an owner decision because it contradicts a written privacy boundary.
+Bond, general-liability insurance and L&I principals now render on every
+contractor profile, flow through the Insights contract view, and the lead → claim
+→ upsell loop the pages feed is wired. **All 8 tasks shipped.** Task 5 was held
+for a day on an over-broad written boundary, then shipped once the owner narrowed
+it — and the narrowing was made canonical and testable so it cannot drift back.
 
 ## Assessment vs reality
 
@@ -19,8 +20,8 @@ for an owner decision because it contradicts a written privacy boundary.
 |---|---|---|
 | Complexity | Large | Large — as scoped |
 | Confidence | 8.5/10 | Justified; every load-bearing premise held except the two noted below |
-| Files changed | ~10 | 12 (5 new, 7 modified) |
-| Tasks | 8 | 7 shipped, 1 held |
+| Files changed | ~10 | 17 (7 new, 10 modified) |
+| Tasks | 8 | 8 shipped (T5 after an owner ruling) |
 
 ## Tasks
 
@@ -30,7 +31,7 @@ for an owner decision because it contradicts a written privacy boundary.
 | 2 | Settings-merge backfill | Complete | 75,845 checked, 69,491 insured; idempotent at `toWrite: 0` |
 | 3 | Contract view + baseline mirror | Complete | 36 cols; mirror drift repaired + gated |
 | 4 | Credential card | Complete | Verified on three live fixtures |
-| 5 | Principals section | **HELD** | Owner decision — see below |
+| 5 | Principals section | Complete (`4e162a2f`) | Held, then shipped after the owner narrowed the policy |
 | 6 | Percentile + empty state | Complete, **deviated** | See "Deviations" |
 | 7 | Monetization wiring | Complete | Two latent defects found and fixed |
 | 8 | Close-out | Complete | All gates green |
@@ -94,7 +95,7 @@ read "more active than 98% of Washington contractors" — a number that measures
 our source coverage and reports it as the contractor's performance. The rank is
 computed against the scored population and the copy names that set explicitly.
 
-**2. Task 5 held — see below.**
+**2. Task 5 — held one day, then shipped under a narrowed policy. See below.**
 
 **3. Two fixes outside the written scope**, both discovered while executing 7a's
 VERIFY-FIRST and both defects in the path the task had to use:
@@ -107,7 +108,7 @@ VERIFY-FIRST and both defects in the path the task had to use:
   Registry". BJJ strings preserved verbatim; other verticals get neutral copy
   under their own brand; sender address moved to `LEADS_FROM_EMAIL`.
 
-## Held for owner decision — Task 5, public principals
+## Task 5 — held, then shipped (`4e162a2f`)
 
 The plan asks for an L&I principals section on the public contractor page at
 99.99% coverage, matching BuildZoom's employees card.
@@ -119,16 +120,34 @@ surfaces are all authenticated. **No public registry page, pSEO surface, or
 unauthenticated route may read a principal.**"* A grep of `apps/registry/src`
 confirms zero public renders today, so the boundary is intact and deliberate.
 
-`/contractor/[slug]` is a public, indexable pSEO surface. Shipping this would put
-~74,193 named private individuals onto crawled pages, contradicting that written
-policy, and it is not reversible once indexed. That is an owner call, not an
-implementation detail, so it was not shipped unilaterally.
+`/contractor/[slug]` is a public, indexable pSEO surface, so this was raised
+rather than shipped unilaterally.
 
-If approved, the work is small: `principals` already exists as column 29 of
-`trades_identity_v1`, and the page would need a read path plus a display-only
-section. The `[[corporate-family-tier]]` constraint holds either way — principal
-↔ entity *discovery* stays review-only; no cross-entity links via shared
-principals on a public page.
+**Owner ruling (2026-07-31):** the sentence was written overly broadly. The true
+intent was that we must not publish personal information *derived inside Trades
+Insights*; L&I principals are public information. Shipped accordingly:
+
+- Display-only list, attributed to L&I, scoped to the one business by UBI.
+- `NOT pp.is_agent` — registered agents and law firms are never shown as officers.
+- `principal_display`, never `principal_normalized` (a match key and inference
+  input, not a name).
+- **No cross-entity linking.** "Also runs 8 other companies" is an inference we
+  built, not a fact L&I published about this business; it stays review-only.
+- Section omitted entirely when L&I filed no principal.
+
+**The durable output is the anti-drift work, not the section.** The rule now
+lives in exactly one canonical place
+(`docs/data/TRADES_PUBLIC_DATA_POLICY.md`), including the history and the
+transferable lesson: *scope a prohibition to the RISK, not to the TABLE — if a
+rule needs an exception within a week, it was written about the wrong noun.* The
+original header carries its correction inline (comments only, no DDL change),
+migration `20260731020000` puts the current rule on the table's `COMMENT`, and
+six new security-suite assertions enforce the mechanical half. Those assertions
+were negative-controlled: removing `NOT pp.is_agent` fails the suite.
+
+Verified live on three shapes: one principal (Solis Interiors), six with the
+plural heading (Advanced Alarm Systems), and correct omission (24/7 Electrical).
+No `principal_normalized` and no policy number in rendered HTML.
 
 ## Verification
 
@@ -152,7 +171,7 @@ Live pages checked against hosted data:
 | Gate | Result |
 |---|---|
 | `npm run build --workspace apps/registry` | Pass |
-| `npm run test:security` | 64/64 pass |
+| `npm run test:security` | 70/70 pass (6 new policy assertions) |
 | `npm run audit:pseo-quality` | Pass, 0 failures / 0 warnings |
 | `npm run audit:contract-mirror` (new) | Pass — mirror identical, 8,077 bytes |
 | `tsc --noEmit` (registry) | Clean |
@@ -174,6 +193,11 @@ Live pages checked against hosted data:
 | `apps/registry/src/components/ContractorProfilePage.tsx` | UPDATE |
 | `apps/registry/src/components/ContractorProfilePage.module.css` | UPDATE |
 | `apps/registry/src/app/api/leads/route.ts` | UPDATE |
+| `docs/data/TRADES_PUBLIC_DATA_POLICY.md` | CREATE (canonical policy) |
+| `apps/registry/supabase/migrations/20260731020000_registry_entity_principals_public_policy.sql` | CREATE |
+| `apps/registry/supabase/migrations/20260724000000_registry_entity_principals.sql` | UPDATE (comments only — correction in place) |
+| `tests/security-regression-static.test.ts` | UPDATE (6 policy assertions) |
+| `AGENTS.md` | UPDATE ("Traps this repo has already paid for") |
 
 ## Notes for next session
 

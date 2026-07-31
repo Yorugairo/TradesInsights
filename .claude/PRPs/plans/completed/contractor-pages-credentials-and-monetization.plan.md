@@ -347,14 +347,19 @@ Recorded in [[contractor-page-competitive-ceiling]] with the column-sweep lesson
 Tasks 1, 2, 3, 4, 6, 7, 8 complete. Report:
 `.claude/PRPs/reports/contractor-pages-credentials-and-monetization-report.md`.
 
-**Task 5 (public principals section) is NOT shipped — HELD for an owner
-decision.** Migration `20260724000000_registry_entity_principals.sql` states in
-its own header that no public registry page, pSEO surface, or unauthenticated
-route may read a principal, and a grep confirms zero public renders exist today.
-`/contractor/[slug]` is exactly such a surface, so shipping it would put ~74,193
-named private individuals onto indexable pages against a written policy, and it
-is not reversible once crawled. The data is already available as column 29 of
-`trades_identity_v1` if the owner approves.
+**Task 5 SHIPPED same day as `4e162a2f`, after the owner narrowed the policy.**
+It was held first because migration `20260724000000` stated in its own header
+that no public/pSEO/unauthenticated route may read a principal. The owner's
+clarification: that sentence was written while building the Insights
+family-inference tier and was scoped to the TABLE rather than the RISK — the
+real rule is "don't publish personal information DERIVED inside Trades Insights",
+and L&I principals are public record. Principals now render display-only, scoped
+to one business by UBI, agent rows excluded, `principal_display` never
+`principal_normalized`, with no cross-entity linking. The over-broad wording is
+corrected in place, the canonical policy lives in
+`docs/data/TRADES_PUBLIC_DATA_POLICY.md`, the DB carries it on the table COMMENT
+(migration `20260731020000`), and six security-suite assertions enforce the
+mechanical half.
 
 **Task 6 deviated deliberately.** The specified denominator (72,952 licensed
 contractors) would have made the lowest-scoring business read "more active than
