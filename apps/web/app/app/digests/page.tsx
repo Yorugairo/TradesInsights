@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentSession } from "../../../lib/auth.js";
 import { db } from "../../../lib/db.js";
@@ -31,7 +32,14 @@ export default async function DigestsPage() {
           <tbody>
             {digests.map((d) => (
               <tr key={d.id}>
-                <td style={cell}>{d.deliveryType}</td>
+                <td style={cell}>
+                  {/* The row is the way in to the reader (M1). Linking the type
+                      cell rather than adding a column keeps the table narrow
+                      enough for a phone. */}
+                  <Link href={`/app/digests/${d.id}`} data-testid="digest-link">
+                    {d.deliveryType}
+                  </Link>
+                </td>
                 <td style={cell}>
                   {fmtDate(d.periodStart)} → {fmtDate(d.periodEnd)}
                 </td>

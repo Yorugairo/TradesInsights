@@ -157,6 +157,11 @@ export interface FieldEntryRow {
   createdAt: string;
 }
 
+/** UUID as minted by `crypto.randomUUID()` on the device. Validated rather than
+ * trusted: the value reaches a unique index, so an unbounded client string
+ * would let one caller squat arbitrary keys. */
+const CLIENT_ENTRY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function addFieldEntry(
   db: Db,
   input: {
@@ -167,8 +172,11 @@ export async function addFieldEntry(
     quantities?: unknown;
     amount?: number | null;
     submittedName?: string | null;
+    /** Device-minted idempotency key. Present only from the offline outbox;
+     * cockpit-authored entries omit it and behave exactly as before. */
+    clientEntryId?: string | null;
   },
-): Promise<{ id: string }> {
+): Promise<{ id: string; deduped: boolean }> {
   if (!(FIELD_ENTRY_TYPES as readonly string[]).includes(input.entryType)) {
     throw new FieldError("invalid_entry_type", `unknown entry type ${input.entryType}`);
   }
@@ -185,14 +193,43 @@ export async function addFieldEntry(
   // Non-CO entries need no decision: they land approved so status queries mean
   // one thing ("what awaits a decision") instead of two.
   const status = input.entryType === "change_order" ? "submitted" : "approved";
+
+  const clientEntryId = input.clientEntryId?.trim() || null;
+  if (clientEntryId !== null && !CLIENT_ENTRY_ID_RE.test(clientEntryId)) {
+    throw new FieldError("invalid_value", "clientEntryId must be a UUID");
+  }
+
+  // IDEMPOTENT WHEN THE CLIENT SUPPLIES A KEY (migration 0042).
+  //
+  // The offline outbox retries a queued entry on every reconnect trigger until
+  // it observes a 2xx, so a response lost in transit MUST NOT create a second
+  // row. `ON CONFLICT DO NOTHING` returns zero rows on a replay, which is why
+  // the SELECT below exists: the caller needs the original id either way, and
+  // an empty result here means "already stored", never "failed".
+  //
+  // The WHERE clause is repeated in the conflict target because the index is
+  // PARTIAL — Postgres will not match a partial index for inference without it,
+  // and the statement would fail rather than dedupe.
   const res = await db.execute(sql`
     INSERT INTO field_entries
-      (pursuit_id, link_id, entry_type, body, quantities_json, amount, submitted_name, status)
+      (pursuit_id, link_id, entry_type, body, quantities_json, amount, submitted_name, status,
+       client_entry_id)
     VALUES (${input.pursuitId}, ${input.linkId}, ${input.entryType}, ${input.body.trim()},
             ${quantities ? JSON.stringify(quantities) : null}, ${amount},
-            ${input.submittedName?.trim() || null}, ${status})
+            ${input.submittedName?.trim() || null}, ${status}, ${clientEntryId})
+    ON CONFLICT (client_entry_id) WHERE client_entry_id IS NOT NULL DO NOTHING
     RETURNING id`);
-  return { id: (res.rows[0] as { id: string }).id };
+  if (res.rows.length > 0) return { id: (res.rows[0] as { id: string }).id, deduped: false };
+
+  // Only reachable with a key present — without one there is no conflict target.
+  const existing = await db.execute(sql`
+    SELECT id FROM field_entries WHERE client_entry_id = ${clientEntryId} LIMIT 1`);
+  if (existing.rows.length === 0) {
+    // Defensive: a conflict fired but the row is gone (deleted between the two
+    // statements). Surfacing this beats returning a fabricated id.
+    throw new FieldError("not_found", "entry conflicted but could not be read back");
+  }
+  return { id: (existing.rows[0] as { id: string }).id, deduped: true };
 }
 
 /**

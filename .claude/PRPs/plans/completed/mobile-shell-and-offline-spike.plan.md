@@ -404,3 +404,23 @@ Confidence: **8/10**. The two genuinely new muscles are the SW and the outbox �
 both small, dependency-free, and covered by an e2e proxy plus a written
 real-device protocol. Everything else mirrors patterns quoted above from the
 files they live in.
+
+---
+
+## SHIPPED 2026-08-01 — Insights `claude/tmux-install-320aiz`
+
+Tasks 1-7, 9, 10 complete. Report:
+`.claude/PRPs/reports/mobile-shell-and-offline-spike-report.md`.
+
+**Task 8 (real-device spike) is NOT done — it is a manual protocol requiring a
+physical phone in a real building, and it GATES Milestone 2.** The ADR-6 table
+in `docs/design/MOBILE_DECISIONS.md` still reads _pending_ on every row.
+
+**The plan's own test caught the bug it was written for:** `preventDefault()`
+after an `await` is a no-op, so the first offline client let the browser submit
+and lose the entry. Fixed synchronously-cancel-then-decide.
+
+**Two plan assumptions were wrong and are corrected in the report:** there is no
+DB-backed unit-test harness in `packages/intelligence` (so exactly-once is proven
+in e2e, not vitest), and there is no `field-entries` list endpoint (so the
+assertions use the crew page's Recent list and returned-id identity instead).

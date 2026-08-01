@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { listFieldEntries, getFieldBrief, verifyFieldToken } from "@otn/intelligence";
 import { db } from "../../../lib/db.js";
+import FieldOfflineClient from "./offline-client.js";
 
 /**
  * The crew surface (deck A5 "field communication"). Token-gated, NO session:
@@ -61,6 +62,11 @@ export default async function FieldPage({
         {" · "}status: {brief.state.replaceAll("_", " ")}
         {brief.bidDueAt ? ` · bid due ${new Date(brief.bidDueAt).toISOString().slice(0, 10)}` : ""}
       </p>
+      {/* Offline capture. Renders nothing when online with an empty queue, so
+          the online experience is unchanged; see ADR-8 (progressive
+          enhancement) in docs/design/MOBILE_DECISIONS.md. */}
+      <FieldOfflineClient token={token} />
+
       {ok === "1" && (
         <p data-testid="field-submitted-ok" style={{ background: "#e6f4ea", border: "1px solid #b7dfc2", padding: "0.5rem", borderRadius: 6 }}>
           ✓ Submitted — the office can see it now.
@@ -97,7 +103,7 @@ export default async function FieldPage({
 
       <section>
         <h2 style={{ fontSize: "1.05rem" }}>Recent</h2>
-        <ul style={{ paddingLeft: "1.1rem" }}>
+        <ul style={{ paddingLeft: "1.1rem" }} data-testid="field-recent">
           {entries.map((e) => (
             <li key={e.id} style={{ marginBottom: "0.3rem" }}>
               <em>{new Date(e.createdAt).toISOString().slice(0, 10)}</em>{" "}

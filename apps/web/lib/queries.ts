@@ -619,6 +619,49 @@ export async function listDigests(
   }));
 }
 
+/**
+ * One digest, for the mobile reader.
+ *
+ * SCOPED BY ACCOUNT, not by id alone. Delivery ids are UUIDs, but "hard to
+ * guess" is not an authorization model — a leaked or logged id would otherwise
+ * read another customer's week. The account filter is the check; the e2e suite
+ * asserts a cross-account read 404s.
+ */
+export async function digestById(
+  db: Db,
+  accountProfileId: string,
+  id: string,
+): Promise<
+  | {
+      id: string;
+      deliveryType: string;
+      periodStart: string;
+      periodEnd: string;
+      status: string;
+      sentAt: string | null;
+      renderedContent: string | null;
+    }
+  | null
+> {
+  const res = await db.execute(sql`
+    SELECT id, delivery_type, period_start, period_end, status, sent_at, rendered_content
+    FROM deliveries
+    WHERE id = ${id} AND account_profile_id = ${accountProfileId}
+    LIMIT 1`);
+  const r = res.rows[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    id: r["id"] as string,
+    deliveryType: r["delivery_type"] as string,
+    periodStart: r["period_start"] as string,
+    periodEnd: r["period_end"] as string,
+    status: r["status"] as string,
+    sentAt: (r["sent_at"] as string | null) ?? null,
+    // Nullable on drafts — the page says so rather than rendering blank.
+    renderedContent: (r["rendered_content"] as string | null) ?? null,
+  };
+}
+
 export async function listAccountFeedback(
   db: Db,
   accountProfileId: string,

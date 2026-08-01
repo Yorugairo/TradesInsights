@@ -99,8 +99,8 @@ architecture, which every later phase depends on.
 
 | # | Milestone | Outcome | Status | Plan |
 |---|---|---|---|---|
-| 0 | Decisions + offline spike | A written decision record, and proof on a real phone in a real no-signal building that capture → reconnect → sync works | in-progress | `.claude/PRPs/plans/mobile-shell-and-offline-spike.plan.md` |
-| 1 | Mobile shell + digest home | The owner can install the app and read their week on a phone | in-progress | `.claude/PRPs/plans/mobile-shell-and-offline-spike.plan.md` |
+| 0 | Decisions + offline spike | A written decision record, and proof on a real phone in a real no-signal building that capture → reconnect → sync works | **partial** — decisions + code + e2e done; **real-device protocol still outstanding** | `.claude/PRPs/plans/completed/mobile-shell-and-offline-spike.plan.md` |
+| 1 | Mobile shell + digest home | The owner can install the app and read their week on a phone | complete | `.claude/PRPs/plans/completed/mobile-shell-and-offline-spike.plan.md` |
 | 2 | Field crew app (offline-first) | A crew logs a day's production from a job site with no signal | pending | — |
 | 3 | Jobs + schedule | Won pursuits and manually created jobs both appear on a schedule with crew and dates | pending | — |
 | 4 | Field estimator | An on-site measurement produces a rough-order-of-magnitude number from an editable cost book | pending | — |
